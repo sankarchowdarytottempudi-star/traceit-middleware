@@ -27,6 +27,20 @@ export function runtimeRequest(cfg: StudioConfig, method: string, path: string, 
   });
 }
 
+/** A read that fails because the connection was refused or dropped (the runtime restarting, a
+ *  stale socket) is tried once more after a short pause. Anything that changes data is never
+ *  repeated, and a timeout is not retried. */
+export async function readWithRetry(cfg: StudioConfig, method: string, path: string, body: unknown, user: string,
+  send: typeof runtimeRequest = runtimeRequest, pauseMs = 250): ReturnType<typeof runtimeRequest> {
+  try { return await send(cfg, method, path, body, user); }
+  catch (e) {
+    const readOnly = method === "GET" || method === "HEAD";
+    if (!readOnly || /timeout/i.test(String((e as Error).message))) throw e;
+    await new Promise((r) => setTimeout(r, pauseMs));
+    return send(cfg, method, path, body, user);
+  }
+}
+
 export function registerStudio(app: FastifyInstance, cfg: StudioConfig, userOf: (req: FastifyRequest) => Promise<string | null>) {
   app.all("/api/studio/*", async (req, reply) => {
     const user = await userOf(req);
@@ -54,7 +68,7 @@ export function registerStudio(app: FastifyInstance, cfg: StudioConfig, userOf: 
         const r = route === "/mapping/infer" ? await inferWithFallback(cfg, body, user) : await compileWithFallback(cfg, body, user);
         return reply.code(r.status).type(r.type).send(r.text);
       }
-      const r = await runtimeRequest(cfg, method, "/v1" + rest, body, user);
+      const r = await readWithRetry(cfg, method, "/v1" + rest, body, user);
       reply.code(r.status).type(String(r.headers["content-type"] || "application/json"));
       return reply.send(r.text);
     } catch (e) {

@@ -29,6 +29,7 @@ body { overflow-x: hidden; }
 .mf-side-user { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
 .mf-side-avatar { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px; background: var(--accentWash); color: var(--accentText); display: grid; place-items: center; font-weight: 700; }
 .mf-topbtn { width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; border: 1px solid transparent; color: var(--muted); cursor: pointer; }
+.mf .mf-topbtn { color: var(--muted); }
 .mf-topbtn:hover { background: var(--surface3); color: var(--text); }
 .mf-side-close { display: none; }
 .mf-side-rail { width: 30px; height: 30px; }
@@ -72,4 +73,6 @@ body { overflow-x: hidden; }
 }
 @media (max-width: 480px) {
   .mf-topbar-brand { display: none; }
+  /* card grids that ask for 320-380px columns in an inline style: one column on a phone */
+  .mf-main [style*="minmax(3"] { grid-template-columns: minmax(0, 1fr) !important; }
 }

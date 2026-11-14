@@ -216,4 +216,19 @@ describe("editor store", () => {
     s.addNode("log");
     expect(calls).toBe(before);
   });
+
+  it("announces new step definitions, so views that read them recompute", () => {
+    const bare = new EditorStore(emptyFlow({ nodes: [{ id: "m", type: "transform.map", name: "Reshape", position: { x: 0, y: 0 }, config: {} }] } as Partial<Flow>));
+    expect(bare.defFor("transform.map").fields.some((f) => f.kind === "mapping")).toBe(false); // nothing known yet
+    const rev = bare.getState().catalogRev;
+    let calls = 0;
+    bare.subscribe(() => { calls++; });
+    bare.setCatalog(byType);
+    expect(bare.getState().catalogRev).toBe(rev + 1);
+    expect(calls).toBe(1);
+    expect(bare.defFor("transform.map").fields.some((f) => f.kind === "mapping")).toBe(true);
+    bare.setCatalog(byType); // the same definitions again: nothing to announce
+    expect(bare.getState().catalogRev).toBe(rev + 1);
+    expect(calls).toBe(1);
+  });
 });

@@ -8,7 +8,11 @@ const routes = [
   { path: "/workspaces", name: "workspaces" },
   { path: "/playground", name: "playground" },
   { path: "/knowledge", name: "knowledge" },
-  { path: "/canvas", name: "canvas" },
+  { path: "/studio", name: "studio-flows" },
+  { path: "/studio/flows/fl_demo", name: "studio-editor" },
+  { path: "/studio/connections", name: "studio-connections" },
+  { path: "/studio/connectors", name: "studio-connectors" },
+  { path: "/studio/executions", name: "studio-executions" },
 ];
 const themes = ["light", "dark"] as const;
 mkdirSync("runs/weave-factory", { recursive: true });
@@ -56,13 +60,16 @@ test("playground sends a request and shows the real response", async ({ page }) 
   await page.screenshot({ path: "runs/weave-factory/playground-response.png" });
 });
 
-test("canvas infers a mapping by example and the live preview matches", async ({ page }) => {
+test("the old canvas address opens the Studio, and a flow opens on the canvas with its steps", async ({ page }) => {
   await mockApi(page);
   await page.goto("/canvas");
-  await page.getByRole("button", { name: /Infer mapping by example/ }).click();
-  await expect(page.getByText("✓ matches the example")).toBeVisible();
-  await expect(page.getByText("ref ← customer.ref")).toBeVisible();
-  await page.screenshot({ path: "runs/weave-factory/canvas-mapper.png" });
+  await expect(page).toHaveURL(/\/studio$/);
+  await page.getByRole("link", { name: /orders-lookup/ }).first().click();
+  await expect(page.locator('[data-testid="flow-editor"]')).toBeVisible();
+  await expect(page.locator(".ws-node")).toHaveCount(4);
+  await page.locator('.ws-node[data-node-type="transform.map"] .ws-node-name').click();
+  await expect(page.locator(".ws-panel")).toBeVisible();
+  await page.screenshot({ path: "runs/weave-factory/studio-editor-step.png" });
 });
 
 test("sign-in splash when unauthenticated", async ({ page }) => {

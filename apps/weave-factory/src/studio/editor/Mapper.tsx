@@ -362,13 +362,17 @@ export function RulesTable({ spec }: { spec: MappingSpec }) {
     <ul className="ws-ruletable">
       {spec.rules.map((r) => {
         const p = ruleProblem(r);
+        // a rule taken over from existing code that has no expression of its own yet: show the code it came from
+        const original = r.kind === "expr" && !r.expr && /^Original:\s*\S/.test(r.comment ?? "") ? (r.comment ?? "").replace(/^Original:\s*/, "") : "";
         return (
-          <li key={r.id} className={cx(r.enabled === false && "ws-rule-off")}>
+          <li key={r.id} className={cx(r.enabled === false && !original && "ws-rule-off")}>
             <code className="ws-ruletable-target">{txt(r.target) || "(no field)"}</code>
-            <span className="ws-ruletable-how"><Badge tone={r.kind === "instruction" ? "info" : "neutral"}>{KIND_LABEL[r.kind] ?? txt(r.kind)}</Badge> <span>{r.kind === "instruction" && r.instruction ? `"${txt(r.instruction)}"` : describeRule(r)}</span>
-              {r.kind === "instruction" && r.compiled?.explanation && <span className="mf-faint"> (understood as: {txt(r.compiled.explanation)})</span>}</span>
+            {original
+              ? <span className="ws-ruletable-how"><Badge>Original code</Badge> <code className="mf-mono-sm">{txt(original)}</code></span>
+              : <span className="ws-ruletable-how"><Badge tone={r.kind === "instruction" ? "info" : "neutral"}>{KIND_LABEL[r.kind] ?? txt(r.kind)}</Badge> <span>{r.kind === "instruction" && r.instruction ? `"${txt(r.instruction)}"` : describeRule(r)}</span>
+                {r.kind === "instruction" && r.compiled?.explanation && <span className="mf-faint"> (understood as: {txt(r.compiled.explanation)})</span>}</span>}
             {p && <Badge tone="bad">{r.kind === "instruction" ? "not understood" : "incomplete"}</Badge>}
-            {r.comment && <span className="ws-ruletable-note">{txt(r.comment)}</span>}
+            {r.comment && !original && <span className="ws-ruletable-note">{txt(r.comment)}</span>}
           </li>
         );
       })}

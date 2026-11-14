@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CopyPlus, ExternalLink, Lock, RefreshCw, ScrollText, Search, Workflow } from "lucide-react";
+import { ArrowLeft, CopyPlus, ExternalLink, Lock, Plug, RefreshCw, ScrollText, Search, Workflow } from "lucide-react";
 import type { Flow, Json } from "@traceit/weave-flow";
 import { ApiError, errorText, isUnavailable, studioApi, type EstateApiDetail, type EstateLogLine } from "../api.ts";
 import { useCatalog, type Catalog } from "../catalog.ts";
@@ -15,7 +15,7 @@ import { txt } from "../../lib/text.ts";
 import { FlowCanvas, type CanvasApi } from "../editor/FlowCanvas.tsx";
 import { MapperDialog } from "../editor/Mapper.tsx";
 import { NodePanel } from "../editor/NodePanel.tsx";
-import { ConnectionsTab, MappingsTab } from "../editor/tabs.tsx";
+import { MappingsTab } from "../editor/tabs.tsx";
 import { methodTone } from "./Connectors.tsx";
 
 export interface EstateOperation { id: string; name: string; method: string; path: string; steps: number; }
@@ -123,7 +123,7 @@ function EstateInner({ api, flow, detail, catalog, store, ops, current, tab, onT
   const selected = selection.length === 1 ? selection[0] : null;
   const panelNode = desktop ? (selected && selected !== closedFor ? selected : null) : openNode && nodes.some((n) => n.id === openNode) ? openNode : null;
   useEffect(() => { if (selected !== closedFor) setClosedFor(null); }, [selected, closedFor]);
-  useEffect(() => { setOpenNode(null); const t = setTimeout(() => canvasApi.current?.fit(), 60); return () => clearTimeout(t); }, [current]);
+  useEffect(() => { setOpenNode(null); }, [current]);
   const showNode = (id: string) => { onTab("flow"); store.select([id]); setTimeout(() => canvasApi.current?.focusNode(id), 80); if (!desktop) setOpenNode(id); };
   const mapperNode = mapper ? nodes.find((n) => n.id === mapper.nodeId) : undefined;
   const cur = ops.find((o) => o.id === current);
@@ -145,7 +145,7 @@ function EstateInner({ api, flow, detail, catalog, store, ops, current, tab, onT
         <div className="ws-bar-title">
           <h1 className="ws-bar-name ws-bar-name-ro">{txt(flow.name) || api}</h1>
           <span className="ws-bar-state">
-            <Badge tone="info" icon={Lock}>Migrated service, read-only</Badge>
+            <Badge tone="info" icon={Lock}>{bp === "phone" ? "Read-only" : "Migrated service, read-only"}</Badge>
             {detail?.status && <Badge tone={/run|ready|up/i.test(String(detail.status)) ? "ok" : "warn"}>{txt(detail.status)}</Badge>}
             {detail?.technology && <span className="ws-bar-dirty">{txt(detail.technology)}</span>}
           </span>
@@ -178,7 +178,7 @@ function EstateInner({ api, flow, detail, catalog, store, ops, current, tab, onT
       )}
       {tab !== "flow" && (
         <div className="ws-tabpage"><div className="ws-tabpage-in">
-          {tab === "connectors" && <EstateConnectors detail={detail} defFor={defFor} onShowNode={showNode} />}
+          {tab === "connectors" && <EstateConnectors detail={detail} onShowNode={showNode} />}
           {tab === "mappings" && <EstateMappings detail={detail} defFor={defFor} onShowNode={showNode} onOpenMapper={(nodeId, fieldKey) => setMapper({ nodeId, fieldKey })} />}
           {tab === "logs" && <EstateLogs api={api} />}
         </div></div>
@@ -210,8 +210,21 @@ function CloneDialog({ api, defaultName, onClose, onDone }: { api: string; defau
 }
 
 type DefFor = ReturnType<typeof defResolver>;
-function EstateConnectors({ detail, defFor, onShowNode }: { detail?: EstateApiDetail; defFor: DefFor; onShowNode: (id: string) => void }) {
+function EstateConnectors({ detail, onShowNode }: { detail?: EstateApiDetail; onShowNode: (id: string) => void }) {
   const list = detail?.connectors ?? [];
+  const nodes = useEditor((s) => s.nodes);
+  // the steps of the operation on the canvas that call another system, with what they ask for
+  const calls = useMemo(() => nodes.flatMap((n) => {
+    const c = n.data.config as Record<string, unknown>;
+    const system = typeof c.__connector === "string" ? c.__connector : "";
+    const target = typeof c.__target === "string" ? c.__target : "";
+    if (!system && !target) return [];
+    const req = c.request && typeof c.request === "object" ? (c.request as Record<string, unknown>) : c;
+    const method = typeof req.method === "string" ? req.method : "";
+    const path = typeof req.path === "string" ? req.path : typeof req.url === "string" ? req.url : "";
+    return [{ id: n.id, name: n.data.name, system, target, method, path }];
+  }), [nodes]);
+  if (!list.length && !calls.length) return <div data-testid="estate-connectors"><Empty icon={Plug} title="This service does not call another system" hint="Nothing in its code reaches out to a backend, a cache or another service." /></div>;
   return (
     <div className="mf-stack" style={{ gap: 18 }} data-testid="estate-connectors">
       {list.length > 0 && (
@@ -220,13 +233,34 @@ function EstateConnectors({ detail, defFor, onShowNode }: { detail?: EstateApiDe
             <table className="mf-table">
               <thead><tr><th>Name</th><th>Kind</th><th>Points to</th><th>Used by</th></tr></thead>
               <tbody>{list.map((c, i) => (
-                <tr key={`${c.name}-${i}`}><td className="mf-cellmain">{txt(c.name)}</td><td><Badge>{txt(c.kind)}</Badge></td><td><code className="mf-mono-sm" style={{ overflowWrap: "anywhere" }}>{txt(c.target) || "-"}</code></td><td>{(c.usedBy ?? []).map((u) => txt(u)).join(", ") || "-"}</td></tr>
+                <tr key={`${c.name}-${i}`}>
+                  <td><span className="mf-cellmain">{txt(c.name)}</span>{c.auth && <div className="mf-cellsub">Sign-in: {txt(c.auth)}</div>}</td>
+                  <td><Badge>{txt(c.kind)}</Badge></td>
+                  <td><code className="mf-mono-sm mf-wrapcode">{txt(c.target) || "-"}</code></td>
+                  <td>{(c.usedBy ?? []).map((u) => txt(u)).join(", ") || "-"}</td>
+                </tr>
               ))}</tbody>
             </table>
           </TableWrap>
         </Section>
       )}
-      <Section title="In the operation shown on the canvas"><ConnectionsTab defFor={defFor} onShowNode={onShowNode} /></Section>
+      <Section title="Calls made by the operation shown on the canvas">
+        {calls.length === 0 ? <p className="mf-help">This operation does not call another system.</p> : (
+          <TableWrap label="Calls made by this operation">
+            <table className="mf-table" data-testid="estate-calls">
+              <thead><tr><th>Step</th><th>System</th><th>Request</th><th><span className="mf-sr">Actions</span></th></tr></thead>
+              <tbody>{calls.map((c) => (
+                <tr key={c.id}>
+                  <td><span className="mf-cellmain">{txt(c.name)}</span></td>
+                  <td>{txt(c.system) || "-"}{c.target && <div className="mf-cellsub" style={{ overflowWrap: "anywhere" }}>{txt(c.target)}</div>}</td>
+                  <td>{c.method && <Badge tone={methodTone(c.method)}>{txt(c.method)}</Badge>} <code className="mf-mono-sm mf-wrapcode">{txt(c.path) || "-"}</code></td>
+                  <td className="mf-nowrap" style={{ textAlign: "right" }}><Button size="sm" variant="ghost" icon={Workflow} onClick={() => onShowNode(c.id)}>Show on canvas</Button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </TableWrap>
+        )}
+      </Section>
     </div>
   );
 }
@@ -245,7 +279,7 @@ function EstateMappings({ detail, defFor, onShowNode, onOpenMapper }: { detail?:
                 {m.fields && m.fields.length > 0 && (
                   <TableWrap label={`Fields of ${m.name}`}>
                     <table className="mf-table"><thead><tr><th>Output field</th><th>Filled from</th></tr></thead>
-                      <tbody>{m.fields.map((f, i) => <tr key={i}><td><code className="mf-mono-sm">{txt(f.target)}</code></td><td><code className="mf-mono-sm" style={{ overflowWrap: "anywhere" }}>{txt(f.source)}</code></td></tr>)}</tbody></table>
+                      <tbody>{m.fields.map((f, i) => <tr key={i}><td><code className="mf-mono-sm">{txt(f.target)}</code></td><td><code className="mf-mono-sm mf-wrapcode">{txt(f.source)}</code></td></tr>)}</tbody></table>
                   </TableWrap>
                 )}
                 {m.code && <CodeBlock value={m.code} label="Code" maxHeight={320} />}

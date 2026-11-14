@@ -80,7 +80,7 @@ export interface EstateApi {
 }
 export interface EstateApiDetail extends Omit<EstateApi, "operations" | "connectors"> {
   operations?: { id: string; method: string; path: string; summary?: string; implemented?: boolean; file?: string; line?: number }[];
-  connectors?: { name: string; kind: string; target: string; usedBy?: string[] }[];
+  connectors?: { name: string; kind: string; target: string; usedBy?: string[]; auth?: string }[];
   mappings?: { id: string; operation?: string; name: string; kind: string; file?: string; line?: number; code?: string; fields?: { target: string; source: string }[] }[];
   config?: { key: string; value: string }[];
 }

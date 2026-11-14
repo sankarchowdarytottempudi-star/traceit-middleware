@@ -89,7 +89,10 @@ function MapperHost({ nodeId, fieldKey, sample, examples, onClose }: { nodeId: s
 
 function Editor({ flow }: { flow: Flow }) {
   const catalog = useCatalog();
-  const store = useMemo(() => new EditorStore(flow), [flow]);
+  const latest = useRef(catalog.byType);
+  latest.current = catalog.byType;
+  // the store knows the step definitions before its first render, so no view starts from "unknown step"
+  const store = useMemo(() => { const s = new EditorStore(flow); s.setCatalog(latest.current); return s; }, [flow]);
   const arranged = useRef<EditorStore | null>(null);
   useEffect(() => {
     store.setCatalog(catalog.byType);
@@ -208,7 +211,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
   useEffect(() => {
     if (firstLayout.current) { firstLayout.current = false; return; }
     if (tab !== "canvas" || bp === "phone") return;
-    const t = window.setTimeout(() => canvasApi.current?.fit(), 140);
+    const t = window.setTimeout(() => canvasApi.current?.open(), 140);
     return () => window.clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testOpen]);
@@ -237,7 +240,8 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
   const tidy = () => { setTab("canvas"); store.layout(); window.setTimeout(() => canvasApi.current?.fit(), 80); };
 
   const errors = issues.filter((i) => i.level === "error").length;
-  const mappingCount = useMemo(() => nodes.filter((n) => store.defFor(n.data.type).fields.some((f) => f.kind === "mapping")).length, [nodes, store]);
+  const catalogRev = useEditor((x) => x.catalogRev);
+  const mappingCount = useMemo(() => nodes.filter((n) => store.defFor(n.data.type).fields.some((f) => f.kind === "mapping")).length, [nodes, store, catalogRev]);
   const tabs: TabDef<TabId>[] = [
     { id: "canvas", label: "Canvas", icon: Workflow },
     { id: "mappings", label: "Mappings", icon: ArrowLeftRight, count: mappingCount },

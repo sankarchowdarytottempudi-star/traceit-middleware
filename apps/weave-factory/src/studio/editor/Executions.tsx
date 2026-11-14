@@ -73,14 +73,14 @@ export function ExecutionsList({ flowId, showFlow, openId, onOpen, onShowOnCanva
       {rows.length > 0 && (
         <TableWrap label="Executions">
           <table className="mf-table">
-            <thead><tr><th>When</th>{showFlow && <th>Flow</th>}<th>Result</th><th>Started by</th><th>Response</th><th className="mf-num">Took</th><th className="mf-num">Steps</th></tr></thead>
+            <thead><tr><th>When</th><th>Result</th>{showFlow && <th>Flow</th>}<th>Started by</th><th>Response</th><th className="mf-num">Took</th><th className="mf-num">Steps</th></tr></thead>
             <tbody>
               {rows.map((x) => (
                 <tr key={x.id} className={cx("mf-clickrow", openId === x.id && "mf-clickrow-on")} tabIndex={0} data-execution-row={x.id} data-execution-status={x.status} data-execution-mode={x.mode}
                   onClick={() => onOpen(x.id)} onKeyDown={(e) => { if (e.key === "Enter") onOpen(x.id); }}>
                   <td className="mf-nowrap"><div className="mf-cellmain">{ago(x.startedAt)}</div><div className="mf-cellsub">{fmtTime(x.startedAt)}</div></td>
-                  {showFlow && <td><span className="mf-cellmain">{txt(x.flowName) || txt(x.flowId)}</span></td>}
                   <td><Badge tone={statusTone(x.status)}>{statusLabel(x.status)}</Badge></td>
+                  {showFlow && <td><span className="mf-cellmain">{txt(x.flowName) || txt(x.flowId)}</span></td>}
                   <td><div className="mf-cellmain">{triggerLabel(x.trigger) || "-"}</div><div className="mf-cellsub">{modeLabel(x.mode)}{x.via ? `, ${x.via === "gateway" ? "through the gateway" : txt(x.via)}` : ""}</div></td>
                   <td>{x.responseStatus !== undefined ? <Badge tone={httpTone(x.responseStatus)}>HTTP {txt(x.responseStatus)}</Badge> : <span className="mf-faint">-</span>}</td>
                   <td className="mf-num mf-nowrap">{fmtDuration(x.durationMs)}</td>

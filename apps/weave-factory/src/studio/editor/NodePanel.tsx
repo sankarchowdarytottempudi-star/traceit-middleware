@@ -45,7 +45,7 @@ export function NodePanel({ nodeId, catalog, defFor, onClose, onOpenMapper, onTe
 
   return (
     <ExprEnvContext.Provider value={exprEnv}>
-      <div className="ws-panel" data-panel-node={d.name}>
+      <div className="ws-panel" data-panel-node={d.name} data-readonly={readOnly ? "true" : "false"}>
         <header className="ws-panel-head">
           <span className="mf-iconchip" style={{ ["--chip" as string]: accentOf(def) }}><Icon size={17} aria-hidden /></span>
           <div className="ws-panel-title">

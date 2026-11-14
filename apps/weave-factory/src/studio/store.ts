@@ -22,6 +22,10 @@ export interface EditorState {
   edges: WsEdge[];
   readOnly: boolean;
   dirty: boolean;
+  /** Counts automatic layouts, so the canvas can show the flow again after one. */
+  arrangedAt: number;
+  /** goes up whenever the step definitions change, so views that read them recompute */
+  catalogRev: number;
   canUndo: boolean;
   canRedo: boolean;
   /** ids of selected nodes, in canvas order */
@@ -75,7 +79,7 @@ export class EditorStore {
     this.history = historyInit(snap);
     this.savedKey = JSON.stringify(snap);
     this.state = {
-      base: flow, meta, nodes: g.nodes, edges: g.edges, readOnly: !!(opts.readOnly || flow.readOnly), dirty: false, canUndo: false, canRedo: false,
+      base: flow, meta, nodes: g.nodes, edges: g.edges, readOnly: !!(opts.readOnly || flow.readOnly), dirty: false, arrangedAt: 0, catalogRev: 0, canUndo: false, canRedo: false,
       selection: [], version: 0, issues: [], issuesByNode: {}, run: null, tracesByNode: {}, hasClipboard: !!clipboard,
     };
   }
@@ -90,8 +94,9 @@ export class EditorStore {
 
   // ---- catalog
   setCatalog(byType: Map<string, NodeTypeDef>) {
+    if (byType === this.byType) return;
     this.byType = byType;
-    this.refreshIssues();
+    this.refreshIssues({ catalogRev: this.state.catalogRev + 1 });
   }
   defOf = (type: string): NodeTypeDef | undefined => this.byType.get(type);
   /** Never undefined: unknown types get a neutral definition so the canvas always renders. */
@@ -335,7 +340,7 @@ export class EditorStore {
    *  change of the flow: nothing is recorded and the flow does not become "unsaved". */
   arrangeIfNeeded(force = false): boolean {
     if (!force && !needsLayout(this.state.nodes.filter((n) => n.type !== "note"))) return false;
-    this.set({ nodes: this.arranged() });
+    this.set({ nodes: this.arranged(), arrangedAt: this.state.arrangedAt + 1 });
     return true;
   }
   setNodes(nodes: WsNode[]) { this.set({ nodes }); }

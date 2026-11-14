@@ -20,7 +20,8 @@ type DefFor = (type: string) => NodeTypeDef;
 export function MappingsTab({ defFor, onOpenMapper, onShowNode }: { defFor: DefFor; onOpenMapper: (nodeId: string, fieldKey: string) => void; onShowNode: (id: string) => void }) {
   const nodes = useEditor((s) => s.nodes);
   const readOnly = useEditor((s) => s.readOnly);
-  const items = useMemo(() => nodes.flatMap((n) => defFor(n.data.type).fields.filter((f) => f.kind === "mapping" && fieldVisible(f, n.data.config)).map((f) => ({ node: n, field: f, spec: mappingOf(n.data.config[f.key]) }))), [nodes, defFor]);
+  const catalogRev = useEditor((s) => s.catalogRev);
+  const items = useMemo(() => nodes.flatMap((n) => defFor(n.data.type).fields.filter((f) => f.kind === "mapping" && fieldVisible(f, n.data.config)).map((f) => ({ node: n, field: f, spec: mappingOf(n.data.config[f.key]) }))), [nodes, defFor, catalogRev]);
   if (!items.length) return <Empty icon={ArrowLeftRight} title="No mappings in this flow" hint={readOnly ? "This flow passes data through without reshaping it." : "Add a Map step to the canvas to reshape data between systems. Rules can be written as field copies, expressions, or in your own words."} />;
   return (
     <div className="mf-stack" style={{ gap: 14 }} data-testid="mappings-tab">
@@ -41,6 +42,7 @@ export function MappingsTab({ defFor, onOpenMapper, onShowNode }: { defFor: DefF
 interface Usage { connectionId: string; steps: { id: string; name: string }[]; }
 export function ConnectionsTab({ defFor, onShowNode }: { defFor: DefFor; onShowNode: (id: string) => void }) {
   const nodes = useEditor((s) => s.nodes);
+  const catalogRev = useEditor((s) => s.catalogRev);
   const q = useQuery({ queryKey: ["studio", "connections"], queryFn: studioApi.connections, retry: 0 });
   const [results, setResults] = useState<Record<string, ConnectionTestResult | { error: string }>>({});
   const test = useMutation({
@@ -67,7 +69,7 @@ export function ConnectionsTab({ defFor, onShowNode }: { defFor: DefFor; onShowN
       if (!has && typeof url === "string" && /^https?:\/\//i.test(url)) direct.push({ id: n.id, name: n.data.name, url });
     }
     return { used: Array.from(map.values()), direct };
-  }, [nodes, defFor]);
+  }, [nodes, defFor, catalogRev]);
   const byId = new Map((q.data?.connections ?? []).map((c: Connection) => [c.id, c]));
   if (!used.length && !direct.length) return <Empty icon={Plug} title="This flow does not call any system yet" hint="Connections hold the address and sign-in details of a system once, so every step can reuse them." action={<Link className="mf-button mf-button-default" to="/studio/connections">Manage connections</Link>} />;
   return (

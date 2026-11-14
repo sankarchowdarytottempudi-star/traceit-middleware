@@ -205,7 +205,7 @@ export function Empty({ icon: Icon, title, hint, action }: { icon?: LucideIcon; 
       {Icon && <span className="mf-empty-icon"><Icon size={22} aria-hidden="true" /></span>}
       <p className="mf-empty-title">{title}</p>
       {hint && <p className="mf-empty-hint">{hint}</p>}
-      {action && <div style={{ marginTop: 6 }}>{action}</div>}
+      {action && <div className="mf-empty-actions">{action}</div>}
     </div>
   );
 }

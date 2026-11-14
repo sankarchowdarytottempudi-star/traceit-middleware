@@ -12,23 +12,29 @@
 
 /* ------------------------------------------------------------------ buttons */
 .mf-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--border2); background: var(--surface) !important; color: var(--text); font-size: 13.5px; font-weight: 600; line-height: 1; cursor: pointer; white-space: nowrap; text-decoration: none; transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .12s ease; flex: 0 0 auto; }
+.mf .mf-button { color: var(--text); }
 .mf-button:hover:not(:disabled) { background: var(--surface2) !important; border-color: var(--faint); }
 .mf-button:active:not(:disabled) { transform: scale(.97); }
 .mf-button:disabled { opacity: .5; cursor: not-allowed; }
 .mf-button-sm { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; gap: 6px; }
 .mf-button-block { width: 100%; }
 .mf-button-primary { background: var(--accent) !important; border-color: var(--accent); color: var(--onAccent); box-shadow: 0 6px 16px -10px var(--accentGlow); }
+.mf .mf-button-primary { color: var(--onAccent); }
 .mf-button-primary:hover:not(:disabled) { background: var(--accentHover) !important; border-color: var(--accentHover); }
 .mf-button-ghost { background: transparent !important; border-color: transparent; color: var(--muted); }
+.mf .mf-button-ghost { color: var(--muted); }
 .mf-button-ghost:hover:not(:disabled) { background: var(--surface3) !important; border-color: transparent; color: var(--text); }
 .mf-button-danger { color: var(--bad); border-color: var(--bad); }
+.mf .mf-button-danger { color: var(--bad); }
 .mf-button-danger:hover:not(:disabled) { background: var(--badSoft) !important; border-color: var(--bad); }
 .mf-iconbtn { display: inline-grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; border-radius: 9px; border: 1px solid transparent; color: var(--muted); cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+.mf .mf-iconbtn { color: var(--muted); }
 .mf-iconbtn:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
 .mf-iconbtn:disabled { opacity: .38; cursor: not-allowed; }
 .mf-iconbtn-on { background: var(--accentSoft) !important; color: var(--accentText) !important; }
 .mf-iconbtn-danger:hover:not(:disabled) { background: var(--badSoft); color: var(--bad); }
 .mf-linkbtn { border: 0; padding: 0; background: none; color: var(--accentText); font-size: 12.5px; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.mf .mf-linkbtn { background: none; color: var(--accentText); }
 .mf-linkbtn:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ------------------------------------------------------------------ form controls */
@@ -40,7 +46,11 @@
 .mf-help { font-size: 12px; line-height: 1.45; color: var(--faint); }
 .mf-field-error { font-size: 12px; line-height: 1.4; color: var(--bad); }
 .mf-control { width: 100%; min-width: 0; min-height: 36px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--border2); background: var(--surface) !important; color: var(--text); font-size: 13.5px; line-height: 20px; transition: border-color .15s ease, box-shadow .15s ease; }
+.mf .mf-control { color: var(--text); }
 .mf-control::placeholder { color: var(--faint); opacity: .75; }
+/* example text is a hint for typing: a field that cannot be typed in shows none */
+.mf-control:disabled::placeholder, .mf-control[readonly]::placeholder, [data-readonly="true"] ::placeholder { color: transparent; }
+.mf-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .mf-control:hover:not(:disabled) { border-color: var(--faint); }
 .mf-control:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accentSoft); }
 .mf-control:disabled, .mf-control[readonly] { background: var(--surface2) !important; color: var(--muted); }
@@ -92,6 +102,7 @@ select.mf-control { appearance: none; -webkit-appearance: none; padding-right: 3
 .mf-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 36px 20px; text-align: center; color: var(--faint); }
 .mf-empty-icon { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--surface3); color: var(--muted); margin-bottom: 4px; }
 .mf-empty-title { margin: 0; font-size: 15px; font-weight: 650; color: var(--text); }
+.mf-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 6px; }
 .mf-empty-hint { margin: 0; font-size: 13px; line-height: 1.5; max-width: 460px; }
 .mf-toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; gap: 8px; align-items: center; width: max-content; max-width: calc(100vw - 24px); pointer-events: none; }
 .mf-toast { display: flex; align-items: flex-start; gap: 9px; padding: 10px 14px; border-radius: 11px; background: var(--text); color: var(--bg); font-size: 13.5px; line-height: 1.4; box-shadow: var(--ws-pop); animation: mfFade .25s ease both; max-width: min(560px, calc(100vw - 24px)); overflow-wrap: anywhere; }
@@ -123,9 +134,11 @@ select.mf-control { appearance: none; -webkit-appearance: none; padding-right: 3
 .mf-menu-wrap { position: relative; display: inline-flex; }
 .mf-menu { z-index: 150; min-width: 200px; max-width: min(300px, calc(100vw - 16px)); overflow-y: auto; padding: 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--ws-pop); animation: mfFade .15s ease both; }
 .mf-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; background: none; color: var(--text); font-size: 13.5px; text-align: left; cursor: pointer; }
+.mf .mf-menu-item { background: none; color: var(--text); }
 .mf-menu-item:hover:not(:disabled) { background: var(--surface3); }
 .mf-menu-item:disabled { opacity: .45; cursor: not-allowed; }
 .mf-menu-danger { color: var(--bad); }
+.mf .mf-menu-danger { color: var(--bad); }
 .mf-menu-hint { font-size: 11.5px; color: var(--faint); }
 .mf-menu-div { height: 1px; background: var(--border); margin: 5px 4px; }
 
@@ -140,8 +153,10 @@ select.mf-control { appearance: none; -webkit-appearance: none; padding-right: 3
 .mf-tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); min-width: 0; }
 .mf-tabs::-webkit-scrollbar { display: none; }
 .mf-tabs-tab { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 12px; border: 0; background: none; color: var(--muted); font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer; flex: 0 0 auto; }
+.mf .mf-tabs-tab { background: none; color: var(--muted); }
 .mf-tabs-tab:hover { color: var(--text); }
 .mf-tabs-on { color: var(--text); }
+.mf .mf-tabs-on { color: var(--text); }
 .mf-tabs-on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
 .mf-tabs-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--surface3); color: var(--muted); font-size: 11px; font-weight: 700; }
 .mf-section { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); min-width: 0; }
@@ -149,6 +164,7 @@ select.mf-control { appearance: none; -webkit-appearance: none; padding-right: 3
 .mf-section-title { margin: 0; font-size: 15px; font-weight: 700; }
 .mf-collapse { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); min-width: 0; }
 .mf-collapse-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; border: 0; background: none; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 10px; }
+.mf .mf-collapse-head { background: none; color: var(--text); }
 .mf-collapse-head:hover { background: var(--surface2); }
 .mf-collapse-body { padding: 4px 12px 14px; display: flex; flex-direction: column; gap: 14px; }
 .mf-tablewrap { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
@@ -161,6 +177,7 @@ select.mf-control { appearance: none; -webkit-appearance: none; padding-right: 3
 .mf-table .mf-nowrap { white-space: nowrap; }
 .mf-cellmain { display: flex; flex-direction: column; gap: 2px; min-width: 160px; }
 .mf-cellmain strong { font-weight: 650; }
+.mf-wrapcode { display: inline-block; min-width: 200px; overflow-wrap: anywhere; }
 .mf-cellsub { font-size: 12px; color: var(--faint); overflow-wrap: anywhere; }
 .mf-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .mf-muted { color: var(--muted); } .mf-faint { color: var(--faint); }
@@ -192,8 +209,10 @@ select.mf-control { appearance: none; -webkit-appearance: none; padding-right: 3
 .mf-tree-row { display: flex; align-items: center; min-height: 24px; border-radius: 6px; min-width: 0; }
 .mf-tree-row[draggable="true"] { cursor: grab; }
 .mf-tree-caret { width: 18px; height: 18px; flex: 0 0 18px; display: inline-grid; place-items: center; border: 0; background: none; color: var(--faint); padding: 0; cursor: pointer; border-radius: 4px; }
+.mf .mf-tree-caret { background: none; color: var(--faint); }
 button.mf-tree-caret:hover { background: var(--surface3); color: var(--text); }
 .mf-tree-key { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; border: 0; background: none; padding: 2px 6px; border-radius: 6px; text-align: left; font: inherit; color: inherit; cursor: default; }
+.mf .mf-tree-key { background: none; color: inherit; }
 .mf-tree-pickable .mf-tree-key:not(:disabled) { cursor: pointer; }
 .mf-tree-pickable .mf-tree-key:not(:disabled):hover { background: var(--accentSoft); }
 .mf-tree-name { color: var(--text); font-weight: 500; flex: 0 0 auto; }
@@ -218,4 +237,6 @@ button.mf-tree-caret:hover { background: var(--surface3); color: var(--text); }
   .mf-pagehead-actions { width: 100%; }
   .mf-section { padding: 14px; }
   .mf-toasts { bottom: 12px; }
+  .mf-toolbarline > select.mf-control { flex: 1 1 130px; max-width: none; }
+  .mf-toolbarline > select.mf-control ~ span:empty { display: none; }
 }

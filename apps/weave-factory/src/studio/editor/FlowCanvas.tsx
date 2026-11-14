@@ -17,7 +17,10 @@ import { txt } from "../../lib/text.ts";
 import { DND_NODE } from "./Palette.tsx";
 
 export interface CanvasApi {
+  /** Shows the whole flow, however small that makes it. */
   fit: () => void;
+  /** The view a flow opens with: whole when it stays readable, otherwise its first step at a readable size. */
+  open: () => void;
   focusNode: (id: string) => void;
   /** Pans (without zooming) so the step is on screen; does nothing when it already is. */
   ensureVisible: (id: string) => void;
@@ -182,24 +185,35 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
   const wrap = useRef<HTMLDivElement>(null);
 
   const fit = useCallback(() => { void rf.fitView({ padding: 0.12, duration: 260, maxZoom: 1.1 }); }, [rf]);
-  // a flow too large to read when shown whole opens at its first step instead
-  const ready = useNodesInitialized();
-  const opened = useRef(false);
-  useEffect(() => {
-    if (!ready || opened.current) return;
-    opened.current = true;
+  // the whole flow when it stays readable at that size, otherwise its first step at a readable size
+  const open = useCallback((animate = false) => {
     const r = wrap.current?.getBoundingClientRect();
     const st = store.getState();
     if (!r || !st.nodes.length) return;
     const box = (n: (typeof st.nodes)[number]) => ({ x: n.position.x, y: n.position.y, w: n.measured?.width ?? NODE_W, h: n.measured?.height ?? 70 });
     const targets = new Set(st.edges.map((e) => e.target));
-    const steps = st.nodes.filter((n) => n.type !== "note");
-    const first = steps.filter((n) => !targets.has(n.id)).sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)[0];
+    const first = st.nodes.filter((n) => n.type !== "note" && !targets.has(n.id)).sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)[0];
     const v = openingView(st.nodes.map(box), first ? box(first) : undefined, { width: r.width, height: r.height }, { readable: READABLE_ZOOM, zoom: compact ? 0.7 : 0.8 });
-    if (v.mode === "start") void rf.setViewport({ x: v.x, y: v.y, zoom: v.zoom });
-  }, [ready, rf, store, compact]);
+    if (v.mode === "start") void rf.setViewport({ x: v.x, y: v.y, zoom: v.zoom }, animate ? { duration: 260 } : undefined);
+    else void rf.fitView({ padding: 0.18, maxZoom: 1.05, duration: animate ? 260 : 0 });
+  }, [rf, store, compact]);
+  const ready = useNodesInitialized();
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!ready || opened.current) return;
+    opened.current = true;
+    open();
+  }, [ready, open]);
+  // steps were laid out automatically after the canvas opened: show the flow again
+  const arrangedAt = useEditor((s) => s.arrangedAt);
+  useEffect(() => {
+    if (!opened.current || !arrangedAt) return;
+    const t = window.setTimeout(() => open(), 60);
+    return () => window.clearTimeout(t);
+  }, [arrangedAt, open]);
   useImperativeHandle(apiRef, () => ({
     fit,
+    open: () => open(true),
     focusNode: (id: string) => {
       const n = store.getState().nodes.find((x) => x.id === id);
       if (!n) return;
@@ -234,7 +248,7 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
       const r = wrap.current?.getBoundingClientRect();
       return r ? rf.screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 }) : { x: 120, y: 120 };
     },
-  }), [fit, rf, store]);
+  }), [fit, open, rf, store]);
 
   // keyboard shortcuts (ignored while typing in a field or when a dialog is open)
   useEffect(() => {
@@ -272,7 +286,9 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
   }, []);
-  const ui = useMemo<CanvasUi>(() => ({ defFor, onOpen: onOpenNode, onTest: onTestNode, compact }), [defFor, onOpenNode, onTestNode, compact]);
+  const catalogRev = useEditor((s) => s.catalogRev);
+  // a new object when the step definitions change, so every step redraws with them
+  const ui = useMemo<CanvasUi>(() => ({ defFor, onOpen: onOpenNode, onTest: onTestNode, compact }), [defFor, onOpenNode, onTestNode, compact, catalogRev]);
   const commit = useCallback(() => store.commit(), [store]);
 
   return (
@@ -284,10 +300,12 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
           onNodesChange={store.onNodesChange} onEdgesChange={store.onEdgesChange}
           onConnect={onConnect} isValidConnection={isValid}
           onNodeDragStop={commit} onSelectionDragStop={commit}
+          // Small screens have no room for a settings column: a tap on a step opens its settings as a sheet.
+          onNodeClick={compact ? (e, n) => { if (n.type !== "note" && !e.shiftKey && !e.metaKey && !e.ctrlKey) onOpenNode(n.id); } : undefined}
           nodesDraggable={!readOnly} nodesConnectable={!readOnly} edgesFocusable={!readOnly} elementsSelectable
           deleteKeyCode={null} multiSelectionKeyCode={["Meta", "Control", "Shift"]} selectionKeyCode="Shift"
           connectOnClick connectionRadius={28}
-          minZoom={0.2} maxZoom={1.8} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1.05 }}
+          minZoom={0.2} maxZoom={1.8}
           colorMode={resolved === "dark" ? "dark" : "light"}
           proOptions={{ hideAttribution: true }}
           zoomOnDoubleClick={false}

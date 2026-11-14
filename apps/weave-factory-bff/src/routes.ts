@@ -9,7 +9,7 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
 
   async function need(req: FastifyRequest): Promise<void> {
     const sid = req.unsignCookie(req.cookies.sid ?? "").value;
-    const t = sid ? await app.tokenFor(sid) : null;
+    const t = await app.tokenFor(sid || "");
     if (!t) throw Object.assign(new Error("Not signed in"), { statusCode: 401 });
   }
   async function fwd(req: FastifyRequest, reply: any, method: string, path: string, body?: unknown) {

@@ -12,7 +12,8 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
 export interface Me { user: string; role: string; }
 export interface PhaseStep { key: string; title: string; status: string; detail?: string; }
 export interface Phase { key: string; title: string; mode: string; status: string; percent: number; steps: PhaseStep[]; }
-export interface Progress { overallPercent: number; majorPhase: string; majorPhaseKey?: string; currentStep?: string; nextStep?: string; done: boolean; outcome: string; }
+export interface StepRef { phase?: string; phaseKey?: string; step?: string; stepKey?: string; status?: string; }
+export interface Progress { overallPercent: number; majorPhase: string; majorPhaseKey?: string | null; currentStep?: StepRef | string | null; nextStep?: StepRef | string | null; done: boolean; outcome: string; }
 export interface Migration { id: string; apiName?: string; workspace?: string; technology?: string; busy?: boolean; phases: Phase[]; progress: Progress; verifiedEnv?: string; }
 export interface WorkspaceCfg { id?: string; name: string; servers?: Record<string, { host?: string; port?: number; username?: string } | undefined>; }
 export interface Lesson { id: string; scope: string; technology?: string | null; summary: string; mistakes?: string[]; apiName?: string; workspace?: string; status?: string; createdAt?: string; phase?: string; }

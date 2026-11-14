@@ -19,8 +19,14 @@ async function ensureCreds(cfg: ReturnType<typeof loadConfig>): Promise<ClientCr
 async function main() {
   const cfg = loadConfig();
   const creds = await ensureCreds(cfg);
-  const store = await createSessionStore(cfg.REDIS_URL || undefined);
+  const store = await createSessionStore(cfg.REDIS_URL || undefined, cfg.DATA_DIR);
   const app = await buildServer(cfg, creds, store);
-  await app.listen({ port: cfg.PORT, host: "0.0.0.0" });
+  const host = process.env.HOST || "0.0.0.0";
+  // DEV_AUTH_USER skips sign-in for automated UI tests. It is honoured ONLY on a loopback-bound
+  // instance, so it can never be reached through the public proxy.
+  if (process.env.DEV_AUTH_USER && host !== "127.0.0.1") {
+    throw new Error("DEV_AUTH_USER is only allowed with HOST=127.0.0.1");
+  }
+  await app.listen({ port: cfg.PORT, host });
 }
 main().catch((e) => { console.error(e); process.exit(1); });

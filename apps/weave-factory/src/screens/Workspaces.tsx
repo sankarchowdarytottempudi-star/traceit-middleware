@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api.ts";
 import { Card, Skeleton, ErrorState, EmptyState } from "../components/ui.tsx";
 import { PageHeader } from "./PageHeader.tsx";
+import { txt } from "../lib/text.ts";
 
 const TIERS = ["dev", "qa", "uat", "prod"] as const;
 
@@ -15,15 +16,15 @@ export function Workspaces() {
         ws.length === 0 ? <EmptyState title="No workspaces configured" /> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
           {ws.map((w, i) => (
-            <Card key={w.id ?? w.name ?? i} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <strong style={{ fontSize: 15 }}>{w.name}</strong>
+            <Card key={txt(w.id) || txt(w.name) || i} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <strong style={{ fontSize: 15 }}>{txt(w.name)}</strong>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {TIERS.map((t) => {
                   const s = w.servers?.[t];
                   return (
                     <div key={t} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
                       <span style={{ textTransform: "uppercase", color: "var(--faint)", letterSpacing: "0.06em" }}>{t}</span>
-                      <span className="mf-mono" style={{ color: s?.host ? "var(--text)" : "var(--faint)" }}>{s?.host ? `${s.host}${s.port ? ":" + s.port : ""}` : "—"}</span>
+                      <span className="mf-mono" style={{ color: s?.host ? "var(--text)" : "var(--faint)" }}>{s?.host ? `${txt(s.host)}${s.port ? ":" + txt(s.port) : ""}` : "—"}</span>
                     </div>
                   );
                 })}

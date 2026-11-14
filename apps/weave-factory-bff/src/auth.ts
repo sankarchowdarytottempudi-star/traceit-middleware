@@ -17,6 +17,7 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
   const w = { baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem }; // server-side (localhost; cert CN matches)
   const publicBase = cfg.APIM_PUBLIC_URL; // browser-facing only
 
+  const devUser = process.env.HOST === "127.0.0.1" ? (process.env.DEV_AUTH_USER || "") : "";
   async function tokenFor(sid: string): Promise<string | null> {
     const s = await store.get<Session>(`sess:${sid}`);
     if (!s) return null;
@@ -29,7 +30,7 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
       return t.access_token;
     } catch { await store.del(`sess:${sid}`); return null; }
   }
-  app.decorate("tokenFor", tokenFor);
+  app.decorate("tokenFor", devUser ? async () => "dev-token" : tokenFor);
 
   app.get("/api/auth/login", async (_req, reply) => {
     const { verifier, challenge } = pkce();
@@ -60,6 +61,7 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
   });
 
   app.get("/api/auth/me", async (req, reply) => {
+    if (devUser) return { user: devUser, role: "admin" };
     const sid = req.unsignCookie(req.cookies.sid ?? "").value;
     const s = sid ? await store.get<Session>(`sess:${sid}`) : null;
     if (!s) return reply.code(401).send({ type: "about:blank", title: "Not signed in", status: 401 });

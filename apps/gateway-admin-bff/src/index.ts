@@ -17,7 +17,7 @@ async function ensureCreds(cfg: ReturnType<typeof loadConfig>): Promise<ClientCr
 async function main() {
   const cfg = loadConfig();
   const creds = await ensureCreds(cfg);
-  const store = await createSessionStore(cfg.REDIS_URL || undefined);
+  const store = await createSessionStore(cfg.REDIS_URL || undefined, ".data");
   const app = await buildServer(cfg, creds, store);
   await app.listen({ port: cfg.PORT, host: "0.0.0.0" });
 }

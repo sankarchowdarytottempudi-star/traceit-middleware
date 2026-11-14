@@ -12,12 +12,20 @@ import { registerRoutes } from "./routes.js";
 function resolveSpaDir(): string | null {
   if (process.env.SPA_DIR && existsSync(process.env.SPA_DIR)) return process.env.SPA_DIR;
   const here = dirname(fileURLToPath(import.meta.url));
-  // Robust against flat (dist/index.js) or nested (dist/src/index.js) builds.
   for (const rel of ["../../weave-factory/dist", "../../../weave-factory/dist", "../weave-factory/dist"]) {
     const p = join(here, rel);
     if (existsSync(p)) return p;
   }
   return null;
+}
+
+// A request for a concrete file (last path segment has an extension) must never be
+// answered with index.html: a stale /assets/<oldhash>.js would arrive as HTML and the
+// browser would fail to parse it as a module -> white screen. Return a real 404 instead.
+function looksLikeFile(url: string): boolean {
+  const path = url.split("?")[0];
+  const last = path.substring(path.lastIndexOf("/") + 1);
+  return last.includes(".");
 }
 
 export async function buildServer(cfg: Config, creds: ClientCreds, store: SessionStore): Promise<FastifyInstance> {
@@ -32,10 +40,22 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   });
   const spa = resolveSpaDir();
   if (spa) {
-    await app.register(fstatic, { root: spa });
+    await app.register(fstatic, {
+      root: spa,
+      cacheControl: false, // we set cache-control ourselves in setHeaders
+      setHeaders(res, p) {
+        if (p.endsWith("index.html")) res.setHeader("cache-control", "no-cache, no-store, must-revalidate");
+        else if (p.includes("/assets/")) res.setHeader("cache-control", "public, max-age=31536000, immutable");
+      },
+    });
     app.setNotFoundHandler((req, reply) => {
-      if (req.raw.url && req.raw.url.startsWith("/api")) reply.code(404).type("application/problem+json").send({ type: "about:blank", title: "Not found", status: 404 });
-      else reply.sendFile("index.html");
+      const url = req.raw.url || "/";
+      if (url.startsWith("/api") || looksLikeFile(url)) {
+        reply.code(404).type(url.startsWith("/api") ? "application/problem+json" : "text/plain")
+          .send(url.startsWith("/api") ? { type: "about:blank", title: "Not found", status: 404 } : "Not found");
+        return;
+      }
+      reply.header("cache-control", "no-cache, no-store, must-revalidate").sendFile("index.html");
     });
   }
   return app;

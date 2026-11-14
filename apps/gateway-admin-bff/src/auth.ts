@@ -9,7 +9,7 @@ interface Session { tokens: TokenSet; expiresAt: number; user: string; }
 
 const SESSION_TTL = 86400;   // 1 day; refresh token kept server-side in the store
 const PKCE_TTL = 600;
-const SCOPE = "openid apim:admin apim:tier_view apim:tier_manage apim:admin_settings apim:environment_manage " +
+const SCOPE = "openid apim:admin apim:api_view apim:api_manage apim:tier_view apim:tier_manage apim:admin_settings apim:environment_manage " +
   "apim:environment_read apim:keymanagers_manage apim:workflow_approve apim:api_governance_view apim:api_governance_manage";
 
 export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCreds, store: SessionStore) {

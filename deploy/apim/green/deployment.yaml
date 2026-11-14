@@ -1,0 +1,158 @@
+# Green: WSO2 API Manager 4.5.0 with persistent state and native analytics.
+#
+# Same image and same effective configuration as blue (Deployment `wso2am`). Differences:
+#   * state (H2 databases, search index, keystores) lives on PVC `wso2am-green-data`;
+#   * the volume is seeded ONCE, by the init container, from a validated snapshot of blue;
+#   * native analytics is on and writes repository/logs/apim_metrics.log;
+#   * repository/logs is the host directory /var/log/weave/apim (world-readable, rotated);
+#   * real startup / readiness / liveness probes and a graceful stop.
+# The pod label is `app: wso2am-green`, so the live Service `wso2am` (selector app: wso2am)
+# does not see it until scripts/switch.sh patches that selector.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wso2am-green
+  namespace: apim
+  labels:
+    app.kubernetes.io/name: wso2am
+    app.kubernetes.io/instance: green
+spec:
+  replicas: 1                 # embedded H2 = exactly one process may open the files
+  strategy:
+    type: Recreate            # never two pods on the same database files
+  selector:
+    matchLabels:
+      app: wso2am-green
+  template:
+    metadata:
+      labels:
+        app: wso2am-green
+    spec:
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 120
+      initContainers:
+        - name: seed
+          image: wso2/wso2am:4.5.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              DATA=/data; SEED=/seed
+              HOME_DIR=/home/wso2carbon/wso2am-4.5.0
+              mkdir -p "$DATA/solr" "$DATA/security"
+              if [ -e "$DATA/database/WSO2AM_DB.mv.db" ]; then
+                echo "seed: volume already holds databases (seeded from snapshot taken $(cat "$DATA/SEEDED_FROM" 2>/dev/null || echo unknown)) - leaving them alone"
+              else
+                if [ -d "$DATA/database" ] && [ -n "$(ls -A "$DATA/database")" ]; then
+                  echo "seed: $DATA/database is not empty but has no WSO2AM_DB.mv.db - refusing to guess" >&2; exit 1
+                fi
+                if [ ! -f "$SEED/VALIDATED" ] || [ ! -f "$SEED/SHA256SUMS" ]; then
+                  echo "seed: the volume is empty and /root/apim-bluegreen/seed holds no validated snapshot." >&2
+                  echo "seed: refusing to start APIM with blank databases. Run scripts/seed.sh first." >&2
+                  exit 1
+                fi
+                rm -rf "$DATA/database.seeding"; mkdir -p "$DATA/database.seeding"
+                cp "$SEED"/*.mv.db "$DATA/database.seeding/"
+                (cd "$DATA/database.seeding" && sha256sum -c "$SEED/SHA256SUMS")
+                rm -rf "$DATA/database"
+                mv "$DATA/database.seeding" "$DATA/database"
+                cp "$SEED/TAKEN_AT" "$DATA/SEEDED_FROM"
+                echo "seed: databases seeded from the snapshot taken $(cat "$DATA/SEEDED_FROM")"
+              fi
+              if [ -z "$(ls -A "$DATA/security")" ]; then
+                cp -a "$HOME_DIR/repository/resources/security/." "$DATA/security/"
+                echo "seed: keystores copied from the image"
+              fi
+              chown -R 10001:10001 "$DATA"
+              # log directory on the host: written by APIM (uid 10001), read by Weave Gateway (uid 1000)
+              chown 10001:10001 /logs
+              chmod 755 /logs
+              chmod -R a+rX /logs
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: seed, mountPath: /seed, readOnly: true }
+            - { name: logs, mountPath: /logs }
+      containers:
+        - name: wso2am
+          image: wso2/wso2am:4.5.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 9443, protocol: TCP }
+            - { containerPort: 8280, protocol: TCP }
+            - { containerPort: 8243, protocol: TCP }
+          resources:            # identical to blue
+            requests: { cpu: "1", memory: 2Gi }
+            limits: { cpu: "3", memory: 6Gi }
+          startupProbe:         # up to 10 minutes to boot before liveness/readiness take over
+            tcpSocket: { port: 9443 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 57
+          readinessProbe:       # 200 only once the gateway has deployed its API artifacts
+            httpGet:
+              scheme: HTTPS
+              port: 9443
+              path: /api/am/gateway/v2/server-startup-healthcheck
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6   # a full minute of failed checks before the pod leaves the Service
+            successThreshold: 1
+          livenessProbe:        # deliberately forgiving: a restart is never free with one replica
+            httpGet:
+              scheme: HTTPS
+              port: 9443
+              path: /services/Version
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 6
+          lifecycle:
+            preStop:            # PID 1 is a bash wrapper that does not forward SIGTERM: stop the JVM
+              exec:             # ourselves so H2 closes its files cleanly
+                command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    PID=$(cat /home/wso2carbon/wso2am-4.5.0/wso2carbon.pid 2>/dev/null) || exit 0
+                    kill -TERM "$PID" 2>/dev/null || exit 0
+                    for i in $(seq 1 100); do kill -0 "$PID" 2>/dev/null || exit 0; sleep 1; done
+          volumeMounts:
+            # the image's entrypoint copies everything under wso2-config-volume into the product home
+            - name: conf
+              mountPath: /home/wso2carbon/wso2-config-volume/repository/conf
+            - name: data
+              mountPath: /home/wso2carbon/wso2am-4.5.0/repository/database
+              subPath: database
+            - name: data
+              mountPath: /home/wso2carbon/wso2am-4.5.0/solr
+              subPath: solr
+            - name: data
+              mountPath: /home/wso2carbon/wso2am-4.5.0/repository/resources/security
+              subPath: security
+            - name: logs
+              mountPath: /home/wso2carbon/wso2am-4.5.0/repository/logs
+      volumes:
+        - name: conf
+          configMap:
+            name: apim-conf-green     # created by scripts/green_config.py (holds credentials)
+            items:
+              - { key: deployment.toml, path: deployment.toml }
+              - { key: log4j2.properties, path: log4j2.properties }
+        - name: data
+          persistentVolumeClaim:
+            claimName: wso2am-green-data
+        - name: seed
+          hostPath:
+            path: /root/apim-bluegreen/seed
+            type: DirectoryOrCreate
+        - name: logs
+          hostPath:
+            path: /var/log/weave/apim
+            type: DirectoryOrCreate

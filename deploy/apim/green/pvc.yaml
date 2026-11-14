@@ -1,0 +1,22 @@
+# Persistent state of the green APIM instance (k3s local-path: a directory on the node under
+# /var/lib/rancher/k3s/storage/). Sub-directories:
+#   database/   the five embedded H2 databases (APIs, applications, subscriptions, keys, users, registry)
+#   solr/       the registry search index that the Publisher/DevPortal listings read
+#   security/   keystores and trust store (signing key of every issued token, uploaded backend certs)
+# NOTE: the local-path StorageClass has reclaimPolicy Delete, i.e. deleting this PVC deletes the
+# data. For the live volume switch the bound PV to Retain (done after go-live, see RUNBOOK):
+#   kubectl patch pv <name> -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wso2am-green-data
+  namespace: apim
+  labels:
+    app.kubernetes.io/name: wso2am
+    app.kubernetes.io/instance: green
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi

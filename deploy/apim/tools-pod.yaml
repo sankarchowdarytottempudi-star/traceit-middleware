@@ -1,0 +1,33 @@
+# Throwaway helper pod: same image as APIM, used only to inspect the image defaults and to
+# validate H2 snapshots with the H2 jar that ships in the image. It never serves traffic:
+# its label (app: apim-tools) matches no Service. Delete it when you are done:
+#   kubectl -n apim delete pod apim-tools
+apiVersion: v1
+kind: Pod
+metadata:
+  name: apim-tools
+  namespace: apim
+  labels:
+    app: apim-tools
+spec:
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 2
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
+  containers:
+    - name: tools
+      image: wso2/wso2am:4.5.0
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+      resources:
+        requests: { cpu: 50m, memory: 128Mi }
+        limits: { cpu: "1", memory: 1Gi }
+      volumeMounts:
+        - name: work
+          mountPath: /work
+  volumes:
+    - name: work
+      hostPath:
+        path: /root/apim-bluegreen/snap
+        type: Directory

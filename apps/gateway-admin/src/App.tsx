@@ -9,7 +9,11 @@ import { RateLimits } from "./screens/RateLimits.tsx";
 import { Compliance } from "./screens/Compliance.tsx";
 import { Gateways } from "./screens/Gateways.tsx";
 import { Approvals } from "./screens/Approvals.tsx";
-import { MigratedApis } from "./screens/MigratedApis.tsx";
+import { Apis } from "./screens/Apis.tsx";
+import { Analytics } from "./screens/Analytics.tsx";
+import { ApiAnalytics } from "./screens/ApiAnalytics.tsx";
+import { GatewayAnalytics } from "./screens/GatewayAnalytics.tsx";
+import { Logs } from "./screens/Logs.tsx";
 
 function SignIn() {
   const { resolved } = useTheme();
@@ -36,7 +40,11 @@ export function App() {
         <Route index element={<Overview />} />
         <Route path="rate-limits" element={<RateLimits />} />
         <Route path="gateways" element={<Gateways />} />
-        <Route path="apis" element={<MigratedApis />} />
+        <Route path="apis" element={<Apis />} />
+        <Route path="analytics" element={<Analytics />} />
+        <Route path="analytics/api/:name" element={<ApiAnalytics />} />
+        <Route path="gateway-analytics" element={<GatewayAnalytics />} />
+        <Route path="logs" element={<Logs />} />
         <Route path="compliance" element={<Compliance />} />
         <Route path="approvals" element={<Approvals />} />
       </Route>

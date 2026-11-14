@@ -30,7 +30,7 @@ export async function dcrRegister(opts: Wso2Opts, user: string, pass: string, ca
   const basic = Buffer.from(`${user}:${pass}`).toString("base64");
   const r = await request(opts, "POST", "/client-registration/v0.17/register",
     { Authorization: `Basic ${basic}`, "Content-Type": "application/json" },
-    JSON.stringify({ clientName: "weave-gateway-admin", owner: user,
+    JSON.stringify({ clientName: "weave-factory", owner: user,
       grantType: "authorization_code refresh_token password", saasApp: true,
       callbackUrl }));
   if (r.status >= 400) throw new Error(`DCR failed: ${r.status} ${r.text.slice(0, 200)}`);

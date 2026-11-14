@@ -131,6 +131,20 @@ describe("analytics overview (fake Prometheus)", () => {
     expect(d.operations[0]).toMatchObject({ method: "GET", path: "/orders", requests: 66, errors: 6 });
     expect(d.series.reduce((x, p) => x + p.s5xx, 0)).toBe(6);
   });
+  it("counts runs of flows that were removed since, so totals and rows can be reconciled", async () => {
+    const at = new Date(NOW - 5 * 60_000).toISOString();
+    const live: Runtime = { ...runtime, stats: async () => ({ ok: true, data: {
+      flows: [{ flowId: "f1", name: "Ship list", slug: "ship-list", deployed: true, total: 2, errors: 0, p50Ms: 10, p95Ms: 20 }],
+      series: [{ at, total: 5, errors: 1 }],
+    } }) };
+    const a = createAnalytics({ prom: null, runtime: live, job: "apis", knownServices: async () => [], now: () => NOW });
+    const o = await a.overview("1h");
+    expect(o.removedFlowRuns).toBe(3);
+    expect(o.apis.map((r) => [r.name, r.requests])).toEqual([["Ship list", 2]]);
+    expect(o.totals.requests).toBe(5);
+    const quiet = createAnalytics({ prom: null, runtime, job: "apis", knownServices: async () => [], now: () => NOW });
+    expect((await quiet.overview("1h")).removedFlowRuns).toBe(0);
+  });
   it("reports an honest empty state when Prometheus cannot be reached", async () => {
     const down: Prom = { range: async () => { throw new Error("connect ECONNREFUSED 10.0.0.1:9090"); }, instant: async () => { throw new Error("connect ECONNREFUSED"); } };
     const a = createAnalytics({ prom: down, runtime, job: "apis", knownServices: async () => ["orders"], now: () => NOW });

@@ -71,6 +71,9 @@ export function Analytics() {
             <DataTable cols={cols} rows={apis} rowKey={(a) => `${a.kind}:${a.name}`} label="Analytics by API"
               onRow={(a) => nav(`/analytics/api/${encodeURIComponent(a.name)}?range=${range}`)}
               empty="No service or flow has reported any numbers yet." />
+            {num(d.removedFlowRuns) > 0 && (
+              <p className="gw-note" style={{ marginTop: 12 }}>{plural(num(d.removedFlowRuns), "more flow run")} in the {range === "15m" ? "last hour" : words} came from flows that have since been removed. They are counted in the totals and the chart, but have no row here.</p>
+            )}
           </Section>
           {quiet.length > 0 && (
             <Section title={`Not reporting their own metrics (${quiet.length})`}

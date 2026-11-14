@@ -57,7 +57,7 @@ export interface ApiRow extends Totals { name: string; kind: "service" | "flow";
 export interface AnalyticsOverview {
   range: Range; from: number; to: number; stepSeconds: number; generatedAt: string;
   sources: { prometheus: SourceState; runtime: SourceState };
-  totals: Totals; series: OverviewPoint[]; apis: ApiRow[]; notExporting: string[];
+  totals: Totals; series: OverviewPoint[]; apis: ApiRow[]; notExporting: string[]; removedFlowRuns?: number;
 }
 export interface DetailPoint extends OverviewPoint { s2xx: number; s3xx: number; s4xx: number; s5xx: number; p50Ms?: number | null; p99Ms?: number | null; }
 export interface ApiDetail {

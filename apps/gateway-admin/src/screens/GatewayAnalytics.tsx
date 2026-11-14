@@ -46,7 +46,7 @@ function Traffic({ s, range, linkFor }: { s: GwSummary; range: GwRange; linkFor:
   const opCols: Col<GwBreakdownRow>[] = [
     { key: "op", label: "Operation", lead: true, render: (o) => (
       <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <span className="gw-mono">{txt(o.label) || "Rejected before reaching an operation"}</span>
+        {txt(o.label) ? <span className="gw-mono">{txt(o.label)}</span> : <span>Rejected before reaching an operation</span>}
         <span className="gw-faint" style={{ fontSize: 12 }}>{txt(o.extra?.api)}</span>
       </span>) },
     { key: "req", label: "Requests", num: true, render: (o) => fmtInt(o.requests) },

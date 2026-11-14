@@ -45,9 +45,9 @@ export function RateLimits() {
       <Card>
         {q.isLoading ? <Skeleton h={200} /> : q.isError ? <ErrorState message="Could not load policies" onRetry={() => q.refetch()} /> :
           list.length === 0 ? <EmptyState title="No policies here yet" hint="Create one to start limiting traffic." /> : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div className="gw-tablewrap"><table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr style={{ textAlign: "left", color: "var(--faint)", fontSize: 12 }}>
-              <th style={{ padding: "8px 6px" }}>Policy</th><th>Quota</th><th style={{ width: "32%" }}>Limit</th><th></th>
+              <th style={{ padding: "8px 6px" }}>Policy</th><th>Quota</th><th className="gw-hide-sm" style={{ width: "32%" }}>Limit</th><th></th>
             </tr></thead>
             <tbody>
               {list.map((p) => {
@@ -56,16 +56,16 @@ export function RateLimits() {
                 const tu = (sub.timeUnit ?? adv.timeUnit ?? "min");
                 return (
                   <tr key={p.policyId} className="mf-row">
-                    <td style={{ padding: "12px 6px" }}><span className="mf-mono" style={{ fontSize: 13.5 }}>{p.name}</span>
+                    <td style={{ padding: "12px 6px", overflowWrap: "anywhere" }}><span className="mf-mono" style={{ fontSize: 13.5 }}>{p.name}</span>
                       {"quotaType" in p && <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 7px", borderRadius: 999, background: "var(--surface3)", color: "var(--muted)" }}>{sub.quotaType}</span>}</td>
-                    <td style={{ fontWeight: 700 }}>{formatQuota(limit)}<span style={{ color: "var(--faint)", fontWeight: 400 }}> / {tu}</span></td>
-                    <td><span style={{ display: "block", height: 6, borderRadius: 999, background: "var(--surface3)", overflow: "hidden" }}><span className="mf-bar" style={{ display: "block", height: "100%", width: `${logBarWidth(limit)}%`, background: limit >= UNLIMITED ? "var(--ok)" : "var(--accent)" }} /></span></td>
+                    <td style={{ fontWeight: 700, whiteSpace: "nowrap", padding: "0 8px 0 0" }}>{formatQuota(limit)}<span style={{ color: "var(--faint)", fontWeight: 400 }}> / {tu}</span></td>
+                    <td className="gw-hide-sm"><span style={{ display: "block", height: 6, borderRadius: 999, background: "var(--surface3)", overflow: "hidden" }}><span className="mf-bar" style={{ display: "block", height: "100%", width: `${logBarWidth(limit)}%`, background: limit >= UNLIMITED ? "var(--ok)" : "var(--accent)" }} /></span></td>
                     <td style={{ textAlign: "right" }}><button className="mf-btn mf-dan" onClick={() => setConfirm({ id: p.policyId, name: p.name })} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>Delete</button></td>
                   </tr>
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         )}
       </Card>
 

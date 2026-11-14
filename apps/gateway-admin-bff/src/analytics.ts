@@ -23,6 +23,8 @@ export interface Overview {
   totals: Totals; series: OverviewPoint[]; apis: ApiRow[];
   /** Services that exist but do not publish metrics (so they cannot appear in the numbers above). */
   notExporting: string[];
+  /** Flow runs counted by the runtime in its window (at least one hour) that belong to no flow that still exists. */
+  removedFlowRuns: number;
 }
 export interface DetailPoint extends OverviewPoint { s2xx: number; s3xx: number; s4xx: number; s5xx: number; p50Ms: number | null; p99Ms: number | null; }
 export interface OperationRow { method: string; path: string; requests: number; errors: number; errorRate: number; avgMs: number | null; p95Ms: number | null; }
@@ -145,6 +147,8 @@ export function createAnalytics(d: AnalyticsDeps) {
     if (!prometheus.ok) for (const name of known) notExporting.push(name);
 
     const fb = flowBuckets(rt.ok ? rt.data : null, g);
+    // The runtime's timeline counts every run, also those of flows deleted since; its per-flow list cannot.
+    const removedFlowRuns = rt.ok ? Math.max(0, Math.round(rt.data.series.reduce((x, p) => x + (Number(p.total) || 0), 0) - rt.data.flows.reduce((x, f) => x + (Number(f.total) || 0), 0))) : 0;
     if (rt.ok) {
       for (const f of rt.data.flows) {
         if (!f.deployed && !f.total) continue;
@@ -165,7 +169,7 @@ export function createAnalytics(d: AnalyticsDeps) {
       range, from: g.from * 1000, to: g.to * 1000, stepSeconds: g.step, generatedAt: new Date(now()).toISOString(),
       sources: { prometheus, runtime },
       totals: { requests, errors, errorRate: rate(errors, requests), avgMs: avgMs(total(nsAll), total(reqAll)), p50Ms: pick("p50Ms"), p95Ms: pick("p95Ms"), p99Ms: pick("p99Ms") },
-      series, apis: rows, notExporting: [...new Set(notExporting)].sort(),
+      series, apis: rows, notExporting: [...new Set(notExporting)].sort(), removedFlowRuns,
     };
   }
 

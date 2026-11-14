@@ -23,7 +23,7 @@ export function MigratedApis() {
               <span style={{ fontSize: 12.5, color: "var(--faint)" }}>{a.context}/{a.version} · {a.operations.length} operations</span>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {a.securityScheme.map((s) => <span key={s} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, background: "var(--sysSoft)", color: "var(--sys)" }}>{s}</span>)}
-                {a.throttlingPolicy && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, background: "var(--accentSoft)", color: "var(--accentText)" }}>{a.throttlingPolicy}</span>}
+                {a.throttlingPolicy && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, background: "var(--accentWash)", color: "var(--accentText)" }}>{a.throttlingPolicy}</span>}
               </div>
             </button>
           ))}
@@ -39,7 +39,7 @@ export function MigratedApis() {
           {sel.backend && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 12, color: "var(--faint)" }}>Backend</span><code className="mf-mono" style={{ fontSize: 12.5, wordBreak: "break-all" }}>{sel.backend}</code></div>}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {sel.securityScheme.map((s) => <span key={s} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, background: "var(--sysSoft)", color: "var(--sys)" }}>{s}</span>)}
-            {sel.throttlingPolicy && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, background: "var(--accentSoft)", color: "var(--accentText)" }}>rate: {sel.throttlingPolicy}</span>}
+            {sel.throttlingPolicy && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, background: "var(--accentWash)", color: "var(--accentText)" }}>rate: {sel.throttlingPolicy}</span>}
           </div>
           <h3 style={{ margin: "6px 0 0", fontSize: 14 }}>Operations</h3>
           <div style={{ borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>

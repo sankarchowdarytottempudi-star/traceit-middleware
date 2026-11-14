@@ -37,7 +37,7 @@ export function Shell() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 10px" }}>
           <span style={{ opacity: live ? 1 : 0.4, filter: live ? "none" : "grayscale(1)" }}><WeaveMark size={18} theme={resolved} live={live} /></span>
           <strong className="mf-disp" style={{ fontSize: 14 }}>{BRAND.section}</strong>
-          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", padding: "1px 6px", borderRadius: 999, background: "var(--accentSoft)", color: "var(--accentText)" }}>NEW</span>
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", padding: "1px 6px", borderRadius: 999, background: "var(--accentWash)", color: "var(--accentText)" }}>NEW</span>
         </div>
 
         <nav style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1, overflowY: "auto" }}>
@@ -66,7 +66,7 @@ export function Shell() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <ThemeSwitch />
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, background: "var(--surface)", border: "1px solid var(--border)" }}>
-            <span style={{ width: 30, height: 30, borderRadius: 8, background: "var(--accentSoft)", color: "var(--accentText)", display: "grid", placeItems: "center", fontWeight: 700 }}>{(me.data?.user ?? "?").slice(0, 1).toUpperCase()}</span>
+            <span style={{ width: 30, height: 30, borderRadius: 8, background: "var(--accentWash)", color: "var(--accentText)", display: "grid", placeItems: "center", fontWeight: 700 }}>{(me.data?.user ?? "?").slice(0, 1).toUpperCase()}</span>
             <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, minWidth: 0, flex: 1 }}>
               <strong style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis" }}>{me.data?.user ?? "Not signed in"}</strong>
               <span style={{ fontSize: 11.5, color: "var(--faint)" }}>{me.data?.role ?? "—"}</span>

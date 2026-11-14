@@ -10,7 +10,7 @@ test("sidebar shows the Weave section with the NEW badge and gateway nav", async
   await expect(aside.getByText("Weave", { exact: true })).toBeVisible();
   await expect(aside.getByText("NEW")).toBeVisible();
   await expect(aside.getByRole("link", { name: "Overview" })).toBeVisible();
-  await expect(aside.getByAltText("TraceIT", { exact: true })).toBeVisible(); // official TraceIT logo at top
+  await expect(aside.locator('[data-traceit-logo]')).toBeVisible(); // official TraceIT logo at top
   await page.screenshot({ path: "runs/weave-rebrand/sidebar-light.png" });
 });
 
@@ -23,7 +23,7 @@ test("tab title is '<Page> · Weave Gateway'", async ({ page }) => {
 test("sign-in splash shows the Weave lockup and tagline", async ({ page }) => {
   await mockApi(page, { signedIn: false });
   await page.goto("/");
-  await expect(page.getByAltText("TraceIT Weave")).toBeVisible();
+  await expect(page.locator("[data-weave-lockup='primary']")).toBeVisible();
   await expect(page.getByText("Monitor it. Weave it.")).toBeVisible();
   await page.screenshot({ path: "runs/weave-rebrand/splash-light.png" });
 });

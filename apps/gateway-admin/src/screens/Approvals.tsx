@@ -25,7 +25,7 @@ export function Approvals() {
             {types.map((t) => (
               <button key={t.type} className={`mf-nav ${active?.type === t.type ? "mf-nav-on" : ""}`} onClick={() => setSelType(t.type)} style={{ border: 0, cursor: "pointer", textTransform: "capitalize" }}>
                 <span style={{ flex: 1, textAlign: "left" }}>{t.label}</span>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: t.pending ? "var(--accentSoft)" : "var(--surface3)", color: t.pending ? "var(--accentText)" : "var(--faint)" }}>{t.pending}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: t.pending ? "var(--accentWash)" : "var(--surface3)", color: t.pending ? "var(--accentText)" : "var(--faint)" }}>{t.pending}</span>
               </button>
             ))}
           </Card>

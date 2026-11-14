@@ -1,2 +1,3 @@
 import { defineConfig } from "vitest/config";
-export default defineConfig({ test: { environment: "jsdom", globals: true } });
+import svgr from "vite-plugin-svgr";
+export default defineConfig({ plugins: [svgr()], test: { environment: "jsdom", globals: true } });

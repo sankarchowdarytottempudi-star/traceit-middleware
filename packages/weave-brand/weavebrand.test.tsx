@@ -31,13 +31,19 @@ describe("animated / live toggles", () => {
   });
 });
 describe("WeaveLockup theme pick", () => {
-  it("picks the dark asset for dark theme", () => {
-    const { getByAltText } = render(<WeaveLockup theme="dark" />);
-    expect((getByAltText(PRODUCT_NAME) as HTMLImageElement).getAttribute("src")).toContain("weave-lockup-primary-dark.svg");
+  it("renders inline SVG and selects the dark primary variant", () => {
+    const { container } = render(<WeaveLockup theme="dark" />);
+    const w = container.querySelector("[data-weave-lockup]")!;
+    expect(w.getAttribute("data-weave-lockup")).toBe("primary");
+    expect(w.getAttribute("data-theme")).toBe("dark");
+    expect(w.getAttribute("aria-label")).toBe(PRODUCT_NAME);
+    expect(w.querySelector("svg")).toBeTruthy();
   });
-  it("picks the light inline asset", () => {
-    const { getByAltText } = render(<WeaveLockup variant="inline" theme="light" />);
-    expect((getByAltText(PRODUCT_NAME) as HTMLImageElement).getAttribute("src")).toContain("weave-lockup-inline-light.svg");
+  it("selects the light inline variant", () => {
+    const { container } = render(<WeaveLockup variant="inline" theme="light" />);
+    const w = container.querySelector("[data-weave-lockup]")!;
+    expect(w.getAttribute("data-weave-lockup")).toBe("inline");
+    expect(w.getAttribute("data-theme")).toBe("light");
   });
 });
 describe("constants + colors", () => {

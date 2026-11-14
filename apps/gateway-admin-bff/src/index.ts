@@ -8,7 +8,7 @@ import type { ClientCreds } from "./auth.js";
 async function ensureCreds(cfg: ReturnType<typeof loadConfig>): Promise<ClientCreds> {
   const dir = ".data"; const file = `${dir}/creds.json`;
   if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8"));
-  const creds = await dcrRegister({ baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem }, cfg.APIM_DCR_USERNAME, cfg.APIM_DCR_PASSWORD);
+  const creds = await dcrRegister({ baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem }, cfg.APIM_DCR_USERNAME, cfg.APIM_DCR_PASSWORD, cfg.PUBLIC_BASE_URL + "/api/auth/callback");
   mkdirSync(dir, { recursive: true });
   writeFileSync(file, JSON.stringify(creds), { mode: 0o600 });
   return creds;

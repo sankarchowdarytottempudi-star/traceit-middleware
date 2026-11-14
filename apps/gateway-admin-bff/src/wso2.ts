@@ -25,14 +25,14 @@ function request(opts: Wso2Opts, method: string, path: string, headers: Record<s
   });
 }
 
-export async function dcrRegister(opts: Wso2Opts, user: string, pass: string):
+export async function dcrRegister(opts: Wso2Opts, user: string, pass: string, callbackUrl: string):
   Promise<{ clientId: string; clientSecret: string }> {
   const basic = Buffer.from(`${user}:${pass}`).toString("base64");
   const r = await request(opts, "POST", "/client-registration/v0.17/register",
     { Authorization: `Basic ${basic}`, "Content-Type": "application/json" },
     JSON.stringify({ clientName: "traceit-gateway-admin", owner: user,
       grantType: "authorization_code refresh_token password", saasApp: true,
-      callbackUrl: "placeholder" }));
+      callbackUrl }));
   if (r.status >= 400) throw new Error(`DCR failed: ${r.status} ${r.text.slice(0, 200)}`);
   const j = JSON.parse(r.text);
   return { clientId: j.clientId, clientSecret: j.clientSecret };

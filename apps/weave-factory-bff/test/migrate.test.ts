@@ -10,7 +10,7 @@ import { validateUpload, withoutSecrets, collisionOf, mergeWorkspaces, headerSaf
 import type { Config } from "../src/config";
 
 const MT = "http://localhost:30900";
-const cfg = { MT_BASE_URL: MT, MT_ADMIN_TOKEN: "tok", SESSION_SECRET: "x".repeat(20), MT_UPLOAD_LIMIT_MB: 1 } as unknown as Config;
+const cfg = { MT_BASE_URL: MT, MT_ADMIN_TOKEN: "tok", SESSION_SECRET: "x".repeat(20), MT_UPLOAD_LIMIT_MB: 1, MT_COMPARE_APIS: "orders-exp,stock-sys" } as unknown as Config;
 
 function app(signedIn = true) {
   const a = Fastify();
@@ -167,8 +167,30 @@ describe("migration routes", () => {
     expect(r.statusCode).toBe(201);
     expect(r.json()).toEqual({ id: "e2", name: "x", baseUrl: "http://x", tokenSet: true });
   });
+  it("passes the user's request on for a check and a comparison of an API the tool can reach", async () => {
+    const body = { envId: "e1", method: "GET", path: "/orders/1", headers: {} };
+    const verify = nock(MT).post("/api/migrations/m1/verify", body).reply(200, { ok: true, status: 200 });
+    expect((await app().inject({ method: "POST", url: "/api/factory/migrations/m1/verify", payload: body })).json().ok).toBe(true);
+    expect(verify.isDone()).toBe(true);
+    nock(MT).get("/api/migrations/m1").reply(200, { id: "m1", apiName: "orders-exp-api" });
+    const parity = nock(MT).post("/api/migrations/m1/parity", body).reply(200, { match: true });
+    expect((await app().inject({ method: "POST", url: "/api/factory/migrations/m1/parity", payload: body })).json().match).toBe(true);
+    expect(parity.isDone()).toBe(true);
+  });
+
+  it("refuses to compare or optimise an API the tool would confuse with another one", async () => {
+    for (const action of ["parity", "optimize"]) {
+      if (action === "optimize") nock(MT).get("/api/migrations").reply(200, { migrations: [{ id: "m5", apiName: "billing-sys-api" }] });
+      nock(MT).get("/api/migrations/m5").reply(200, { id: "m5", apiName: "billing-sys-api", layer: "system" });
+      const r = await app().inject({ method: "POST", url: `/api/factory/migrations/m5/${action}`, payload: { envId: "e1", method: "POST", path: "/x" } });
+      expect(r.statusCode).toBe(409);
+      expect(r.json().error).toMatch(/cannot/);
+    }
+    expect(nock.pendingMocks()).toEqual([]);
+  });
+
   it("offers the server connection check but not the install", async () => {
-    const check = nock(MT).post("/api/workspace-configs/w1/provision/dev", {}).reply(200, { ok: true, preflight: true });
+    const check = nock(MT).post("/api/workspace-configs/w1/provision/dev").reply(200, { ok: true, preflight: true });
     expect((await app().inject({ method: "POST", url: "/api/factory/workspace-configs/w1/check/dev" })).statusCode).toBe(200);
     expect(check.isDone()).toBe(true);
     expect((await app().inject({ method: "POST", url: "/api/factory/workspace-configs/w1/check/moon" })).statusCode).toBe(400);

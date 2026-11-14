@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
 import { mtRequest, type MtClient } from "./mt.js";
 import { createInferrer, type InferInput } from "./inference.js";
-import { collisionOf, type MigrationLite } from "./migrate/options.js";
+import { addressable, collisionOf, type MigrationLite } from "./migrate/options.js";
 
 export function registerRoutes(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
@@ -68,7 +68,18 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
     await need(req);
     const stop = await guard(id, action, req.body);
     if (stop) { reply.code(stop.status); return stop.json; }
-    return fwd(req, reply, "POST", `/api/migrations/${encodeURIComponent(id)}/${action}`, req.body);
+    if (action === "parity" || action === "optimize") {
+      // For an API it cannot address, the migration tool would send the request to a different service.
+      const cur = await mtRequest(mt, "GET", `/api/migrations/${encodeURIComponent(id)}`);
+      if (cur.status === 200 && !addressable((cur.json as { apiName?: string } | null)?.apiName, cfg.MT_COMPARE_APIS)) {
+        reply.code(409);
+        return { ok: false, error: action === "parity"
+          ? "The migration tool cannot reach this API for a side by side comparison yet. Send the same request to the old and the new API from the Playground and compare the answers there."
+          : "The migration tool cannot measure this API yet, so it cannot be optimised from here." };
+      }
+    }
+    // Optimising takes no body; the other actions carry the user's request.
+    return fwd(req, reply, "POST", `/api/migrations/${encodeURIComponent(id)}/${action}`, action === "optimize" ? undefined : req.body);
   });
   const PHASES = new Set(["document", "scaffold", "test", "deploy", "autorun", "spec"]);
   app.post("/api/factory/migrations/:id/run/:phase", async (req, reply) => {
@@ -84,7 +95,8 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
       const cur = await mtRequest(mt, "GET", `/api/migrations/${encodeURIComponent(id)}`);
       if (cur.status === 200 && !(cur.json as { apiName?: string } | null)?.apiName) run = "document";
     }
-    const out = await fwd(req, reply, "POST", `/api/migrations/${encodeURIComponent(id)}/run/${run}`, req.body);
+    // The migration tool takes no body for a step; whatever the screen sent (such as confirmReplace) stops here.
+    const out = await fwd(req, reply, "POST", `/api/migrations/${encodeURIComponent(id)}/run/${run}`);
     return out && typeof out === "object" ? { ...(out as object), ran: run } : out;
   });
 }

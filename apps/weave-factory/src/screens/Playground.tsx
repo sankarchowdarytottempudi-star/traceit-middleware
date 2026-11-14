@@ -83,7 +83,7 @@ export function Playground() {
                   {operations.length > 0 && (
                     <Field label="Pick one of its operations" hint="Fills in the method and the path. Replace anything in {braces} with a real value.">
                       <select className="mf-mg-input mf-mono" value="" onChange={(e) => { const op = operations.find((o) => o.id === e.target.value); if (op) { setMethod(METHODS.includes(txt(op.method).toUpperCase()) ? txt(op.method).toUpperCase() : "GET"); setPath(txt(op.path) || "/"); } }}>
-                        <option value="">{operations.length} operations…</option>
+                        <option value="">{operations.length === 1 ? "1 operation…" : `${operations.length} operations…`}</option>
                         {operations.map((o) => <option key={o.id} value={o.id}>{txt(o.method).toUpperCase()} {txt(o.path)}</option>)}
                       </select>
                     </Field>

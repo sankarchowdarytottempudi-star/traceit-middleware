@@ -12,7 +12,9 @@ export function mtRequest(c: MtClient, method: string, path: string, body?: unkn
   const data = body === undefined ? undefined : JSON.stringify(body);
   const lib = u.protocol === "https:" ? https : http;
   const headers: Record<string, string> = { "X-Admin-Token": c.token, Accept: "application/json" };
-  if (data) headers["Content-Type"] = "application/json";
+  // The migration tool reads exactly Content-Length bytes and does not understand chunked bodies,
+  // so the length must always be stated; without it every JSON body arrives there empty.
+  if (data !== undefined) { headers["Content-Type"] = "application/json"; headers["Content-Length"] = String(Buffer.byteLength(data)); }
   return new Promise((resolve, reject) => {
     const req = lib.request({ method, hostname: u.hostname, port: u.port, path: u.pathname + u.search, headers }, (res) => {
       let text = "";
@@ -24,8 +26,7 @@ export function mtRequest(c: MtClient, method: string, path: string, body?: unkn
       });
     });
     req.on("error", reject);
-    if (data) req.write(data);
-    req.end();
+    req.end(data);
   });
 }
 

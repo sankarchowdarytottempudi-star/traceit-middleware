@@ -353,7 +353,7 @@ export function MigrationDetail() {
                   <span className="mf-mg-hint mf-mg-grow" style={{ flexBasis: 220, paddingTop: 9 }}>{a.hint}</span>
                 </div>
               ))}
-              {canAuto && <div className="mf-mg-row"><button type="button" className="mf-btn mf-mg-back" disabled={!!m.busy} onClick={() => start("autorun")}>Or run reading and generating in one go</button></div>}
+              {canAuto && <div className="mf-mg-row"><button type="button" className="mf-mg-back" disabled={!!m.busy} onClick={() => start("autorun")}>Or run reading and generating in one go</button></div>}
             </div>
             {note && <Notice>{note}</Notice>}
             {run.isError && !run.error.body?.needsConfirm && <Notice tone="bad">{run.error.status === 409 ? "Another step is still running. Wait for it to finish, then try again." : errText(run.error)}</Notice>}

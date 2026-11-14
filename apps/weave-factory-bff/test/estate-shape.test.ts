@@ -8,7 +8,7 @@ import { buildApi, discoverSources, type ConnectorModel } from "../src/estate/mo
 import { buildFlow, triggerPath, mappingRules } from "../src/estate/flow";
 import { Estate, layerOf, targetApi, backendLabel, correctBasePaths } from "../src/estate/service";
 import { parseLogs, mergeLogs, maskLog, type K8s } from "../src/estate/k8s";
-import { stepFor, apiMetrics } from "../src/estate/prom";
+import { stepFor, apiMetrics, increments } from "../src/estate/prom";
 import { matchGateway, type GatewayEntry } from "../src/estate/gateway";
 import { connectionConfig } from "../src/estate/routes";
 
@@ -154,6 +154,15 @@ describe("pod logs", () => {
 });
 
 describe("metrics", () => {
+  it("counts whole requests from the raw counters without extrapolating", () => {
+    const ok = { metric: { http_status_code_group: "2xx" }, values: [[0, "40"], [60, "40"], [120, "45"], [180, "45"]] as [number, string][] };
+    const fresh = { metric: { http_status_code_group: "5xx" }, values: [[120, "2"], [180, "3"]] as [number, string][] };      // first seen inside the window
+    const restarted = { metric: { http_status_code_group: "2xx" }, values: [[0, "90"], [60, "91"], [120, "1"], [180, "4"]] as [number, string][] };
+    expect(increments([ok], 0, 180, 60)).toEqual([0, 5, 0]);
+    expect(increments([ok, fresh, restarted], 0, 180, 60)).toEqual([1, 8, 4]);
+    expect(increments([ok, fresh, restarted], 0, 180, 60, (m) => m?.http_status_code_group === "5xx")).toEqual([0, 2, 1]);
+    expect(increments([], 0, 180, 60)).toEqual([0, 0, 0]);
+  });
   it("picks a step that keeps the chart readable", () => {
     expect(stepFor(1)).toBeLessThanOrEqual(120);
     expect(stepFor(24)).toBeGreaterThan(stepFor(1));

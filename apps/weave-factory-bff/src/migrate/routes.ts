@@ -105,6 +105,6 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     await need(req);
     const { id, tier } = req.params as { id: string; tier: string };
     if (!["dev", "qa", "uat", "prod"].includes(tier)) { reply.code(400); return { error: "Unknown server" }; }
-    return pass(reply, await mtRequest(mt, "POST", `/api/workspace-configs/${encodeURIComponent(id)}/provision/${tier}`, {}));
+    return pass(reply, await mtRequest(mt, "POST", `/api/workspace-configs/${encodeURIComponent(id)}/provision/${tier}`));
   });
 }

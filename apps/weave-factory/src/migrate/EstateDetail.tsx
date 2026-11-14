@@ -69,7 +69,7 @@ function Overview({ d, onTab }: { d: EstateApiDetail; onTab: (t: Tab) => void })
       {(d.warnings ?? []).map((w, i) => <Notice key={i} tone="warn">{txt(w)}</Notice>)}
       <div className="mf-mg-stats">
         <Stat label="Health" value={healthLabel(d.health)} note={`${num(d.readyReplicas)} of ${num(d.replicas)} replica${num(d.replicas) === 1 ? "" : "s"} ready`} />
-        <Stat label="Operations" value={ops} note={<button type="button" className="mf-btn mf-mg-back" onClick={() => onTab("operations")}>See them <ArrowRight size={13} aria-hidden="true" /></button>} />
+        <Stat label="Operations" value={ops} note={<button type="button" className="mf-mg-back" onClick={() => onTab("operations")}>See them <ArrowRight size={13} aria-hidden="true" /></button>} />
         <Stat label="Requests, last hour" value={d.metricsAvailable ? compact(d.requestsLastHour) : "Not measured"} note={d.metricsAvailable ? `${compact(d.errorsLastHour)} error${num(d.errorsLastHour) === 1 ? "" : "s"}` : "This API does not report traffic figures"} />
         <Stat label="Last deployed" value={ago(d.lastDeployedAt) || "Unknown"} note={dateTime(d.lastDeployedAt)} />
       </div>

@@ -2,7 +2,9 @@
 export interface ApiError extends Error { status?: number; body?: Record<string, unknown>; }
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(path, { credentials: "include", headers: { "Content-Type": "application/json" }, ...init });
+  // Only a request that carries a body states a content type: the server refuses a DELETE that
+  // announces JSON and then sends nothing.
+  const r = await fetch(path, { credentials: "include", ...(init?.body != null ? { headers: { "Content-Type": "application/json" } } : {}), ...init });
   if (r.status === 401) throw Object.assign(new Error("unauthorized"), { status: 401 });
   if (!r.ok) {
     let detail = r.statusText; let body: Record<string, unknown> | undefined;

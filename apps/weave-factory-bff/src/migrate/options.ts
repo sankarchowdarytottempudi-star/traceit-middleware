@@ -84,6 +84,12 @@ export function collisionOf(list: MigrationLite[], id: string): MigrationLite | 
   return list.find((m) => m.id !== id && m.apiName === me.apiName);
 }
 
+/** Whether the migration tool can address this API itself (see MT_COMPARE_APIS in config.ts). */
+export function addressable(apiName: string | undefined | null, known: string | undefined): boolean {
+  const api = String(apiName || "").toLowerCase();
+  return !!api && String(known || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).some((frag) => api.includes(frag));
+}
+
 export function mergeWorkspaces(groups: any[], configs: any[], envs: any[], migrations: any[]) {
   const byName = new Map<string, any>();
   const at = (name: string) => {

@@ -174,6 +174,7 @@ describe("chart helpers", () => {
     expect(niceMax(7)).toBeGreaterThanOrEqual(7);
     expect(niceMax(93)).toBe(100);
     expect(niceMax(1250)).toBeGreaterThanOrEqual(1250);
+    for (const v of [1, 2, 3, 5, 7, 11, 37]) expect(ticks(v).every((t) => Number.isInteger(t))).toBe(true);
   });
   it("gives evenly spaced ticks ending at the maximum", () => {
     const t = ticks(100, 4);

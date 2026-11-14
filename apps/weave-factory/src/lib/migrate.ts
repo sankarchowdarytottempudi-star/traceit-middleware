@@ -258,14 +258,18 @@ export function layoutLandscape(apis: LandApi[], links: LandLink[], available: n
 }
 
 // ---- chart scale
-export function niceMax(max: number): number {
-  if (!(max > 0)) return 4;
-  const pow = Math.pow(10, Math.floor(Math.log10(max)));
-  for (const m of [1, 2, 4, 5, 8, 10]) if (m * pow >= max) return Math.max(4, m * pow);
-  return 10 * pow;
+export function niceMax(max: number, count = 4): number {
+  if (!(max > 0)) return count;
+  const raw = max / count;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const m of [1, 2, 2.5, 5, 10]) {
+    const step = m * pow;
+    if (step >= raw && Number.isInteger(step)) return step * count;
+  }
+  return Math.max(count, Math.ceil(raw) * count);
 }
 export function ticks(max: number, count = 4): number[] {
-  const top = niceMax(max);
+  const top = niceMax(max, count);
   return Array.from({ length: count + 1 }, (_, i) => (top / count) * i);
 }
 /** Merge buckets so a chart never draws more than `limit` bars. */

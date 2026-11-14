@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Boxes, Layers, FlaskConical, BookOpen, ExternalLink, Info } from "lucide-react";
+import { Boxes, Layers, FlaskConical, BookOpen, Workflow, ExternalLink, Info } from "lucide-react";
 import { BRAND, WEAVE_GATEWAY_URL, WeaveMark, WeaveLockup, TraceItLogo, PRODUCT_NAME, TAGLINE, COMPANY_LINE } from "../brand.tsx";
 import { useTheme } from "../theme.tsx";
 import { ThemeSwitch } from "./ThemeSwitch.tsx";
@@ -13,6 +13,7 @@ const groups: { title: string; items: { to: string; label: string; icon: typeof 
     { to: "/workspaces", label: "Workspaces", icon: Layers },
   ] },
   { title: "TEST", items: [{ to: "/playground", label: "Playground", icon: FlaskConical }] },
+  { title: "BUILD", items: [{ to: "/canvas", label: "Flow canvas", icon: Workflow }] },
   { title: "KNOWLEDGE", items: [{ to: "/knowledge", label: "Knowledge base", icon: BookOpen }] },
 ];
 

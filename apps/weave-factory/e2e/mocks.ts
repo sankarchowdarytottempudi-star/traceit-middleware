@@ -29,6 +29,11 @@ export async function mockApi(page: Page, opts: { signedIn?: boolean } = {}) {
     if (url.includes("/api/factory/migrations")) return route.fulfill(json(migrations));
     if (url.includes("/api/factory/knowledge")) return route.fulfill(json(knowledge));
     if (url.includes("/api/factory/proxy")) return route.fulfill(json({ status: 200, body: "{\"data\":{\"ok\":true}}", ms: 120, slo: "fast" }));
+    if (url.includes("/api/factory/infer-mapping")) return route.fulfill(json({ engine: "heuristic", needsModel: false, rules: [
+      { target: "ref", kind: "direct", source: "customer.ref" },
+      { target: "email", kind: "direct", source: "customer.email" },
+      { target: "first", kind: "expr", expr: "firstWord(customer.name)" },
+    ] }));
     return route.fulfill(json({ ok: true }));
   });
 }

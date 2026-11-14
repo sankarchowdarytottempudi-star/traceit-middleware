@@ -8,6 +8,7 @@ const routes = [
   { path: "/workspaces", name: "workspaces" },
   { path: "/playground", name: "playground" },
   { path: "/knowledge", name: "knowledge" },
+  { path: "/canvas", name: "canvas" },
 ];
 const themes = ["light", "dark"] as const;
 mkdirSync("runs/weave-factory", { recursive: true });
@@ -53,6 +54,15 @@ test("playground sends a request and shows the real response", async ({ page }) 
   await page.getByRole("button", { name: "Send request" }).click();
   await expect(page.getByText(/HTTP 200/)).toBeVisible();
   await page.screenshot({ path: "runs/weave-factory/playground-response.png" });
+});
+
+test("canvas infers a mapping by example and the live preview matches", async ({ page }) => {
+  await mockApi(page);
+  await page.goto("/canvas");
+  await page.getByRole("button", { name: /Infer mapping by example/ }).click();
+  await expect(page.getByText("✓ matches the example")).toBeVisible();
+  await expect(page.getByText("ref ← customer.ref")).toBeVisible();
+  await page.screenshot({ path: "runs/weave-factory/canvas-mapper.png" });
 });
 
 test("sign-in splash when unauthenticated", async ({ page }) => {

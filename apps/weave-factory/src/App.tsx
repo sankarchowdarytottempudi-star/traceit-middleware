@@ -8,6 +8,7 @@ import { Migrations } from "./screens/Migrations.tsx";
 import { Workspaces } from "./screens/Workspaces.tsx";
 import { Playground } from "./screens/Playground.tsx";
 import { Knowledge } from "./screens/Knowledge.tsx";
+import { Canvas } from "./screens/Canvas.tsx";
 
 function SignIn() {
   const { resolved } = useTheme();
@@ -35,6 +36,7 @@ export function App() {
         <Route path="workspaces" element={<Workspaces />} />
         <Route path="playground" element={<Playground />} />
         <Route path="knowledge" element={<Knowledge />} />
+        <Route path="canvas" element={<Canvas />} />
       </Route>
     </Routes>
   );

@@ -17,6 +17,8 @@ export interface Migration { id: string; apiName?: string; workspace?: string; t
 export interface WorkspaceCfg { id?: string; name: string; servers?: Record<string, { host?: string; port?: number; username?: string } | undefined>; }
 export interface Lesson { id: string; scope: string; technology?: string | null; summary: string; mistakes?: string[]; apiName?: string; workspace?: string; status?: string; createdAt?: string; phase?: string; }
 export interface ProxyResult { status: number; body: string; ms: number; slo: string; }
+export interface MappingRule { target: string; kind: "direct" | "expr" | "const"; source?: string; expr?: string; note?: string; }
+export interface InferResult { rules: MappingRule[]; engine: string; needsModel: boolean; }
 
 export const api = {
   me: () => j<Me>("/api/auth/me"),
@@ -25,4 +27,5 @@ export const api = {
   migration: (id: string) => j<Migration>(`/api/factory/migrations/${id}`),
   knowledge: () => j<{ feedback: Lesson[] }>("/api/factory/knowledge"),
   proxy: (body: unknown) => j<ProxyResult>("/api/factory/proxy", { method: "POST", body: JSON.stringify(body) }),
+  inferMapping: (sampleSource: unknown, desiredOutput: unknown) => j<InferResult>("/api/factory/infer-mapping", { method: "POST", body: JSON.stringify({ sampleSource, desiredOutput }) }),
 };

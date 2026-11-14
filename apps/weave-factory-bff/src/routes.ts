@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
 import { mtRequest, type MtClient } from "./mt.js";
+import { createInferrer, type InferInput } from "./inference.js";
 
 export function registerRoutes(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
+  const inferrer = createInferrer(process.env.MODEL_URL || undefined);
 
   async function need(req: FastifyRequest): Promise<void> {
     const sid = req.unsignCookie(req.cookies.sid ?? "").value;
@@ -36,6 +38,13 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
 
   // Playground: send a per-API request, get the REAL response (engine lives in the backend).
   app.post("/api/factory/proxy", (req, reply) => fwd(req, reply, "POST", "/api/proxy", req.body));
+
+  // By-example data-mapping inference (in-estate; no external AI).
+  app.post("/api/factory/infer-mapping", async (req, reply) => {
+    await need(req);
+    const body = (req.body ?? {}) as InferInput;
+    return reply.send(await inferrer.infer({ sampleSource: body.sampleSource ?? {}, desiredOutput: body.desiredOutput ?? {} }));
+  });
 
   const ACTIONS = new Set(["verify", "parity", "optimize", "advance", "feedback"]);
   app.post("/api/factory/migrations/:id/:action", (req, reply) => {

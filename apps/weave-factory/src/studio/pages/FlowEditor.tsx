@@ -8,7 +8,8 @@ import type { Execution, Flow, HttpRequestSample, Json } from "@traceit/weave-fl
 import { ApiError, errorText, isUnavailable, studioApi } from "../api.ts";
 import { useCatalog, type Catalog } from "../catalog.ts";
 import { mappingOf } from "../graph.ts";
-import { EditorContext, EditorStore, useEditor } from "../store.ts";
+import { contextForNode } from "../runctx.ts";
+import { EditorContext, EditorStore, useEditor, useEditorStore } from "../store.ts";
 import { Button, Callout, confirmDialog, cx, downloadJson, Empty, IconButton, Menu, Modal, Sheet, Spinner, Tabs, toast, useBreakpoint, useDebounced, useDocumentTitle, type MenuItem, type TabDef } from "../ui.tsx";
 import { txt } from "../../lib/text.ts";
 import { DeployDialog, deploymentBadge, IssueList } from "../editor/DeployDialog.tsx";
@@ -62,6 +63,30 @@ export function FlowEditorPage() {
   return <Editor key={`${q.data.id}:${q.dataUpdatedAt}`} flow={q.data} />;
 }
 
+/** The mapper of one step. Its sample input is what the step's "Input" expression produced in the last test run. */
+function MapperHost({ nodeId, fieldKey, sample, examples, onClose }: { nodeId: string; fieldKey: string; sample: HttpRequestSample | null; examples: string[]; onClose: () => void }) {
+  const store = useEditorStore();
+  const node = useEditor((s) => s.nodes.find((n) => n.id === nodeId));
+  const graph = useEditor((s) => s.nodes);
+  const run = useEditor((s) => s.run);
+  const traces = useEditor((s) => s.tracesByNode);
+  const own = traces[nodeId]?.[0];
+  const inputExpr = typeof node?.data.config.input === "string" ? node.data.config.input.trim() : "";
+  const context = useMemo(() => (own ? contextForNode(run, traces, nodeId, sample, graph) : null), [own, run, traces, nodeId, sample, graph]);
+  const computed = !!own && !!context && !!inputExpr && inputExpr !== "$";
+  const q = useQuery({
+    queryKey: ["studio", "mapper-input", nodeId, inputExpr, own?.seq ?? 0, run?.id ?? ""],
+    queryFn: () => studioApi.evalExpr(inputExpr, context!),
+    enabled: computed, retry: 0, staleTime: 60_000,
+  });
+  if (!node) return null;
+  const lastInput = !own ? undefined : computed ? (q.data?.ok ? (q.data.result as Json | undefined) : undefined) : (own.input as Json | undefined);
+  return (
+    <MapperDialog title={`Mapping: ${txt(node.data.name)}`} spec={mappingOf(node.data.config[fieldKey])} onChange={(s) => store.setConfig(nodeId, fieldKey, s)} onClose={onClose}
+      lastInput={lastInput} examples={examples} />
+  );
+}
+
 function Editor({ flow }: { flow: Flow }) {
   const catalog = useCatalog();
   const store = useMemo(() => new EditorStore(flow), [flow]);
@@ -83,7 +108,6 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
   const issues = useEditor((s) => s.issues);
   const version = useEditor((s) => s.version);
   const nodes = useEditor((s) => s.nodes);
-  const traces = useEditor((s) => s.tracesByNode);
   const flowId = base.id;
   const tabParam = params.get("tab") as TabId | null;
   const tab: TabId = tabParam && TAB_IDS.includes(tabParam) ? tabParam : "canvas";
@@ -169,7 +193,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
   const addStep = useCallback((type: string) => {
     const id = store.addNode(type, undefined, { connect: true });
     setPaletteOpen(false);
-    if (id) window.setTimeout(() => canvasApi.current?.focusNode(id), 40);
+    if (id) window.setTimeout(() => canvasApi.current?.reveal(id), 80);
   }, [store]);
   const openNodePanel = useCallback((id: string) => { store.select([id]); setClosedFor(null); setOpenNode(id); }, [store]);
   const testNode = useCallback((id: string) => { setNodeTarget(id); setTestOpen(true); if (!desktop) setOpenNode(null); }, [desktop]);
@@ -285,10 +309,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
       {!desktop && panelNode && tab === "canvas" && <Sheet title="Step settings" side={bp === "phone" ? "bottom" : "right"} width={440} onClose={() => setOpenNode(null)}>{panel}</Sheet>}
       {test && bp === "phone" && tab === "canvas" && <Sheet title="Test" side="bottom" onClose={() => setTestOpen(false)}>{test}</Sheet>}
 
-      {mapper && mapperNode && (
-        <MapperDialog title={`Mapping: ${txt(mapperNode.data.name)}`} spec={mappingOf(mapperNode.data.config[mapper.fieldKey])} onChange={(s) => store.setConfig(mapper.nodeId, mapper.fieldKey, s)} onClose={() => setMapper(null)}
-          lastInput={traces[mapper.nodeId]?.[0]?.input as Json | undefined} examples={catalog.instructionExamples} />
-      )}
+      {mapper && mapperNode && <MapperHost nodeId={mapper.nodeId} fieldKey={mapper.fieldKey} sample={sample} examples={catalog.instructionExamples} onClose={() => setMapper(null)} />}
       {deployOpen && <DeployDialog onClose={() => setDeployOpen(false)} save={save} onShowNode={showNode} onOpenExecution={(id) => setTab("executions", { execution: id })} />}
       {issuesOpen && (
         <Modal title="Problems in this flow" subtitle="Things marked Must fix stop the flow from being deployed." onClose={() => setIssuesOpen(false)} width={620} footer={<Button variant="primary" onClick={() => setIssuesOpen(false)}>Close</Button>}>

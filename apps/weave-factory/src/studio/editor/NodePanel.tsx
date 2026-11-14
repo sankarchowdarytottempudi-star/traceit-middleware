@@ -25,7 +25,8 @@ export function NodePanel({ nodeId, catalog, defFor, onClose, onOpenMapper, onTe
   const run = useEditor((s) => s.run);
   const readOnly = useEditor((s) => s.readOnly);
   const [tab, setTab] = useState<"settings" | "run">("settings");
-  const context = useMemo(() => contextForNode(run, allTraces, nodeId, sample), [run, allTraces, nodeId, sample]);
+  const graph = useEditor((s) => s.nodes);
+  const context = useMemo(() => contextForNode(run, allTraces, nodeId, sample, graph), [run, allTraces, nodeId, sample, graph]);
   const exprEnv = useStableEnv(context, catalog.functions);
   if (!node) return null;
   const d = node.data;

@@ -25,6 +25,8 @@ export function syncParams(prevPath: string, nextPath: string, params: FieldDef[
   const added = next.filter((n) => !have.has(n)).map<FieldDef>((n) => ({ key: n, label: n, kind: "template", required: true }));
   return [...kept, ...added];
 }
+/** Field keys every connector step already has (connection, error handling, result placement). */
+export const RESERVED_INPUTS = new Set(["connection", "failOnStatus", "output", "timeoutMs", "retries", "retryDelayMs", "resultTarget", "resultVar"]);
 export function blankOperation(taken: string[]): ConnectorOperation {
   let n = taken.length + 1;
   while (taken.includes(`operation-${n}`)) n++;
@@ -35,6 +37,10 @@ export function operationProblem(op: ConnectorOperation): string | null {
   if (!op.path.trim().startsWith("/") && !/^https?:\/\//.test(op.path.trim()) && !op.path.includes("{{")) return "The path should start with /.";
   const dup = op.params.map((p) => p.key).find((k, i, a) => !k.trim() || a.indexOf(k) !== i);
   if (dup !== undefined) return dup.trim() ? `Two inputs are both called "${dup}".` : "Every input needs a name.";
+  const reserved = op.params.map((p) => p.key).find((k) => RESERVED_INPUTS.has(k));
+  if (reserved) return `"${reserved}" is a name every step already uses. Call this input something else.`;
+  const odd = op.params.map((p) => p.key).find((k) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k));
+  if (odd) return `The input name "${odd}" may only contain letters, digits and underscores.`;
   return null;
 }
 
@@ -70,7 +76,7 @@ function OperationEditor({ op, onChange }: { op: ConnectorOperation; onChange: (
           ))}
         </div>
         <div><Button size="sm" icon={Plus} onClick={() => set({ params: [...op.params, { key: `input${op.params.length + 1}`, label: `Input ${op.params.length + 1}`, kind: "template" }] })}>Add input</Button></div>
-        <p className="mf-help" style={{ margin: 0 }}>Use an input anywhere below by writing its name in double braces, such as <code>{"{{ params.name }}"}</code>.</p>
+        <p className="mf-help" style={{ margin: 0 }}>Use an input anywhere below by writing its name in double braces, such as <code>{"{{ $params.name }}"}</code>.</p>
       </Collapsible>
       <Collapsible title="Query" count={op.query?.length ?? 0} defaultOpen={!!op.query?.length}><KeyValueEditor value={op.query ?? []} onChange={(v) => set({ query: v.length ? v : undefined })} addLabel="Add query value" /></Collapsible>
       <Collapsible title="Headers" count={op.headers?.length ?? 0} defaultOpen={!!op.headers?.length}><KeyValueEditor value={op.headers ?? []} onChange={(v) => set({ headers: v.length ? v : undefined })} addLabel="Add header" /></Collapsible>

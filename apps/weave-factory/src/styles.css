@@ -63,7 +63,7 @@ body { overflow-x: hidden; }
   .mf-side-close { display: grid; }
   .mf-side-rail { display: none; }
   .mf-main { padding: 18px 16px 28px; gap: 16px; }
-  .mf-main-bleed { padding: 0; gap: 0; height: calc(100vh - 52px); height: calc(100dvh - 52px); }
+  .mf-main-bleed { padding: 0; gap: 0; flex: none; height: calc(100vh - 52px); height: calc(100dvh - 52px); }
   /* screens written for desktop: keep headings and wide content inside the viewport */
   .mf-main h1 { font-size: clamp(24px, 7vw, 40px) !important; overflow-wrap: anywhere; }
   .mf-main table:not(.mf-table) { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }

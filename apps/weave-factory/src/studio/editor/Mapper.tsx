@@ -138,7 +138,7 @@ function RuleCard({ rule, index, result, sample, paths, examples, readOnly, onCh
   const localValue = rule.kind === "direct" && rule.source ? readPath(sample, rule.source) : rule.kind === "const" ? rule.value : undefined;
   const prose = rule.kind === "expr" && !!rule.expr && looksLikeProse(rule.expr) && (!result || !result.ok);
   return (
-    <li className={cx("ws-rule", off && "ws-rule-off", unresolved && "ws-rule-unresolved", over && "ws-rule-over")} data-rule-index={index} data-rule-kind={rule.kind} data-rule-target={rule.target} data-rule-state={unresolved ? "unresolved" : problem ? "incomplete" : result && !result.ok ? "error" : "ok"}
+    <li className={cx("ws-rule", off && "ws-rule-off", unresolved && "ws-rule-unresolved", over && "ws-rule-over")} data-rule-index={index} data-rule-kind={rule.kind} data-rule-target={rule.target} data-rule-state={unresolved ? "unresolved" : problem ? "incomplete" : (result && !result.ok) || prose ? "error" : "ok"}
       onDragOver={(e) => { allowDrop(e); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={onDrop}>
       <div className="ws-rule-top">
         <input className="mf-control mf-control-sm mf-control-mono ws-rule-target" aria-label="Output field" placeholder="output field, e.g. customer.fullName" value={rule.target} readOnly={readOnly} onChange={(e) => onChange({ ...rule, target: e.target.value })} />

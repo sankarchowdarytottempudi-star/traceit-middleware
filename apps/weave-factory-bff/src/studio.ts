@@ -37,12 +37,42 @@ export function registerStudio(app: FastifyInstance, cfg: StudioConfig, userOf: 
     const rest = raw.substring("/api/studio".length); // keeps the query string
     const method = req.method.toUpperCase();
     const hasBody = !["GET", "HEAD", "DELETE"].includes(method) || (req.body !== undefined && req.body !== null);
+    let body: unknown = hasBody ? (req.body ?? {}) : undefined;
+    // "Import from an address": the description is fetched here, on this server, and handed to
+    // the runtime as text. It is never sent anywhere else.
+    if (method === "POST" && rest.split("?")[0] === "/connectors/import-openapi" && body && typeof body === "object") {
+      const b = body as { name?: unknown; spec?: unknown; url?: unknown };
+      if (typeof b.url === "string" && b.url.trim() && (b.spec === undefined || b.spec === null || b.spec === "")) {
+        try { body = { name: b.name, spec: await fetchDescription(b.url.trim()) }; }
+        catch (e) { return reply.code(400).type("application/problem+json").send({ type: "about:blank", title: "Cannot read this API description", status: 400, detail: String((e as Error).message) }); }
+      }
+    }
     try {
-      const r = await runtimeRequest(cfg, method, "/v1" + rest, hasBody ? (req.body ?? {}) : undefined, user);
+      const r = await runtimeRequest(cfg, method, "/v1" + rest, body, user);
       reply.code(r.status).type(String(r.headers["content-type"] || "application/json"));
       return reply.send(r.text);
     } catch (e) {
       return reply.code(502).type("application/problem+json").send({ type: "about:blank", title: "Weave runtime unreachable", status: 502, detail: String((e as Error).message) });
     }
   });
+}
+
+const MAX_DESCRIPTION_BYTES = 5 * 1024 * 1024;
+/** Fetches an OpenAPI/Swagger document from an address the signed-in user typed. http(s) only, bounded in time and size. */
+export async function fetchDescription(address: string): Promise<string> {
+  let u: URL;
+  try { u = new URL(address); } catch { throw new Error("That is not a complete address. It should start with http:// or https://"); }
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("Only http:// and https:// addresses can be read");
+  let res: Response;
+  try { res = await fetch(u, { headers: { accept: "application/json, application/yaml, text/yaml, text/plain, */*" }, redirect: "follow", signal: AbortSignal.timeout(15_000) }); }
+  catch (e) { throw new Error(`The address did not answer (${(e as Error).name === "TimeoutError" ? "timed out after 15 seconds" : (e as Error).message})`); }
+  if (!res.ok) throw new Error(`The address answered with HTTP ${res.status}`);
+  const declared = Number(res.headers.get("content-length") || 0);
+  if (declared > MAX_DESCRIPTION_BYTES) throw new Error("The document is larger than 5 MB");
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.byteLength > MAX_DESCRIPTION_BYTES) throw new Error("The document is larger than 5 MB");
+  const text = buf.toString("utf8").trim();
+  if (!text) throw new Error("The address returned an empty document");
+  if (/^<(!doctype|html)/i.test(text)) throw new Error("The address returned a web page, not an API description. Use the link to the raw JSON or YAML document");
+  return text;
 }

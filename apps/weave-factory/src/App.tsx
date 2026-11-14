@@ -29,7 +29,7 @@ export function App() {
   return (
     <Routes>
       <Route element={<Shell />}>
-        <Route index element={<Navigate to="/studio" replace />} />
+        <Route index element={<Navigate to="/migrations" replace />} />
         {migrateRoutes()}
         {studioRoutes()}
         <Route path="*" element={<Navigate to="/" replace />} />

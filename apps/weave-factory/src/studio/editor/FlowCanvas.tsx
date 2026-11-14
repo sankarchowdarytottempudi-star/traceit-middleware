@@ -16,7 +16,15 @@ import { useTheme } from "../../theme.tsx";
 import { txt } from "../../lib/text.ts";
 import { DND_NODE } from "./Palette.tsx";
 
-export interface CanvasApi { fit: () => void; focusNode: (id: string) => void; center: () => { x: number; y: number }; }
+export interface CanvasApi {
+  fit: () => void;
+  focusNode: (id: string) => void;
+  /** Shows a step that was just added: the whole flow when it stays readable, otherwise the step and what leads to it. */
+  reveal: (id: string) => void;
+  center: () => { x: number; y: number };
+}
+/** Below this zoom the step names can no longer be read. */
+const READABLE_ZOOM = 0.62;
 interface CanvasUi {
   defFor: (type: string) => NodeTypeDef;
   onOpen: (id: string) => void;
@@ -180,6 +188,19 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
       store.select([id]);
       void rf.setCenter(n.position.x + NODE_W / 2, n.position.y + (n.measured?.height ?? 70) / 2, { zoom: Math.max(rf.getZoom(), 0.9), duration: 260 });
     },
+    reveal: (id: string) => {
+      const all = store.getState().nodes;
+      const n = all.find((x) => x.id === id);
+      const r = wrap.current?.getBoundingClientRect();
+      if (!n || !r || !all.length) return;
+      const xs = all.map((x) => x.position.x), ys = all.map((x) => x.position.y);
+      const bw = Math.max(...xs) + NODE_W - Math.min(...xs), bh = Math.max(...ys) + 90 - Math.min(...ys);
+      const zoom = Math.min(r.width / (bw * 1.36), r.height / (bh * 1.36));
+      if (zoom >= READABLE_ZOOM) { fit(); return; }
+      // too large to show whole: keep the new step readable, a little right of the middle so the step before it stays in view
+      const z = Math.min(Math.max(rf.getZoom(), 0.8), 1);
+      void rf.setCenter(n.position.x + NODE_W / 2 - (r.width * 0.18) / z, n.position.y + (n.measured?.height ?? 70) / 2, { zoom: z, duration: 260 });
+    },
     center: () => {
       const r = wrap.current?.getBoundingClientRect();
       return r ? rf.screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 }) : { x: 120, y: 120 };
@@ -244,7 +265,7 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
           aria-label="Flow canvas"
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.6} />
-          {!compact && <MiniMap pannable zoomable className="ws-minimap" nodeStrokeWidth={2} nodeColor="var(--ws-edge)" maskColor="transparent" ariaLabel="Flow overview" />}
+          {!compact && <MiniMap pannable zoomable className="ws-minimap" style={{ width: 168, height: 112 }} nodeStrokeWidth={2} nodeColor="var(--ws-edge)" maskColor="transparent" ariaLabel="Flow overview" />}
           <Panel position="bottom-left" className="ws-zoom">
             <IconButton label="Zoom out" icon={Minus} onClick={() => void rf.zoomOut({ duration: 160 })} />
             <IconButton label="Zoom in" icon={Plus} onClick={() => void rf.zoomIn({ duration: 160 })} />

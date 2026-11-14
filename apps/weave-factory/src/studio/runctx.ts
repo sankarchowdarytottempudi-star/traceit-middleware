@@ -18,8 +18,12 @@ export const VARIABLES: { name: string; description: string }[] = [
 export function nodeRef(name: string): string {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? `$nodes.${name}` : `$nodes."${name.replace(/"/g, '\\"')}"`;
 }
-/** The data available to expressions of `nodeId`, taken from the last run. Null when nothing has run yet. */
-export function contextForNode(run: Execution | null, traces: Record<string, StepTrace[]>, nodeId: string | undefined, sample?: HttpRequestSample | null): ExprContext | null {
+/** The steps of the flow as far as their settings matter for rebuilding variables. */
+export type GraphConfigs = { id: string; data: { config: Record<string, unknown> } }[];
+/** The data available to expressions of `nodeId`, taken from the last run. Null when nothing has run yet.
+ *  Traces do not carry the flow variables, so they are rebuilt from the steps that ran before:
+ *  Set Variables steps and steps whose result goes to a variable. */
+export function contextForNode(run: Execution | null, traces: Record<string, StepTrace[]>, nodeId: string | undefined, sample?: HttpRequestSample | null, graph?: GraphConfigs): ExprContext | null {
   const own = nodeId ? traces[nodeId]?.[0] : undefined;
   if (!run && !own) {
     if (!sample) return null;
@@ -27,15 +31,21 @@ export function contextForNode(run: Execution | null, traces: Record<string, Ste
   }
   const steps = run?.steps ?? [];
   const nodes: Record<string, Json> = {};
+  const vars: Record<string, Json> = {};
   let before: StepTrace | undefined;
   for (const s of steps) {
     if (own && s.seq >= own.seq && s.nodeId !== own.nodeId) continue;
     if (s.nodeId === nodeId) continue;
     if (s.output !== undefined) nodes[s.nodeName] = s.output;
+    if (s.status === "success" && s.output !== undefined) {
+      if (s.nodeType === "vars.set" && s.output && typeof s.output === "object" && !Array.isArray(s.output)) Object.assign(vars, s.output);
+      const c = graph?.find((n) => n.id === s.nodeId)?.data.config;
+      if (c && c.resultTarget === "variable" && typeof c.resultVar === "string" && c.resultVar.trim()) vars[c.resultVar.trim()] = s.output;
+    }
     before = s;
   }
   const payload = own?.input !== undefined ? own.input : before?.output !== undefined ? before.output : ((run?.request?.body ?? null) as Json);
-  const ctx: ExprContext = { payload, vars: {}, nodes };
+  const ctx: ExprContext = { payload, vars, nodes };
   const req = run?.request ?? sample ?? undefined;
   if (req) ctx.request = req;
   if (own?.iteration !== undefined) { ctx.item = payload; ctx.index = own.iteration; }

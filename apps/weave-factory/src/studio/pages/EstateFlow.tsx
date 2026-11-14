@@ -88,7 +88,7 @@ function OperationList({ ops, current, onPick }: { ops: EstateOperation[]; curre
   return (
     <div className="ws-oppick" data-testid="estate-operations">
       <div className="ws-oppick-head"><strong>Operations</strong><span className="mf-faint">{ops.length}</span></div>
-      {ops.length > 6 && <label className="mf-search"><Search size={15} aria-hidden /><input aria-label="Find an operation" placeholder="Find an operation" value={text} onChange={(e) => setText(e.target.value)} /></label>}
+      {ops.length > 6 && <label className="mf-search"><Search size={15} aria-hidden /><input className="mf-control" type="search" aria-label="Find an operation" placeholder="Find an operation" value={text} onChange={(e) => setText(e.target.value)} /></label>}
       <ul className="ws-oplist">
         {shown.map((o) => (
           <li key={o.id} className={cx("ws-opitem", o.id === current && "ws-opitem-on")} data-operation={o.id}>
@@ -268,7 +268,7 @@ function EstateLogs({ api }: { api: string }) {
   return (
     <div className="mf-stack" data-testid="estate-logs">
       <div className="mf-toolbarline">
-        <label className="mf-search"><Search size={15} aria-hidden /><input aria-label="Search the log" placeholder="Search the log" value={text} onChange={(e) => setText(e.target.value)} /></label>
+        <label className="mf-search"><Search size={15} aria-hidden /><input className="mf-control" type="search" aria-label="Search the log" placeholder="Search the log" value={text} onChange={(e) => setText(e.target.value)} /></label>
         <span style={{ flex: 1 }} />
         <Toggle checked={auto} onChange={setAuto} label={<span style={{ fontSize: 12.5 }}>Refresh automatically</span>} />
         <IconButton label="Refresh now" icon={RefreshCw} busy={q.isFetching} onClick={() => void q.refetch()} />

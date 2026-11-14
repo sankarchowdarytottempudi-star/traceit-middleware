@@ -24,7 +24,7 @@ function NewFlowDialog({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState("");
   const [templateId, setTemplateId] = useState("");
   const create = useMutation({
-    mutationFn: () => studioApi.createFlow({ name: name.trim(), description: description.trim() || undefined, templateId: templateId || undefined, origin: templateId ? { kind: "template", ref: templateId } : { kind: "blank" } }),
+    mutationFn: () => studioApi.createFlow({ name: name.trim(), description: description.trim() || undefined, templateId: templateId || undefined, ...(templateId ? {} : { flow: { nodes: [], edges: [] } }), origin: templateId ? { kind: "template", ref: templateId } : { kind: "blank" } }),
     onSuccess: (f) => { void qc.invalidateQueries({ queryKey: ["studio", "flows"] }); onClose(); navigate(`/studio/flows/${encodeURIComponent(f.id)}`); },
   });
   const options = [{ id: "", name: "Blank flow", description: "An empty canvas. Add a trigger and build from there." }, ...catalog.templates];
@@ -190,7 +190,7 @@ export function FlowsListPage() {
       {all.length > 0 && (
         <section className="mf-stack" data-testid="flows">
           <div className="mf-toolbarline">
-            <label className="mf-search"><Search size={15} aria-hidden /><input aria-label="Search flows" placeholder="Search flows" value={text} onChange={(e) => setText(e.target.value)} /></label>
+            <label className="mf-search"><Search size={15} aria-hidden /><input className="mf-control" type="search" aria-label="Search flows" placeholder="Search flows" value={text} onChange={(e) => setText(e.target.value)} /></label>
             <div className="ws-seg" role="group" aria-label="Show">
               {([["all", `All (${all.length})`], ["live", `Live (${liveCount})`], ["draft", `Drafts (${all.length - liveCount})`]] as const).map(([v, l]) => <button key={v} type="button" className={filter === v ? "ws-seg-on" : ""} aria-pressed={filter === v} onClick={() => setFilter(v)}>{l}</button>)}
             </div>

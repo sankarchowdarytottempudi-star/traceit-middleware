@@ -116,7 +116,7 @@ export function LogsView({ flowId, onOpenExecution }: { flowId: string; onOpenEx
   return (
     <div className="mf-stack" data-testid="logs">
       <div className="mf-toolbarline">
-        <label className="mf-search"><Search size={15} aria-hidden /><input aria-label="Search the log" placeholder="Search the log" value={text} onChange={(e) => setText(e.target.value)} /></label>
+        <label className="mf-search"><Search size={15} aria-hidden /><input className="mf-control" type="search" aria-label="Search the log" placeholder="Search the log" value={text} onChange={(e) => setText(e.target.value)} /></label>
         <select className="mf-control mf-control-sm" aria-label="Level" value={level} onChange={(e) => setLevel(e.target.value)} style={{ width: "auto" }}>{LEVELS.map((f) => <option key={f.v} value={f.v}>{f.l}</option>)}</select>
         <span style={{ flex: 1 }} />
         <Toggle checked={auto} onChange={setAuto} label={<span style={{ fontSize: 12.5 }}>Refresh automatically</span>} />

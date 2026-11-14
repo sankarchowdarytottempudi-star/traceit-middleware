@@ -105,7 +105,7 @@ export function TestPanel({ flowId, nodeTarget, onNodeTarget, onShowNode, onClos
   const [stepResult, setStepResult] = useState<StepTrace | null>(null);
   useEffect(() => {
     if (!nodeTarget) return;
-    const c = contextForNode(run, traces, nodeTarget, sample);
+    const c = contextForNode(run, traces, nodeTarget, sample, nodes);
     setPinned({ payload: c?.payload ?? (isHttp ? ((draft.body ?? null) as Json) : ((draft.payload ?? null) as Json)), vars: c?.vars ?? {}, request: c?.request ?? sample ?? undefined, ...(c?.item !== undefined ? { item: c.item, index: c.index } : {}) });
     setStepResult(null);
   }, [nodeTarget]); // eslint-disable-line react-hooks/exhaustive-deps

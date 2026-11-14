@@ -90,7 +90,12 @@ function MapperHost({ nodeId, fieldKey, sample, examples, onClose }: { nodeId: s
 function Editor({ flow }: { flow: Flow }) {
   const catalog = useCatalog();
   const store = useMemo(() => new EditorStore(flow), [flow]);
-  useEffect(() => { store.setCatalog(catalog.byType); }, [store, catalog.byType]);
+  const arranged = useRef<EditorStore | null>(null);
+  useEffect(() => {
+    store.setCatalog(catalog.byType);
+    // a flow whose steps were never placed (an import, a copy of a migrated service) is laid out once on opening
+    if (catalog.byType.size && arranged.current !== store) { arranged.current = store; store.arrangeIfNeeded(); }
+  }, [store, catalog.byType]);
   return <EditorContext.Provider value={store}><EditorInner store={store} catalog={catalog} /></EditorContext.Provider>;
 }
 
@@ -134,6 +139,8 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [conflict, setConflict] = useState(false);
   const desktop = bp === "desktop";
+  /** While testing, the list of steps makes room for the canvas and the results. */
+  const paletteOff = paletteHidden || testOpen;
   const single = selection.length === 1 ? selection[0] : null;
   const panelNode = desktop ? (single && closedFor !== single ? single : null) : openNode && nodes.some((n) => n.id === openNode) ? openNode : null;
   useEffect(() => { if (closedFor && single !== closedFor) setClosedFor(null); }, [single, closedFor]);
@@ -196,6 +203,21 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
     if (id) window.setTimeout(() => canvasApi.current?.reveal(id), 80);
   }, [store]);
   const openNodePanel = useCallback((id: string) => { store.select([id]); setClosedFor(null); setOpenNode(id); }, [store]);
+  // the canvas changes size when the test area or the step settings open: keep what matters on screen
+  const firstLayout = useRef(true);
+  useEffect(() => {
+    if (firstLayout.current) { firstLayout.current = false; return; }
+    if (tab !== "canvas" || bp === "phone") return;
+    const t = window.setTimeout(() => canvasApi.current?.fit(), 140);
+    return () => window.clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testOpen]);
+  useEffect(() => {
+    if (!desktop || !panelNode || tab !== "canvas") return;
+    const t = window.setTimeout(() => canvasApi.current?.ensureVisible(panelNode), 140);
+    return () => window.clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelNode, desktop]);
   const testNode = useCallback((id: string) => { setNodeTarget(id); setTestOpen(true); if (!desktop) setOpenNode(null); }, [desktop]);
   const openMapper = useCallback((nodeId: string, fieldKey: string) => setMapper({ nodeId, fieldKey }), []);
   const showExecutionOnCanvas = useCallback((x: Execution) => { store.setRun(x); setTab("canvas"); setTestOpen(true); setNodeTarget(null); }, [store, setTab]);
@@ -278,14 +300,14 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
       <Tabs tabs={tabs} value={tab} onChange={(t) => setTab(t)} label="Flow sections" className="ws-editor-tabs" />
 
       {tab === "canvas" && (
-        <div className={cx("ws-body", desktop && !paletteHidden && "ws-body-palette", desktop && panelNode && "ws-body-panel")}>
-          {desktop && !paletteHidden && <aside className="ws-side ws-side-left" aria-label="Steps you can add"><Palette catalog={catalog} onAdd={addStep} /></aside>}
+        <div className={cx("ws-body", desktop && !paletteOff && "ws-body-palette", desktop && panelNode && "ws-body-panel")}>
+          {desktop && !paletteOff && <aside className="ws-side ws-side-left" aria-label="Steps you can add"><Palette catalog={catalog} onAdd={addStep} /></aside>}
           <div className="ws-center">
             <div className="ws-canvaswrap">
               <FlowCanvas apiRef={canvasApi} defFor={store.defFor} onOpenNode={openNodePanel} onTestNode={testNode} compact={!desktop}
-                onAddStep={desktop && !paletteHidden ? undefined : () => { if (desktop) setPaletteHidden(false); else setPaletteOpen(true); }}
+                onAddStep={desktop && !paletteOff ? undefined : () => { if (desktop) { setPaletteHidden(false); setTestOpen(false); } else setPaletteOpen(true); }}
                 emptyHint={<Empty icon={Workflow} title="Start with a trigger" hint={desktop ? "Drag a step from the left onto the canvas, or click one to add it. A flow starts with a trigger, for example an HTTP Listener." : "Tap Add step and choose a trigger, for example an HTTP Listener."} />} />
-              {desktop && !paletteHidden && <button type="button" className="ws-side-toggle" onClick={() => setPaletteHidden(true)} aria-label="Hide the list of steps" title="Hide the list of steps">‹</button>}
+              {desktop && !paletteOff && <button type="button" className="ws-side-toggle" onClick={() => setPaletteHidden(true)} aria-label="Hide the list of steps" title="Hide the list of steps">‹</button>}
             </div>
             {test && bp !== "phone" && <div className="ws-dock">{test}</div>}
           </div>

@@ -4,6 +4,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import http from "node:http";
 import { URL } from "node:url";
+import { compileWords, inferRules, type WordsRequest } from "./studioWords.js";
 
 export interface StudioConfig { runtimeUrl: string; internalKey: string; }
 
@@ -48,6 +49,11 @@ export function registerStudio(app: FastifyInstance, cfg: StudioConfig, userOf: 
       }
     }
     try {
+      const route = rest.split("?")[0];
+      if (method === "POST" && (route === "/mapping/compile-instruction" || route === "/mapping/infer")) {
+        const r = route === "/mapping/infer" ? await inferWithFallback(cfg, body, user) : await compileWithFallback(cfg, body, user);
+        return reply.code(r.status).type(r.type).send(r.text);
+      }
       const r = await runtimeRequest(cfg, method, "/v1" + rest, body, user);
       reply.code(r.status).type(String(r.headers["content-type"] || "application/json"));
       return reply.send(r.text);
@@ -55,6 +61,58 @@ export function registerStudio(app: FastifyInstance, cfg: StudioConfig, userOf: 
       return reply.code(502).type("application/problem+json").send({ type: "about:blank", title: "Weave runtime unreachable", status: 502, detail: String((e as Error).message) });
     }
   });
+}
+
+type Answer = { status: number; type: string; text: string };
+const answerOf = (r: { status: number; headers: http.IncomingHttpHeaders; text: string }): Answer => ({ status: r.status, type: String(r.headers["content-type"] || "application/json"), text: r.text });
+const jsonAnswer = (body: unknown): Answer => ({ status: 200, type: "application/json", text: JSON.stringify(body) });
+const parse = (text: string): Record<string, unknown> | null => { try { const v = JSON.parse(text); return v && typeof v === "object" ? v as Record<string, unknown> : null; } catch { return null; } };
+
+/** "In your words": the flow engine reads the sentence first. When it has no answer, the fixed
+ *  rules in studioWords.ts are tried here, on this server. Nothing is sent anywhere else. */
+export async function compileWithFallback(cfg: StudioConfig, body: unknown, user: string): Promise<Answer> {
+  let upstream: Awaited<ReturnType<typeof runtimeRequest>> | null = null;
+  try { upstream = await runtimeRequest(cfg, "POST", "/v1/mapping/compile-instruction", body, user); } catch { upstream = null; }
+  const theirs = upstream && upstream.status < 300 ? parse(upstream.text) : null;
+  if (theirs && theirs.compiled && typeof (theirs.compiled as { expr?: unknown }).expr === "string") return answerOf(upstream!);
+  const b = (body ?? {}) as WordsRequest;
+  const notOffered = !upstream || upstream.status === 404 || upstream.status === 501 || upstream.status >= 502;
+  if (typeof b.instruction !== "string" || !b.instruction.trim() || (upstream && !theirs && !notOffered)) {
+    return upstream ? answerOf(upstream) : { status: 502, type: "application/problem+json", text: JSON.stringify({ type: "about:blank", title: "Weave runtime unreachable", status: 502 }) };
+  }
+  const mine = compileWords(b);
+  if (!mine.ok || !mine.compiled) {
+    const placeholder = !theirs || /being installed/i.test(String(theirs.reason ?? ""));
+    if (placeholder) return jsonAnswer(mine);
+    const theirSuggestions = Array.isArray(theirs.suggestions) ? theirs.suggestions : [];
+    return jsonAnswer({ ...theirs, suggestions: theirSuggestions.length ? theirSuggestions : mine.suggestions });
+  }
+  const out: Record<string, unknown> = { ...mine };
+  if (b.sampleSource !== undefined) {
+    try {
+      const r = await runtimeRequest(cfg, "POST", "/v1/expr/eval", { expr: mine.compiled.expr, context: { payload: b.sampleSource } }, user, 20_000);
+      const res = r.status < 300 ? parse(r.text) : null;
+      if (res && res.ok === true) {
+        out.preview = res.result === undefined ? null : res.result;
+        if (b.desiredValue !== undefined) out.matchesDesired = JSON.stringify(out.preview) === JSON.stringify(b.desiredValue);
+      } else if (res && typeof res.error === "string") out.previewError = res.error;
+    } catch { /* the rule is still returned; the mapper shows its own live preview */ }
+  }
+  return jsonAnswer(out);
+}
+
+/** "Suggest mappings": the flow engine's answer when it has one, otherwise fixed rules on this server. */
+export async function inferWithFallback(cfg: StudioConfig, body: unknown, user: string): Promise<Answer> {
+  let upstream: Awaited<ReturnType<typeof runtimeRequest>> | null = null;
+  try { upstream = await runtimeRequest(cfg, "POST", "/v1/mapping/infer", body, user); } catch { upstream = null; }
+  const theirs = upstream && upstream.status < 300 ? parse(upstream.text) : null;
+  if (theirs && Array.isArray(theirs.rules) && theirs.rules.length) return answerOf(upstream!);
+  const b = (body ?? {}) as { sampleSource?: unknown; desiredOutput?: unknown };
+  const notOffered = !upstream || upstream.status === 404 || upstream.status === 501 || upstream.status >= 502;
+  if (b.sampleSource === undefined || b.desiredOutput === undefined || (upstream && !theirs && !notOffered)) {
+    return upstream ? answerOf(upstream) : { status: 502, type: "application/problem+json", text: JSON.stringify({ type: "about:blank", title: "Weave runtime unreachable", status: 502 }) };
+  }
+  return jsonAnswer({ rules: inferRules(b.sampleSource, b.desiredOutput), engine: "rules" });
 }
 
 const MAX_DESCRIPTION_BYTES = 5 * 1024 * 1024;

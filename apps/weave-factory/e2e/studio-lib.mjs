@@ -8,7 +8,8 @@ import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-export function parseArgs(argv = process.argv.slice(2)) {
+// `valued` names extra options of a script that take a value (kept, with the value, in `rest`).
+export function parseArgs(valued = [], argv = process.argv.slice(2)) {
   const out = { base: process.env.WEAVE_BASE_URL || "http://127.0.0.1:8798", keep: false, headed: false, shots: process.env.WEAVE_E2E_SHOTS || "", width: 1440, height: 900, rest: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -17,6 +18,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     else if (a === "--shots") out.shots = argv[++i] ?? "";
     else if (a === "--width") out.width = Number(argv[++i]);
     else if (a === "--height") out.height = Number(argv[++i]);
+    else if (valued.includes(a)) out.rest.push(a, argv[++i] ?? "");
     else if (/^https?:\/\//.test(a)) out.base = a;
     else out.rest.push(a);
   }

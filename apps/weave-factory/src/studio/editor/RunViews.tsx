@@ -9,6 +9,17 @@ import { txt } from "../../lib/text.ts";
 export const statusTone = (s: unknown): Tone => (s === "success" ? "ok" : s === "error" ? "bad" : s === "running" ? "info" : "neutral");
 export const statusLabel = (s: unknown): string => (s === "success" ? "Succeeded" : s === "error" ? "Failed" : s === "running" ? "Running" : s === "skipped" ? "Skipped" : txt(s) || "Unknown");
 export const httpTone = (status: unknown): Tone => { const n = Number(status); return !n ? "neutral" : n < 300 ? "ok" : n < 400 ? "info" : n < 500 ? "warn" : "bad"; };
+/** What started a run, in words: "GET /orders/:id", "Schedule", never the raw object. */
+export function triggerLabel(t: unknown): string {
+  if (!t || typeof t !== "object") return txt(t);
+  const o = t as { type?: unknown; method?: unknown; path?: unknown };
+  if (typeof o.method === "string" || typeof o.path === "string") return `${txt(o.method) || "GET"} ${txt(o.path) || "/"}`.trim();
+  const type = txt(o.type);
+  if (type === "trigger.http") return "HTTP call";
+  if (type === "trigger.schedule") return "Schedule";
+  if (type === "trigger.manual" || type === "manual") return "Started by hand";
+  return type.replace(/^trigger\./, "") || "";
+}
 export const modeLabel = (m: unknown): string => (m === "test" ? "Test" : m === "live" ? "Live" : m === "node-test" ? "Step test" : txt(m));
 
 export function StepDetail({ step, onPick }: { step: StepTrace; onPick?: (path: string) => void }) {
@@ -73,6 +84,7 @@ export function ExecutionView({ execution: x, onShow }: { execution: Execution; 
         <Badge tone={statusTone(x.status)}>{statusLabel(x.status)}</Badge>
         <Badge>{modeLabel(x.mode)}</Badge>
         {x.via && <Badge tone="info">{x.via === "gateway" ? "through the gateway" : "direct"}</Badge>}
+        {triggerLabel(x.trigger) && <span className="mf-mono-sm">{triggerLabel(x.trigger)}</span>}
         <span className="mf-faint" style={{ fontSize: 12.5 }}>{fmtTime(x.startedAt)} · {fmtDuration(x.durationMs)} · revision {txt(x.revision)}</span>
       </div>
       {x.error && <Callout tone="bad" title={txt(x.error.message) || "The run failed"}>{x.error.nodeName ? <span>At step "{txt(x.error.nodeName)}"{x.error.status ? ` (status ${x.error.status})` : ""}</span> : null}</Callout>}

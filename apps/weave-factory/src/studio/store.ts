@@ -6,7 +6,7 @@ import { applyEdgeChanges, applyNodeChanges, type EdgeChange, type NodeChange } 
 import type { Execution, Flow, FlowSettings, NodeTypeDef, StepTrace, ValidationIssue } from "@traceit/weave-flow";
 import {
   autoLayout, canConnect, copySelection, createNode, estimateHeight, flowToGraph, graphToDoc, graphToFlow, localIssues, makeEdge,
-  mergeIssues, pasteClip, pruneEdges, firstFreePort, toWsNode, NODE_W, NOTE_TYPE,
+  mergeIssues, needsLayout, pasteClip, pruneEdges, firstFreePort, toWsNode, NODE_W, NOTE_TYPE,
   type Clip, type ConnectVerdict, type FlowDoc, type WsEdge, type WsNode, type WsNodeData,
 } from "./graph.ts";
 import { canRedo, canUndo, historyInit, historyPush, historyRedo, historyUndo, type History } from "./history.ts";
@@ -330,6 +330,13 @@ export class EditorStore {
       { heightOf: (id) => { const n = byId.get(id); return n?.measured?.height ?? (n ? estimateHeight(this.defFor(n.data.type), n.data.config) : 72); } },
     );
     return nodes.map((n) => (pos.has(n.id) ? { ...n, position: pos.get(n.id)! } : n));
+  }
+  /** Lays the steps out when the saved positions cannot be used (or always, with `force`). It is not a
+   *  change of the flow: nothing is recorded and the flow does not become "unsaved". */
+  arrangeIfNeeded(force = false): boolean {
+    if (!force && !needsLayout(this.state.nodes.filter((n) => n.type !== "note"))) return false;
+    this.set({ nodes: this.arranged() });
+    return true;
   }
   setNodes(nodes: WsNode[]) { this.set({ nodes }); }
   setMeta(patch: Partial<EditorMeta>, key = "meta") {

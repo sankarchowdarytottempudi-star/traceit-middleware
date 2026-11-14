@@ -3,12 +3,12 @@
 import { createContext, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, type Ref } from "react";
 import {
   Background, BackgroundVariant, BaseEdge, EdgeLabelRenderer, Handle, MiniMap, NodeToolbar, Panel, Position, ReactFlow, ReactFlowProvider,
-  getBezierPath, useReactFlow, useUpdateNodeInternals, type Connection, type Edge, type EdgeProps, type Node, type NodeProps,
+  getBezierPath, useNodesInitialized, useReactFlow, useUpdateNodeInternals, type Connection, type Edge, type EdgeProps, type Node, type NodeProps,
 } from "@xyflow/react";
 import { AlertCircle, AlertTriangle, Check, Copy, LayoutGrid, Maximize, Minus, Play, Plus, Power, Settings2, StickyNote, Trash2, X } from "lucide-react";
 import type { NodeTypeDef, StepTrace } from "@traceit/weave-flow";
 import { accentOf, portsFor } from "../catalog.ts";
-import { NODE_W, nodeSummary, type WsNodeData } from "../graph.ts";
+import { NODE_W, nodeSummary, openingView, type WsNodeData } from "../graph.ts";
 import { iconFor } from "../icons.ts";
 import { useEditor, useEditorStore } from "../store.ts";
 import { cx, fmtDuration, IconButton, toast } from "../ui.tsx";
@@ -19,6 +19,8 @@ import { DND_NODE } from "./Palette.tsx";
 export interface CanvasApi {
   fit: () => void;
   focusNode: (id: string) => void;
+  /** Pans (without zooming) so the step is on screen; does nothing when it already is. */
+  ensureVisible: (id: string) => void;
   /** Shows a step that was just added: the whole flow when it stays readable, otherwise the step and what leads to it. */
   reveal: (id: string) => void;
   center: () => { x: number; y: number };
@@ -179,7 +181,23 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
   const rf = useReactFlow();
   const wrap = useRef<HTMLDivElement>(null);
 
-  const fit = useCallback(() => { void rf.fitView({ padding: 0.18, duration: 260, maxZoom: 1.1 }); }, [rf]);
+  const fit = useCallback(() => { void rf.fitView({ padding: 0.12, duration: 260, maxZoom: 1.1 }); }, [rf]);
+  // a flow too large to read when shown whole opens at its first step instead
+  const ready = useNodesInitialized();
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!ready || opened.current) return;
+    opened.current = true;
+    const r = wrap.current?.getBoundingClientRect();
+    const st = store.getState();
+    if (!r || !st.nodes.length) return;
+    const box = (n: (typeof st.nodes)[number]) => ({ x: n.position.x, y: n.position.y, w: n.measured?.width ?? NODE_W, h: n.measured?.height ?? 70 });
+    const targets = new Set(st.edges.map((e) => e.target));
+    const steps = st.nodes.filter((n) => n.type !== "note");
+    const first = steps.filter((n) => !targets.has(n.id)).sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)[0];
+    const v = openingView(st.nodes.map(box), first ? box(first) : undefined, { width: r.width, height: r.height }, { readable: READABLE_ZOOM, zoom: compact ? 0.7 : 0.8 });
+    if (v.mode === "start") void rf.setViewport({ x: v.x, y: v.y, zoom: v.zoom });
+  }, [ready, rf, store, compact]);
   useImperativeHandle(apiRef, () => ({
     fit,
     focusNode: (id: string) => {
@@ -188,6 +206,17 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
       store.select([id]);
       void rf.setCenter(n.position.x + NODE_W / 2, n.position.y + (n.measured?.height ?? 70) / 2, { zoom: Math.max(rf.getZoom(), 0.9), duration: 260 });
     },
+    ensureVisible: (id: string) => {
+      const n = store.getState().nodes.find((x) => x.id === id);
+      const r = wrap.current?.getBoundingClientRect();
+      if (!n || !r) return;
+      const h = n.measured?.height ?? 70;
+      const a = rf.flowToScreenPosition({ x: n.position.x, y: n.position.y });
+      const b = rf.flowToScreenPosition({ x: n.position.x + NODE_W, y: n.position.y + h });
+      const m = 20;
+      if (a.x >= r.left + m && a.y >= r.top + m + 44 && b.x <= r.right - m && b.y <= r.bottom - m) return;
+      void rf.setCenter(n.position.x + NODE_W / 2, n.position.y + h / 2, { zoom: rf.getZoom(), duration: 220 });
+    },
     reveal: (id: string) => {
       const all = store.getState().nodes;
       const n = all.find((x) => x.id === id);
@@ -195,7 +224,7 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
       if (!n || !r || !all.length) return;
       const xs = all.map((x) => x.position.x), ys = all.map((x) => x.position.y);
       const bw = Math.max(...xs) + NODE_W - Math.min(...xs), bh = Math.max(...ys) + 90 - Math.min(...ys);
-      const zoom = Math.min(r.width / (bw * 1.36), r.height / (bh * 1.36));
+      const zoom = Math.min(r.width / (bw * 1.24), r.height / (bh * 1.24));
       if (zoom >= READABLE_ZOOM) { fit(); return; }
       // too large to show whole: keep the new step readable, a little right of the middle so the step before it stays in view
       const z = Math.min(Math.max(rf.getZoom(), 0.8), 1);

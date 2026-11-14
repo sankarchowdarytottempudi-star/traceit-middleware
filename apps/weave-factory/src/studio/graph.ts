@@ -269,6 +269,40 @@ export function autoLayout(nodes: { id: string; isNote?: boolean }[], edges: { s
   return pos;
 }
 
+/** True when saved positions cannot be used as they are: no step was ever placed, or steps sit on top of
+ *  each other (flows made by an import or a copy of a migrated service arrive like that). */
+export function needsLayout(steps: { position?: { x: number; y: number } }[]): boolean {
+  if (steps.length < 2) return false;
+  const seen = new Set<string>();
+  let atOrigin = 0;
+  for (const s of steps) {
+    const x = s.position?.x ?? 0, y = s.position?.y ?? 0;
+    if (x === 0 && y === 0) atOrigin++;
+    const key = `${Math.round(x / 24)}:${Math.round(y / 24)}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return atOrigin === steps.length;
+}
+
+export interface Box { x: number; y: number; w: number; h: number; }
+export type OpeningView = { mode: "fit" } | { mode: "start"; x: number; y: number; zoom: number };
+/** How a canvas opens: the whole flow when its steps stay readable at that size, otherwise the start of
+ *  the flow at a readable size (the rest is reached by panning, the overview map or "fit"). */
+export function openingView(boxes: Box[], start: Box | undefined, view: { width: number; height: number }, opts: { readable?: number; zoom?: number; padding?: number; margin?: number; top?: number } = {}): OpeningView {
+  if (!boxes.length || view.width <= 0 || view.height <= 0) return { mode: "fit" };
+  const readable = opts.readable ?? 0.62, zoom = opts.zoom ?? 0.8, padding = opts.padding ?? 0.18, margin = opts.margin ?? 28, top = opts.top ?? 56;
+  const minX = Math.min(...boxes.map((b) => b.x)), minY = Math.min(...boxes.map((b) => b.y));
+  const bw = Math.max(...boxes.map((b) => b.x + b.w)) - minX, bh = Math.max(...boxes.map((b) => b.y + b.h)) - minY;
+  const fitZoom = Math.min(view.width / (bw * (1 + 2 * padding)), view.height / (bh * (1 + 2 * padding)));
+  if (fitZoom >= readable) return { mode: "fit" };
+  const s = start ?? boxes.reduce((a, b) => (b.x < a.x || (b.x === a.x && b.y < a.y) ? b : a));
+  const room = view.height - top - margin;
+  // the flow is short enough: centre it top to bottom; otherwise keep the first step near the top
+  const y = bh * zoom <= room ? top + (room - bh * zoom) / 2 - minY * zoom : top + Math.min(room * 0.25, 120) - s.y * zoom;
+  return { mode: "start", x: margin - s.x * zoom, y, zoom };
+}
+
 /** Approximate rendered height of a step node (used before the browser has measured it). */
 export function estimateHeight(def: NodeTypeDef | undefined, config: Record<string, unknown>): number {
   if (!def) return 64;

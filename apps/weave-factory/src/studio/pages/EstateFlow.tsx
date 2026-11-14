@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CopyPlus, ExternalLink, Lock, RefreshCw, ScrollText, Search, Workflow } from "lucide-react";
-import type { Flow, FlowNode, Json } from "@traceit/weave-flow";
+import type { Flow, Json } from "@traceit/weave-flow";
 import { ApiError, errorText, isUnavailable, studioApi, type EstateApiDetail, type EstateLogLine } from "../api.ts";
 import { useCatalog, type Catalog } from "../catalog.ts";
 import { defResolver, mappingOf, operationNodes } from "../graph.ts";
@@ -34,7 +34,6 @@ export function sliceOperation(flow: Flow, triggerId: string | null): Flow {
   const keep = operationNodes(triggerId, flow.edges);
   return { ...flow, nodes: flow.nodes.filter((n) => keep.has(n.id)), edges: flow.edges.filter((e) => keep.has(e.from) && keep.has(e.to)) };
 }
-const unplaced = (nodes: FlowNode[]) => nodes.length > 1 && nodes.every((n) => !n.position || (n.position.x === 0 && n.position.y === 0));
 
 type TabId = "flow" | "connectors" | "mappings" | "logs";
 
@@ -68,7 +67,8 @@ function EstateView({ api, flow, detail }: { api: string; flow: Flow; detail?: E
   const store = useMemo(() => {
     const s = new EditorStore({ ...slice, readOnly: true }, { readOnly: true });
     s.setCatalog(catalog.byType);
-    if (unplaced(slice.nodes)) s.setNodes(s.arranged());
+    // the positions that come with a migrated service are a plain line; lay the branches out properly
+    s.arrangeIfNeeded(true);
     return s;
   }, [slice, catalog.byType]);
   const setParam = (k: string, v: string | null) => setParams((p) => { const n = new URLSearchParams(p); if (v === null) n.delete(k); else n.set(k, v); return n; }, { replace: true });

@@ -1,0 +1,9 @@
+/* Weave brand colour tokens (BRAND.md). Light defaults; dark under [data-theme=dark]. */
+:root, :root[data-theme="light"] {
+  --weave-thread-a: #8A5A08; --weave-thread-a-2: #F2A62E; --weave-thread-b: #0C1B2A;
+  --weave-knot: #C97609; --weave-flow: #F2A62E;
+}
+:root[data-theme="dark"] {
+  --weave-thread-a: #C97609; --weave-thread-a-2: #F3D9A8; --weave-thread-b: #F2F7FB;
+  --weave-knot: #F2A62E; --weave-flow: #F2A62E;
+}

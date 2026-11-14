@@ -1,0 +1,16 @@
+{
+  "name": "@traceit/weave-brand",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./weave-brand.css": "./src/weave-brand.css"
+  },
+  "scripts": { "typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run", "lint": "eslint src" },
+  "peerDependencies": { "react": ">=19" },
+  "devDependencies": {
+    "@testing-library/react": "16.0.1", "@types/react": "19.0.1", "jsdom": "25.0.1",
+    "react": "19.0.0", "react-dom": "19.0.0", "typescript": "5.6.3", "vitest": "2.1.5"
+  }
+}

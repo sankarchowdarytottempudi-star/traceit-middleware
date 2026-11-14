@@ -1,67 +1,102 @@
+// Every migration, with its progress. Opens the detail screen; starts a new one.
+import { useMemo } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 import { api, type Migration } from "../api.ts";
-import { Card, Skeleton, ErrorState, EmptyState, StatusWord } from "../components/ui.tsx";
-import { PageHeader } from "./PageHeader.tsx";
-import { txt, num } from "../lib/text.ts";
+import { num, txt } from "../lib/text.ts";
+import { ago, distinct, filterMigrations, outcomeTone, statusLabel } from "../lib/migrate.ts";
+import { Bar, Btn, Empty, Failed, Head, LayerPill, LinkBtn, Loading, Pill, SearchBox, Stat, useTitle } from "../migrate/ui.tsx";
 
-function outcomeColor(o: string): string {
-  if (o === "Failed") return "var(--bad)";
-  if (o === "Verified" || o === "Deployed") return "var(--ok)";
-  return "var(--warn)";
-}
-function Bar({ pct, color = "var(--accent)" }: { pct: number; color?: string }) {
-  return <span style={{ display: "block", height: 6, borderRadius: 999, background: "var(--surface3)", overflow: "hidden" }}>
-    <span className="mf-bar" style={{ display: "block", height: "100%", width: `${Math.max(0, Math.min(100, pct))}%`, background: color }} /></span>;
-}
+const OUTCOMES = ["Deployed", "Verified", "Complete", "In progress", "Not started", "Failed"];
 
 function MigrationCard({ m }: { m: Migration }) {
-  const p = m.progress ?? ({} as Migration["progress"]);
-  const outcome = txt(p.outcome);
-  const pct = Math.round(num(p.overallPercent) * 10) / 10;
-  const now = txt(p.currentStep), next = txt(p.nextStep);
+  const p = m.progress;
+  const outcome = txt(p?.outcome) || "Not started";
+  const tone = outcomeTone(outcome);
+  const pct = num(p?.overallPercent);
+  const now = txt(p?.currentStep), next = txt(p?.nextStep);
   return (
-    <Card style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-        <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-          <span className="mf-mono" style={{ fontSize: 14 }}>{txt(m.apiName) || txt(m.id)}</span>
-          <span style={{ fontSize: 12, color: "var(--faint)" }}>{txt(m.workspace) || "—"}{m.technology ? ` · ${txt(m.technology)}` : ""}</span>
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {m.busy && <StatusWord word="RUNNING" color="var(--warn)" />}
-          <StatusWord word={(outcome || "In progress").toUpperCase()} color={outcomeColor(outcome)} />
-        </span>
+    <Link to={`/migrations/${encodeURIComponent(m.id)}`} className="mf-mg-card mf-in" aria-label={`Open migration ${txt(m.name) || m.id}`}>
+      <div className="mf-mg-row" style={{ justifyContent: "space-between", alignItems: "flex-start", flexWrap: "nowrap" }}>
+        <div className="mf-mg-grow">
+          <div className="mf-mg-name" style={{ fontSize: 15 }}>{txt(m.name) || txt(m.apiName) || m.id}</div>
+          {txt(m.apiName) && txt(m.apiName) !== txt(m.name) && <div className="mf-mono mf-mg-small mf-mg-muted mf-mg-wrap">{txt(m.apiName)}</div>}
+        </div>
+        <Pill tone={tone}>{outcome}</Pill>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Bar pct={pct} color={outcome === "Failed" ? "var(--bad)" : "var(--accent)"} />
-        <span style={{ fontWeight: 700, fontSize: 13, width: 48, textAlign: "right" }}>{pct}%</span>
+      <div className="mf-mg-chips">
+        {txt(m.layer) && <LayerPill layer={m.layer} />}
+        {txt(m.technology) && txt(m.technology) !== "unknown" && <Pill>{txt(m.technology)}</Pill>}
+        {txt(m.targetTech) && <Pill title="Target">to {txt(m.targetTech)}</Pill>}
+        {m.busy && <Pill tone="accent">A step is running</Pill>}
       </div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
-        <strong style={{ color: "var(--text)" }}>{txt(p.majorPhase)}</strong>
-        {now && <> · now: {now}</>}{next && <> → next: {next}</>}
+      <div className="mf-mg-row" style={{ flexWrap: "nowrap" }}>
+        <Bar pct={pct} tone={tone === "ok" ? "ok" : tone === "bad" ? "bad" : "accent"} label={`Overall progress of ${txt(m.name) || m.id}`} />
+        <span className="mf-mono mf-mg-small" style={{ fontWeight: 700, minWidth: 40, textAlign: "right" }}>{Math.round(pct)}%</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, (m.phases ?? []).length)}, minmax(0, 1fr))`, gap: 4 }} aria-hidden="true">
         {(m.phases ?? []).map((ph) => (
-          <div key={ph.key} title={`${txt(ph.title)}: ${txt(ph.status)}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 10.5, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{txt(ph.title)}</span>
-            <Bar pct={num(ph.percent)} color={ph.status === "failed" ? "var(--bad)" : ph.status === "done" ? "var(--ok)" : "var(--accent)"} />
-          </div>
+          <span key={ph.key} title={`${txt(ph.title)}: ${statusLabel(ph.status)}`} style={{ height: 4, borderRadius: 999, background: ph.status === "done" ? "var(--ok)" : ph.status === "failed" ? "var(--bad)" : ph.status === "running" ? "var(--accent)" : ph.status === "action_required" ? "var(--warn)" : "var(--surface3)" }} />
         ))}
       </div>
-    </Card>
+      <div className="mf-mg-small mf-mg-muted mf-mg-wrap">
+        {txt(p?.majorPhase) && <span>{txt(p?.majorPhase)}</span>}
+        {now && <span> · now: {now}</span>}
+        {!now && next && <span> · next: {next}</span>}
+      </div>
+      <div className="mf-mg-row mf-mg-small mf-mg-faint" style={{ justifyContent: "space-between" }}>
+        <span className="mf-mg-wrap">{txt(m.workspace) || "No workspace"}</span>
+        <span>{m.updatedAt ? `changed ${ago(m.updatedAt)}` : m.createdAt ? `created ${ago(m.createdAt)}` : ""}</span>
+      </div>
+    </Link>
   );
 }
 
 export function Migrations() {
-  const q = useQuery({ queryKey: ["migrations"], queryFn: api.migrations, refetchInterval: 3000 });
-  const migs = q.data?.migrations ?? [];
+  useTitle("Migrations");
+  const [sp, setSp] = useSearchParams();
+  const q = sp.get("q") ?? "", workspace = sp.get("workspace") ?? "", outcome = sp.get("outcome") ?? "", technology = sp.get("technology") ?? "";
+  const set = (k: string, v: string) => { const n = new URLSearchParams(sp); if (v) n.set(k, v); else n.delete(k); setSp(n, { replace: true }); };
+  const list = useQuery({ queryKey: ["migrations"], queryFn: api.migrations, refetchInterval: (query) => ((query.state.data?.migrations ?? []).some((m) => m.busy) ? 3000 : 15000) });
+  const all = list.data?.migrations ?? [];
+  const shown = useMemo(() => filterMigrations(all, { q, workspace, outcome, technology }).sort((a, b) => txt(b.updatedAt || b.createdAt).localeCompare(txt(a.updatedAt || a.createdAt))), [all, q, workspace, outcome, technology]);
+  const workspaces = useMemo(() => distinct(all.map((m) => m.workspace)), [all]);
+  const technologies = useMemo(() => distinct(all.map((m) => m.technology)), [all]);
+  const count = (o: string) => all.filter((m) => txt(m.progress?.outcome) === o).length;
+  const newBtn = <LinkBtn kind="primary" to="/migrations/new" icon={<Plus size={16} aria-hidden="true" />}>New migration</LinkBtn>;
   return (
     <>
-      <PageHeader area="Migrations" title="Migrations" subtitle="Live progress of every API migrating through the factory: current step, next step, and percent complete per phase." />
-      {q.isLoading ? <Skeleton h={160} /> : q.isError ? <ErrorState message="Could not reach the migration backend" onRetry={() => q.refetch()} /> :
-        migs.length === 0 ? <EmptyState title="No migrations yet" hint="Start one from a workspace." /> : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 16 }}>
-          {migs.map((m) => <MigrationCard key={m.id} m={m} />)}
-        </div>
+      <Head area="Migrations" title="Migrations"
+        subtitle="Each migration takes one API from its old platform to a running service: read the source, agree the mapping, generate, test and deploy."
+        actions={newBtn} />
+      {list.isLoading ? <Loading rows={3} h={120} /> : list.isError ? <Failed what="The migrations are not available right now." error={list.error} onRetry={() => list.refetch()} /> : all.length === 0 ? (
+        <Empty title="No migrations yet" hint="Start with the source of one API: a project archive or a written specification." action={newBtn} />
+      ) : (
+        <>
+          <div className="mf-mg-stats">
+            <Stat label="Migrations" value={all.length} note={`${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"}`} />
+            <Stat label="Deployed" value={count("Deployed")} note={`${count("Verified") + count("Complete")} verified or complete`} />
+            <Stat label="In progress" value={all.filter((m) => !["Deployed", "Verified", "Complete", "Failed"].includes(txt(m.progress?.outcome))).length} note={`${all.filter((m) => m.busy).length} running a step now`} />
+            <Stat label="Failed" value={count("Failed")} note={count("Failed") ? "Open one to see why" : "Nothing needs attention"} />
+          </div>
+          <div className="mf-mg-toolbar">
+            <SearchBox value={q} onChange={(v) => set("q", v)} placeholder="Search by name, API or workspace" />
+            <select className="mf-mg-input" aria-label="Workspace" value={workspace} onChange={(e) => set("workspace", e.target.value)}>
+              <option value="">All workspaces</option>{workspaces.map((w) => <option key={w} value={w}>{w}</option>)}
+            </select>
+            <select className="mf-mg-input" aria-label="State" value={outcome} onChange={(e) => set("outcome", e.target.value)}>
+              <option value="">Any state</option><option value="running">Running a step now</option>{OUTCOMES.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+            <select className="mf-mg-input" aria-label="Source technology" value={technology} onChange={(e) => set("technology", e.target.value)}>
+              <option value="">Any source</option>{technologies.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <span className="mf-mg-small mf-mg-muted">{shown.length === all.length ? `${all.length} migrations` : `${shown.length} of ${all.length}`}</span>
+          </div>
+          {shown.length === 0 ? <Empty title="No migration matches these filters" action={<Btn small onClick={() => setSp(new URLSearchParams(), { replace: true })}>Clear filters</Btn>} /> : (
+            <div className="mf-mg-grid">{shown.map((m) => <MigrationCard key={m.id} m={m} />)}</div>
+          )}
+        </>
       )}
     </>
   );

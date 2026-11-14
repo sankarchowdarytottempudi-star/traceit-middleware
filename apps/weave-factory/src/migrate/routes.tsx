@@ -1,14 +1,20 @@
 // Migrate (migrations lifecycle, deployed-API estate, workspaces, playground, knowledge).
 // Owned by the migrate work stream.
 import { Route } from "react-router-dom";
-import { Boxes, Layers, FlaskConical, BookOpen } from "lucide-react";
+import { Boxes, Layers, FlaskConical, BookOpen, Network } from "lucide-react";
 import type { NavGroup } from "../nav.ts";
+import "./migrate.css";
 import { Migrations } from "../screens/Migrations.tsx";
 import { Workspaces } from "../screens/Workspaces.tsx";
 import { Playground } from "../screens/Playground.tsx";
 import { Knowledge } from "../screens/Knowledge.tsx";
+import { EstateList } from "./EstateList.tsx";
+import { EstateDetail } from "./EstateDetail.tsx";
+import { MigrationNew } from "./MigrationNew.tsx";
+import { MigrationDetail } from "./MigrationDetail.tsx";
 
 export const migrateNav: NavGroup[] = [
+  { title: "RUN", items: [{ to: "/estate", label: "Running APIs", icon: Network }] },
   { title: "MIGRATE", items: [
     { to: "/migrations", label: "Migrations", icon: Boxes },
     { to: "/workspaces", label: "Workspaces", icon: Layers },
@@ -21,7 +27,11 @@ export const migrateNav: NavGroup[] = [
 export function migrateRoutes() {
   return (
     <>
+      <Route path="estate" element={<EstateList />} />
+      <Route path="estate/:api" element={<EstateDetail />} />
       <Route path="migrations" element={<Migrations />} />
+      <Route path="migrations/new" element={<MigrationNew />} />
+      <Route path="migrations/:id" element={<MigrationDetail />} />
       <Route path="workspaces" element={<Workspaces />} />
       <Route path="playground" element={<Playground />} />
       <Route path="knowledge" element={<Knowledge />} />

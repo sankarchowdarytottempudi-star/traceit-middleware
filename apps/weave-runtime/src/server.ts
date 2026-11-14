@@ -132,9 +132,10 @@ export async function buildApp(cfg: Config, rt: Runtime): Promise<{ app: Fastify
 
     v1.post("/mapping/preview", async (req) => rt.mappingPreview(jsonBody(req)));
     v1.post("/mapping/infer", async (req) => {
-      const b = jsonBody<{ sampleSource?: Json; desiredOutput?: Json }>(req);
-      if (b.sampleSource === undefined || b.desiredOutput === undefined) throw new Problem(400, "Bad request", "Send { sampleSource, desiredOutput }");
-      return { rules: inferMapping(b.sampleSource, b.desiredOutput), engine: "rules" };
+      const b = jsonBody<{ sampleSource?: Json; desiredOutput?: Json; sampleTarget?: Json }>(req);
+      const desired = b.desiredOutput ?? b.sampleTarget;
+      if (b.sampleSource === undefined || desired === undefined) throw new Problem(400, "Bad request", "Send { sampleSource, desiredOutput }");
+      return { rules: inferMapping(b.sampleSource, desired), engine: "rules" };
     });
     v1.post("/mapping/compile-instruction", async (req) => {
       const b = jsonBody<{ instruction?: string; target?: string; sampleSource?: Json; desiredValue?: Json }>(req);

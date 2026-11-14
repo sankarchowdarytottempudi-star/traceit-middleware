@@ -1,0 +1,1738 @@
+{
+ "sample": {
+  "customer": {
+   "name": "John Smith",
+   "firstName": "john",
+   "lastName": "smith",
+   "middleName": "",
+   "nickname": null,
+   "email": "John.Smith@Example.com",
+   "gender": "M",
+   "active": true,
+   "phone": "+966 50 123 4567",
+   "country": "SA",
+   "age": 34,
+   "birthDate": "1990-05-17",
+   "title": "mr"
+  },
+  "order": {
+   "id": "ord-7781",
+   "total": 1234.567,
+   "quantity": 3,
+   "unitPrice": 19.99,
+   "currency": "SAR",
+   "date": "2026-03-09T14:05:00Z",
+   "status": "CONFIRMED",
+   "reference": "AB-12-CD",
+   "tags": [
+    "vip",
+    "gift",
+    "vip"
+   ],
+   "lines": [
+    {
+     "sku": "A1",
+     "amount": 10.5,
+     "qty": 2,
+     "price": 5.25,
+     "status": "active"
+    },
+    {
+     "sku": "B2",
+     "amount": 20,
+     "qty": 1,
+     "price": 20,
+     "status": "cancelled"
+    },
+    {
+     "sku": "C3",
+     "amount": 7.25,
+     "qty": 4,
+     "price": 1.81,
+     "status": "active"
+    }
+   ]
+  },
+  "booking": {
+   "checkIn": "2026-04-01",
+   "checkOut": "2026-04-08",
+   "guests": 2
+  },
+  "card": {
+   "number": "4111111111111111"
+  },
+  "invoice": {
+   "number": 421
+  },
+  "notes": "  hello   big world  "
+ },
+ "cases": [
+  {
+   "instruction": "add the _ inbetween if name came as two words(customer.name)",
+   "target": "first",
+   "expr": "$count($split($trim(customer.name), /\\s+/)) = 2 ? $join($split($trim(customer.name), /\\s+/), \"_\") : customer.name",
+   "confidence": "exact",
+   "value": "John_Smith"
+  },
+  {
+   "instruction": "add the _ inbetween if name came as two words(customer.name)",
+   "expr": "$count($split($trim(customer.name), /\\s+/)) = 2 ? $join($split($trim(customer.name), /\\s+/), \"_\") : customer.name",
+   "confidence": "exact",
+   "value": "John_Smith"
+  },
+  {
+   "instruction": "convert to upper case (customer.name)",
+   "expr": "$uppercase(customer.name)",
+   "confidence": "exact",
+   "value": "JOHN SMITH"
+  },
+  {
+   "instruction": "upper case",
+   "target": "customer.name",
+   "expr": "$uppercase(customer.name)",
+   "confidence": "guessed",
+   "value": "JOHN SMITH"
+  },
+  {
+   "instruction": "uppercase the customer name",
+   "expr": "$uppercase(customer.name)",
+   "confidence": "exact",
+   "value": "JOHN SMITH"
+  },
+  {
+   "instruction": "make the email lowercase",
+   "expr": "$lowercase(customer.email)",
+   "confidence": "exact",
+   "value": "john.smith@example.com"
+  },
+  {
+   "instruction": "trim and capitalize each word (customer.name)",
+   "expr": "$titleCase($trim(customer.name))",
+   "confidence": "exact",
+   "value": "John Smith"
+  },
+  {
+   "instruction": "take the first word of customer.name",
+   "expr": "$split($trim(customer.name), /\\s+/)[0]",
+   "confidence": "exact",
+   "value": "John"
+  },
+  {
+   "instruction": "last word of the name",
+   "expr": "$split($trim(customer.name), /\\s+/)[-1]",
+   "confidence": "exact",
+   "value": "Smith"
+  },
+  {
+   "instruction": "initials of customer.name",
+   "expr": "$initials(customer.name)",
+   "confidence": "exact",
+   "value": "JS"
+  },
+  {
+   "instruction": "join customer.firstName and customer.lastName with a space",
+   "expr": "customer.firstName & \" \" & customer.lastName",
+   "confidence": "exact",
+   "value": "john smith"
+  },
+  {
+   "instruction": "first name and last name joined with a space",
+   "expr": "customer.firstName & \" \" & customer.lastName",
+   "confidence": "exact",
+   "value": "john smith"
+  },
+  {
+   "instruction": "concatenate first name and last name",
+   "expr": "customer.firstName & customer.lastName",
+   "confidence": "exact",
+   "value": "johnsmith"
+  },
+  {
+   "instruction": "if customer.email is empty use \"unknown@example.com\"",
+   "expr": "$coalesce(customer.email, \"unknown@example.com\")",
+   "confidence": "exact",
+   "value": "John.Smith@Example.com"
+  },
+  {
+   "instruction": "default to \"N/A\" (customer.middleName)",
+   "expr": "$coalesce(customer.middleName, \"N/A\")",
+   "confidence": "exact",
+   "value": "N/A"
+  },
+  {
+   "instruction": "use customer.nickname or customer.firstName",
+   "expr": "$coalesce(customer.nickname, customer.firstName)",
+   "confidence": "exact",
+   "value": "john"
+  },
+  {
+   "instruction": "M means Male, F means Female, anything else Unknown (customer.gender)",
+   "expr": "$translate(customer.gender, {\"M\": \"Male\", \"F\": \"Female\"}, \"Unknown\")",
+   "confidence": "exact",
+   "value": "Male"
+  },
+  {
+   "instruction": "gender: M -> Male, F -> Female",
+   "expr": "$translate(customer.gender, {\"M\": \"Male\", \"F\": \"Female\"})",
+   "confidence": "exact",
+   "value": "Male"
+  },
+  {
+   "instruction": "if order.total is greater than 1000 then \"high\" otherwise \"normal\"",
+   "expr": "order.total > 1000 ? \"high\" : \"normal\"",
+   "confidence": "exact",
+   "value": "high"
+  },
+  {
+   "instruction": "if customer.country equals \"SA\" then \"domestic\" otherwise \"international\"",
+   "expr": "customer.country = \"SA\" ? \"domestic\" : \"international\"",
+   "confidence": "exact",
+   "value": "domestic"
+  },
+  {
+   "instruction": "round order.total to 2 decimals",
+   "expr": "$round(order.total, 2)",
+   "confidence": "exact",
+   "value": 1234.57
+  },
+  {
+   "instruction": "convert order.total to minor units",
+   "expr": "$toMinorUnits(order.total)",
+   "confidence": "exact",
+   "value": 123457
+  },
+  {
+   "instruction": "multiply order.quantity by order.unitPrice",
+   "expr": "order.quantity * order.unitPrice",
+   "confidence": "exact",
+   "value": 59.97
+  },
+  {
+   "instruction": "quantity times unit price",
+   "expr": "order.quantity * order.unitPrice",
+   "confidence": "exact",
+   "value": 59.97
+  },
+  {
+   "instruction": "add 15 percent to order.total",
+   "expr": "order.total * 1.15",
+   "confidence": "exact",
+   "value": 1419.7520499999998
+  },
+  {
+   "instruction": "format order.date as \"dd/MM/yyyy\"",
+   "expr": "$formatDate(order.date, \"dd/MM/yyyy\")",
+   "confidence": "exact",
+   "value": "09/03/2026"
+  },
+  {
+   "instruction": "order date in dd/MM/yyyy",
+   "expr": "$formatDate(order.date, \"dd/MM/yyyy\")",
+   "confidence": "exact",
+   "value": "09/03/2026"
+  },
+  {
+   "instruction": "add 7 days to order.date",
+   "expr": "$addTime(order.date, 7, \"days\")",
+   "confidence": "exact",
+   "value": "2026-03-16T14:05:00.000Z"
+  },
+  {
+   "instruction": "days between booking.checkIn and booking.checkOut",
+   "expr": "$dateDiff(booking.checkIn, booking.checkOut, \"days\")",
+   "confidence": "exact",
+   "value": 7
+  },
+  {
+   "instruction": "number of nights between check in and check out",
+   "expr": "$dateDiff(booking.checkIn, booking.checkOut, \"days\")",
+   "confidence": "exact",
+   "value": 7
+  },
+  {
+   "instruction": "yes or no (customer.active)",
+   "expr": "$yesNo(customer.active)",
+   "confidence": "exact",
+   "value": "Yes"
+  },
+  {
+   "instruction": "count the items in order.lines",
+   "expr": "$count(order.lines)",
+   "confidence": "exact",
+   "value": 3
+  },
+  {
+   "instruction": "sum of order.lines.amount",
+   "expr": "$sum(order.lines.amount)",
+   "confidence": "exact",
+   "value": 37.75
+  },
+  {
+   "instruction": "total of the line amounts",
+   "expr": "$sum(order.lines.amount)",
+   "confidence": "exact",
+   "value": 37.75
+  },
+  {
+   "instruction": "join order.tags with a comma",
+   "expr": "$join(order.tags, \",\")",
+   "confidence": "exact",
+   "value": "vip,gift,vip"
+  },
+  {
+   "instruction": "last 4 characters of card.number",
+   "expr": "$substring(card.number, -4)",
+   "confidence": "exact",
+   "value": "1111"
+  },
+  {
+   "instruction": "pad with zeros to 8 digits (invoice.number)",
+   "expr": "$pad($string(invoice.number), -8, \"0\")",
+   "confidence": "exact",
+   "value": "00000421"
+  },
+  {
+   "instruction": "replace \"-\" with \"/\" in order.reference",
+   "expr": "$replace(order.reference, \"-\", \"/\")",
+   "confidence": "exact",
+   "value": "AB/12/CD"
+  },
+  {
+   "instruction": "remove spaces from customer.phone",
+   "expr": "$replace(customer.phone, /\\s+/, \"\")",
+   "confidence": "exact",
+   "value": "+966501234567"
+  },
+  {
+   "instruction": "everything before \"@\" in customer.email",
+   "expr": "$substringBefore(customer.email, \"@\")",
+   "confidence": "exact",
+   "value": "John.Smith"
+  },
+  {
+   "instruction": "always \"ONLINE\"",
+   "expr": "\"ONLINE\"",
+   "confidence": "exact",
+   "value": "ONLINE"
+  },
+  {
+   "instruction": "today's date",
+   "expr": "$formatDate($now(), \"yyyy-MM-dd\")",
+   "confidence": "exact"
+  },
+  {
+   "instruction": "name in capitals",
+   "expr": "$uppercase(customer.name)",
+   "confidence": "exact",
+   "value": "JOHN SMITH"
+  },
+  {
+   "instruction": "make it all caps (customer.name)",
+   "expr": "$uppercase(customer.name)",
+   "confidence": "exact",
+   "value": "JOHN SMITH"
+  },
+  {
+   "instruction": "customer name should be in title case",
+   "expr": "$titleCase(customer.name)",
+   "confidence": "exact",
+   "value": "John Smith"
+  },
+  {
+   "instruction": "capitalise the first letter of the first name",
+   "expr": "$capitalize(customer.firstName)",
+   "confidence": "exact",
+   "value": "John"
+  },
+  {
+   "instruction": "lower case email and trim it",
+   "expr": "$trim($lowercase(customer.email))",
+   "confidence": "exact",
+   "value": "john.smith@example.com"
+  },
+  {
+   "instruction": "trim the notes",
+   "expr": "$trim(notes)",
+   "confidence": "exact",
+   "value": "hello big world"
+  },
+  {
+   "instruction": "remove extra spaces from notes",
+   "expr": "$trim(notes)",
+   "confidence": "exact",
+   "value": "hello big world"
+  },
+  {
+   "instruction": "first name followed by a space and last name",
+   "expr": "customer.firstName & \" \" & customer.lastName",
+   "confidence": "exact",
+   "value": "john smith"
+  },
+  {
+   "instruction": "last name then first name with comma in between",
+   "expr": "customer.lastName & \",\" & customer.firstName",
+   "confidence": "exact",
+   "value": "smith,john"
+  },
+  {
+   "instruction": "combine title, first name and last name with spaces",
+   "expr": "customer.title & \" \" & customer.firstName & \" \" & customer.lastName",
+   "confidence": "exact",
+   "value": "mr john smith"
+  },
+  {
+   "instruction": "first letter of first name",
+   "expr": "$substring(customer.firstName, 0, 1)",
+   "confidence": "exact",
+   "value": "j"
+  },
+  {
+   "instruction": "first 3 letters of the last name in uppercase",
+   "expr": "$uppercase($substring(customer.lastName, 0, 3))",
+   "confidence": "exact",
+   "value": "SMI"
+  },
+  {
+   "instruction": "replace spaces with underscores in the customer name",
+   "expr": "$join($split($trim(customer.name), /\\s+/), \"_\")",
+   "confidence": "exact",
+   "value": "John_Smith"
+  },
+  {
+   "instruction": "replace the space by a dash (customer.name)",
+   "expr": "$join($split($trim(customer.name), /\\s+/), \"-\")",
+   "confidence": "exact",
+   "value": "John-Smith"
+  },
+  {
+   "instruction": "remove all dashes from the order reference",
+   "expr": "$replace(order.reference, \"-\", \"\")",
+   "confidence": "exact",
+   "value": "AB12CD"
+  },
+  {
+   "instruction": "remove non digits from phone",
+   "expr": "$digits(customer.phone)",
+   "confidence": "exact",
+   "value": "966501234567"
+  },
+  {
+   "instruction": "keep only digits (customer.phone)",
+   "expr": "$digits(customer.phone)",
+   "confidence": "exact",
+   "value": "966501234567"
+  },
+  {
+   "instruction": "only the numbers from the phone",
+   "expr": "$digits(customer.phone)",
+   "confidence": "exact",
+   "value": "966501234567"
+  },
+  {
+   "instruction": "strip the + from the phone number",
+   "expr": "$replace(customer.phone, \"+\", \"\")",
+   "confidence": "exact",
+   "value": "966 50 123 4567"
+  },
+  {
+   "instruction": "add prefix \"CUST-\" to order id",
+   "expr": "\"CUST-\" & order.id",
+   "confidence": "exact",
+   "value": "CUST-ord-7781"
+  },
+  {
+   "instruction": "prefix the order id with ORD",
+   "expr": "\"ORD\" & order.id",
+   "confidence": "exact",
+   "value": "ORDord-7781"
+  },
+  {
+   "instruction": "append \"-X\" to order.id",
+   "expr": "order.id & \"-X\"",
+   "confidence": "exact",
+   "value": "ord-7781-X"
+  },
+  {
+   "instruction": "order id without the \"ord-\" prefix",
+   "expr": "$replace(order.id, /^ord-/, \"\")",
+   "confidence": "exact",
+   "value": "7781"
+  },
+  {
+   "instruction": "everything after the dash in order id",
+   "expr": "$substringAfter(order.id, \"-\")",
+   "confidence": "exact",
+   "value": "7781"
+  },
+  {
+   "instruction": "the part after the @ in email",
+   "expr": "$substringAfter(customer.email, \"@\")",
+   "confidence": "exact",
+   "value": "Example.com"
+  },
+  {
+   "instruction": "domain of the email",
+   "expr": "$substringAfter(customer.email, \"@\")",
+   "confidence": "exact",
+   "value": "Example.com"
+  },
+  {
+   "instruction": "split reference by - and take the second part",
+   "expr": "$split(order.reference, \"-\")[1]",
+   "confidence": "exact",
+   "value": "12"
+  },
+  {
+   "instruction": "second word of notes",
+   "expr": "$split($trim(notes), /\\s+/)[1]",
+   "confidence": "exact",
+   "value": "big"
+  },
+  {
+   "instruction": "truncate notes to 10 characters",
+   "expr": "$substring(notes, 0, 10)",
+   "confidence": "exact",
+   "value": "  hello   "
+  },
+  {
+   "instruction": "length of the customer name",
+   "expr": "$length(customer.name)",
+   "confidence": "exact",
+   "value": 10
+  },
+  {
+   "instruction": "reverse the order reference",
+   "expr": "$join($reverse($split(order.reference, \"\")), \"\")",
+   "confidence": "exact",
+   "value": "DC-21-BA"
+  },
+  {
+   "instruction": "mask all but last 4 digits of the card number",
+   "expr": "$pad(\"\", $max([$length(card.number) - 4, 0]), \"*\") & $substring(card.number, -4)",
+   "confidence": "exact",
+   "value": "************1111"
+  },
+  {
+   "instruction": "if the middle name is missing then use \"-\"",
+   "expr": "$coalesce(customer.middleName, \"-\")",
+   "confidence": "exact",
+   "value": "-"
+  },
+  {
+   "instruction": "when nickname is empty use first name",
+   "expr": "$coalesce(customer.nickname, customer.firstName)",
+   "confidence": "exact",
+   "value": "john"
+  },
+  {
+   "instruction": "nickname, otherwise first name",
+   "expr": "$coalesce(customer.nickname, customer.firstName)",
+   "confidence": "exact",
+   "value": "john"
+  },
+  {
+   "instruction": "use the nickname if present otherwise the first name",
+   "expr": "$coalesce(customer.nickname, customer.firstName)",
+   "confidence": "exact",
+   "value": "john"
+  },
+  {
+   "instruction": "if nickname is not empty use it else use first name",
+   "expr": "$coalesce(customer.nickname, customer.firstName)",
+   "confidence": "exact",
+   "value": "john"
+  },
+  {
+   "instruction": "if the country is SA then Saudi Arabia else Other",
+   "expr": "customer.country = \"SA\" ? \"Saudi Arabia\" : \"Other\"",
+   "confidence": "exact",
+   "value": "Saudi Arabia"
+  },
+  {
+   "instruction": "if status is CONFIRMED then true else false",
+   "expr": "order.status = \"CONFIRMED\" ? true : false",
+   "confidence": "exact",
+   "value": true
+  },
+  {
+   "instruction": "when order status equals confirmed return \"C\", otherwise \"P\"",
+   "expr": "$lowercase(order.status) = \"confirmed\" ? \"C\" : \"P\"",
+   "confidence": "exact",
+   "value": "C"
+  },
+  {
+   "instruction": "if total is more than 1000 then \"gold\", if total is more than 500 then \"silver\", otherwise \"bronze\"",
+   "expr": "order.total > 1000 ? \"gold\" : order.total > 500 ? \"silver\" : \"bronze\"",
+   "confidence": "exact",
+   "value": "gold"
+  },
+  {
+   "instruction": "if age is under 18 then minor otherwise adult",
+   "expr": "customer.age < 18 ? \"minor\" : \"adult\"",
+   "confidence": "exact",
+   "value": "adult"
+  },
+  {
+   "instruction": "if age >= 18 then \"adult\" else \"minor\"",
+   "expr": "customer.age >= 18 ? \"adult\" : \"minor\"",
+   "confidence": "exact",
+   "value": "adult"
+  },
+  {
+   "instruction": "\"vip\" if tags contains vip otherwise \"regular\"",
+   "expr": "\"vip\" in order.tags ? \"vip\" : \"regular\"",
+   "confidence": "exact",
+   "value": "vip"
+  },
+  {
+   "instruction": "if email contains \"@\" keep it, otherwise leave it empty",
+   "expr": "$contains(customer.email, \"@\") ? customer.email : \"\"",
+   "confidence": "exact",
+   "value": "John.Smith@Example.com"
+  },
+  {
+   "instruction": "unless active is true use \"inactive\"",
+   "expr": "$not(customer.active = true) ? \"inactive\"",
+   "confidence": "exact"
+  },
+  {
+   "instruction": "only when customer is active, the email",
+   "expr": "customer.active = true ? customer.email",
+   "confidence": "exact",
+   "value": "John.Smith@Example.com"
+  },
+  {
+   "instruction": "if gender is M then Mr, if F then Ms",
+   "expr": "$translate(customer.gender, {\"M\": \"Mr\", \"F\": \"Ms\"})",
+   "confidence": "exact",
+   "value": "Mr"
+  },
+  {
+   "instruction": "if the name has more than two words take the first word otherwise keep as is",
+   "expr": "$count($split($trim(customer.name), /\\s+/)) > 2 ? $split($trim(customer.name), /\\s+/)[0] : customer.name",
+   "confidence": "exact",
+   "value": "John Smith"
+  },
+  {
+   "instruction": "if the phone starts with +966 then \"KSA\" else \"INTL\"",
+   "expr": "$substring(customer.phone, 0, 4) = \"+966\" ? \"KSA\" : \"INTL\"",
+   "confidence": "exact",
+   "value": "KSA"
+  },
+  {
+   "instruction": "true if total is greater than 1000",
+   "expr": "order.total > 1000",
+   "confidence": "exact",
+   "value": true
+  },
+  {
+   "instruction": "whether the customer is active",
+   "expr": "customer.active = true",
+   "confidence": "exact",
+   "value": true
+  },
+  {
+   "instruction": "translate gender: M = Male, F = Female, otherwise Other",
+   "expr": "$translate(customer.gender, {\"M\": \"Male\", \"F\": \"Female\"}, \"Other\")",
+   "confidence": "exact",
+   "value": "Male"
+  },
+  {
+   "instruction": "M is Male and F is Female (customer.gender)",
+   "expr": "$translate(customer.gender, {\"M\": \"Male\", \"F\": \"Female\"})",
+   "confidence": "exact",
+   "value": "Male"
+  },
+  {
+   "instruction": "map status CONFIRMED to C, CANCELLED to X, anything else to P",
+   "expr": "$translate(order.status, {\"CONFIRMED\": \"C\", \"CANCELLED\": \"X\"}, \"P\")",
+   "confidence": "exact",
+   "value": "C"
+  },
+  {
+   "instruction": "country code: SA means Saudi Arabia; AE means United Arab Emirates",
+   "expr": "$translate(customer.country, {\"SA\": \"Saudi Arabia\", \"AE\": \"United Arab Emirates\"})",
+   "confidence": "exact",
+   "value": "Saudi Arabia"
+  },
+  {
+   "instruction": "true means Active, false means Inactive (customer.active)",
+   "expr": "$yesNo(customer.active, \"Active\", \"Inactive\")",
+   "confidence": "exact",
+   "value": "Active"
+  },
+  {
+   "instruction": "active as Y or N",
+   "expr": "$yesNo(customer.active, \"Y\", \"N\")",
+   "confidence": "exact",
+   "value": "Y"
+  },
+  {
+   "instruction": "order total rounded to the nearest whole number",
+   "expr": "$round(order.total)",
+   "confidence": "exact",
+   "value": 1235
+  },
+  {
+   "instruction": "round up the total",
+   "expr": "$ceil(order.total)",
+   "confidence": "exact",
+   "value": 1235
+  },
+  {
+   "instruction": "total with 2 decimal places",
+   "expr": "$formatNumber(order.total, \"0.00\")",
+   "confidence": "exact",
+   "value": "1234.57"
+  },
+  {
+   "instruction": "total as an integer",
+   "expr": "$round(order.total)",
+   "confidence": "exact",
+   "value": 1235
+  },
+  {
+   "instruction": "total in cents",
+   "expr": "$toMinorUnits(order.total)",
+   "confidence": "exact",
+   "value": 123457
+  },
+  {
+   "instruction": "total multiplied by 100",
+   "expr": "order.total * 100",
+   "confidence": "exact",
+   "value": 123456.7
+  },
+  {
+   "instruction": "total minus 10 percent",
+   "expr": "order.total * 0.9",
+   "confidence": "exact",
+   "value": 1111.1103
+  },
+  {
+   "instruction": "total plus 15% vat",
+   "expr": "order.total * 1.15",
+   "confidence": "exact",
+   "value": 1419.7520499999998
+  },
+  {
+   "instruction": "15 percent of the total",
+   "expr": "order.total * 0.15",
+   "confidence": "exact",
+   "value": 185.18505
+  },
+  {
+   "instruction": "quantity * unit price rounded to 2 decimals",
+   "expr": "$round((order.quantity * order.unitPrice), 2)",
+   "confidence": "exact",
+   "value": 59.97
+  },
+  {
+   "instruction": "divide total by quantity",
+   "expr": "order.total / order.quantity",
+   "confidence": "exact",
+   "value": 411.52233333333334
+  },
+  {
+   "instruction": "total divided by quantity, rounded to 2 decimals",
+   "expr": "$round((order.total / order.quantity), 2)",
+   "confidence": "exact",
+   "value": 411.52
+  },
+  {
+   "instruction": "half of the total",
+   "expr": "order.total / 2",
+   "confidence": "exact",
+   "value": 617.2835
+  },
+  {
+   "instruction": "absolute value of total",
+   "expr": "$abs(order.total)",
+   "confidence": "exact",
+   "value": 1234.567
+  },
+  {
+   "instruction": "convert quantity to text",
+   "expr": "$string(order.quantity)",
+   "confidence": "exact",
+   "value": "3"
+  },
+  {
+   "instruction": "age as a number",
+   "expr": "$number(customer.age)",
+   "confidence": "exact",
+   "value": 34
+  },
+  {
+   "instruction": "age plus 1",
+   "expr": "customer.age + 1",
+   "confidence": "exact",
+   "value": 35
+  },
+  {
+   "instruction": "format total with thousands separators and 2 decimals",
+   "expr": "$formatNumber(order.total, \"#,##0.00\")",
+   "confidence": "exact",
+   "value": "1,234.57"
+  },
+  {
+   "instruction": "total as a percentage of 5000",
+   "expr": "order.total / 5000 * 100",
+   "confidence": "exact",
+   "value": 24.69134
+  },
+  {
+   "instruction": "order date as yyyy-MM-dd",
+   "expr": "$formatDate(order.date, \"yyyy-MM-dd\")",
+   "confidence": "exact",
+   "value": "2026-03-09"
+  },
+  {
+   "instruction": "date only (order.date)",
+   "expr": "$formatDate(order.date, \"yyyy-MM-dd\")",
+   "confidence": "exact",
+   "value": "2026-03-09"
+  },
+  {
+   "instruction": "year of the birth date",
+   "expr": "$number($formatDate(customer.birthDate, \"yyyy\"))",
+   "confidence": "exact",
+   "value": 1990
+  },
+  {
+   "instruction": "month name of order date",
+   "expr": "$formatDate(order.date, \"MMMM\")",
+   "confidence": "exact",
+   "value": "March"
+  },
+  {
+   "instruction": "day of the week of the order date",
+   "expr": "$formatDate(order.date, \"EEEE\")",
+   "confidence": "exact",
+   "value": "Monday"
+  },
+  {
+   "instruction": "order date in ISO format",
+   "expr": "$parseDate(order.date)",
+   "confidence": "exact",
+   "value": "2026-03-09T14:05:00.000Z"
+  },
+  {
+   "instruction": "convert birth date from \"yyyy-MM-dd\" to \"dd MMM yyyy\"",
+   "expr": "$formatDate(customer.birthDate, \"dd MMM yyyy\", \"yyyy-MM-dd\")",
+   "confidence": "exact",
+   "value": "17 May 1990"
+  },
+  {
+   "instruction": "order date plus 30 days",
+   "expr": "$addTime(order.date, 30, \"days\")",
+   "confidence": "exact",
+   "value": "2026-04-08T14:05:00.000Z"
+  },
+  {
+   "instruction": "subtract 1 month from the check in date",
+   "expr": "$addTime(booking.checkIn, -1, \"months\")",
+   "confidence": "exact",
+   "value": "2026-03-01"
+  },
+  {
+   "instruction": "3 days before check in",
+   "expr": "$addTime(booking.checkIn, -3, \"days\")",
+   "confidence": "exact",
+   "value": "2026-03-29"
+  },
+  {
+   "instruction": "age in years from birth date",
+   "expr": "$dateDiff(customer.birthDate, $now(), \"years\")",
+   "confidence": "exact"
+  },
+  {
+   "instruction": "years since birth date",
+   "expr": "$dateDiff(customer.birthDate, $now(), \"years\")",
+   "confidence": "exact"
+  },
+  {
+   "instruction": "order date as epoch milliseconds",
+   "expr": "$epochMillis(order.date)",
+   "confidence": "exact",
+   "value": 1773065100000
+  },
+  {
+   "instruction": "weeks between check in and check out",
+   "expr": "$dateDiff(booking.checkIn, booking.checkOut, \"weeks\")",
+   "confidence": "exact",
+   "value": 1
+  },
+  {
+   "instruction": "number of lines",
+   "expr": "$count(order.lines)",
+   "confidence": "exact",
+   "value": 3
+  },
+  {
+   "instruction": "how many tags",
+   "expr": "$count(order.tags)",
+   "confidence": "exact",
+   "value": 3
+  },
+  {
+   "instruction": "first tag",
+   "expr": "(order.tags)[0]",
+   "confidence": "exact",
+   "value": "vip"
+  },
+  {
+   "instruction": "last line sku",
+   "expr": "(order.lines.sku)[-1]",
+   "confidence": "exact",
+   "value": "C3"
+  },
+  {
+   "instruction": "sku of the first line",
+   "expr": "order.lines[0].sku",
+   "confidence": "exact",
+   "value": "A1"
+  },
+  {
+   "instruction": "all the skus joined with a pipe",
+   "expr": "$join(order.lines.sku, \"|\")",
+   "confidence": "exact",
+   "value": "A1|B2|C3"
+  },
+  {
+   "instruction": "skus separated by \", \"",
+   "expr": "$join(order.lines.sku, \", \")",
+   "confidence": "exact",
+   "value": "A1, B2, C3"
+  },
+  {
+   "instruction": "unique tags",
+   "expr": "$distinct(order.tags)",
+   "confidence": "exact",
+   "value": [
+    "vip",
+    "gift"
+   ]
+  },
+  {
+   "instruction": "sort the tags",
+   "expr": "$sort(order.tags)",
+   "confidence": "exact",
+   "value": [
+    "gift",
+    "vip",
+    "vip"
+   ]
+  },
+  {
+   "instruction": "tags in upper case",
+   "expr": "$map(order.tags, function($v) { $uppercase($v) })",
+   "confidence": "exact",
+   "value": [
+    "VIP",
+    "GIFT",
+    "VIP"
+   ]
+  },
+  {
+   "instruction": "sum of amount for lines where status is active",
+   "expr": "$sum(order.lines[$lowercase(status) = \"active\"].amount)",
+   "confidence": "exact",
+   "value": 17.75
+  },
+  {
+   "instruction": "count of lines where status is active",
+   "expr": "$count(order.lines[$lowercase(status) = \"active\"])",
+   "confidence": "exact",
+   "value": 2
+  },
+  {
+   "instruction": "skus of lines with status active",
+   "expr": "order.lines[$lowercase(status) = \"active\"].sku",
+   "confidence": "exact",
+   "value": [
+    "A1",
+    "C3"
+   ]
+  },
+  {
+   "instruction": "largest line amount",
+   "expr": "$max(order.lines.amount)",
+   "confidence": "exact",
+   "value": 20
+  },
+  {
+   "instruction": "average of line amounts",
+   "expr": "$average(order.lines.amount)",
+   "confidence": "exact",
+   "value": 12.583333333333334
+  },
+  {
+   "instruction": "sum of qty times price for each line",
+   "expr": "$sum(order.lines.(qty * price))",
+   "confidence": "exact",
+   "value": 37.74
+  },
+  {
+   "instruction": "first 2 tags",
+   "expr": "$filter(order.tags, function($v, $i, $a) { $i < 2 })",
+   "confidence": "exact",
+   "value": [
+    "vip",
+    "gift"
+   ]
+  },
+  {
+   "instruction": "tags as a comma separated list",
+   "expr": "$join(order.tags, \", \")",
+   "confidence": "exact",
+   "value": "vip, gift, vip"
+  },
+  {
+   "instruction": "\"web\"",
+   "expr": "\"web\"",
+   "confidence": "exact",
+   "value": "web"
+  },
+  {
+   "instruction": "always the text WEB",
+   "expr": "\"WEB\"",
+   "confidence": "exact",
+   "value": "WEB"
+  },
+  {
+   "instruction": "a new uuid",
+   "expr": "$uuid()",
+   "confidence": "exact"
+  },
+  {
+   "instruction": "current timestamp",
+   "expr": "$now()",
+   "confidence": "exact"
+  },
+  {
+   "instruction": "set to true",
+   "expr": "true",
+   "confidence": "exact",
+   "value": true
+  },
+  {
+   "instruction": "0",
+   "expr": "0",
+   "confidence": "exact",
+   "value": 0
+  },
+  {
+   "instruction": "amounts of the lines whose qty is greater than 1",
+   "expr": "order.lines[qty > 1].amount",
+   "confidence": "exact",
+   "value": [
+    10.5,
+    7.25
+   ]
+  },
+  {
+   "instruction": "always uppercase (customer.name)",
+   "expr": "$uppercase(customer.name)",
+   "confidence": "exact",
+   "value": "JOHN SMITH"
+  },
+  {
+   "instruction": "last name, comma, first name",
+   "expr": "customer.lastName & \",\" & customer.firstName",
+   "confidence": "exact",
+   "value": "smith,john"
+  },
+  {
+   "instruction": "first name and last name",
+   "expr": "customer.firstName & \" \" & customer.lastName",
+   "confidence": "guessed",
+   "value": "john smith"
+  },
+  {
+   "instruction": "if total > 1000 then \"gold\" else if total > 500 then \"silver\" else \"bronze\"",
+   "expr": "order.total > 1000 ? \"gold\" : order.total > 500 ? \"silver\" : \"bronze\"",
+   "confidence": "exact",
+   "value": "gold"
+  },
+  {
+   "instruction": "status of the last line",
+   "expr": "order.lines[-1].status",
+   "confidence": "exact",
+   "value": "active"
+  },
+  {
+   "instruction": "convert to uper case (customer.name)",
+   "expr": "$uppercase(customer.name)",
+   "confidence": "guessed",
+   "value": "JOHN SMITH"
+  },
+  {
+   "instruction": "captalize the customer name",
+   "expr": "$capitalize(customer.name)",
+   "confidence": "guessed",
+   "value": "John smith"
+  },
+  {
+   "instruction": "if emial is empty use \"none\"",
+   "expr": "$coalesce(customer.email, \"none\")",
+   "confidence": "guessed",
+   "value": "John.Smith@Example.com"
+  },
+  {
+   "instruction": "remvoe spaces from phone",
+   "expr": "$replace(customer.phone, /\\s+/, \"\")",
+   "confidence": "guessed",
+   "value": "+966501234567"
+  },
+  {
+   "instruction": "frist word of the name",
+   "expr": "$split($trim(customer.name), /\\s+/)[0]",
+   "confidence": "exact",
+   "value": "John"
+  },
+  {
+   "instruction": "join frist name and last name with a space",
+   "expr": "customer.firstName & \" \" & customer.lastName",
+   "confidence": "exact",
+   "value": "john smith"
+  },
+  {
+   "instruction": "round totl to 2 decimals",
+   "expr": "$round(order.total, 2)",
+   "confidence": "guessed",
+   "value": 1234.57
+  },
+  {
+   "instruction": "name",
+   "expr": "customer.name",
+   "confidence": "exact",
+   "value": "John Smith"
+  },
+  {
+   "instruction": "put an underscore between the words if the name has two words (customer.name)",
+   "expr": "$count($split($trim(customer.name), /\\s+/)) = 2 ? $join($split($trim(customer.name), /\\s+/), \"_\") : customer.name",
+   "confidence": "exact",
+   "value": "John_Smith"
+  },
+  {
+   "instruction": "if name came as two words add _ in between",
+   "expr": "$count($split($trim(customer.name), /\\s+/)) = 2 ? $join($split($trim(customer.name), /\\s+/), \"_\") : customer.name",
+   "confidence": "exact",
+   "value": "John_Smith"
+  },
+  {
+   "instruction": "when the name is two words join them with an underscore, otherwise leave it",
+   "expr": "$count($split($trim(customer.name), /\\s+/)) = 2 ? $join($split($trim(customer.name), /\\s+/), \"_\") : customer.name",
+   "confidence": "exact",
+   "value": "John_Smith"
+  },
+  {
+   "instruction": "add a hyphen between first name and last name",
+   "expr": "customer.firstName & \"-\" & customer.lastName",
+   "confidence": "exact",
+   "value": "john-smith"
+  },
+  {
+   "instruction": "name with underscores instead of spaces",
+   "expr": "$replace(customer.name, \" \", \"_\")",
+   "confidence": "exact",
+   "value": "John_Smith"
+  },
+  {
+   "instruction": "replace space with _ only if the name has exactly 2 words (customer.name)",
+   "expr": "$count($split($trim(customer.name), /\\s+/)) = 2 ? $join($split($trim(customer.name), /\\s+/), \"_\") : customer.name",
+   "confidence": "exact",
+   "value": "John_Smith"
+  },
+  {
+   "instruction": "if name has 3 words take the last one",
+   "expr": "$count($split($trim(customer.name), /\\s+/)) = 3 ? $split($trim(customer.name), /\\s+/)[-1] : customer.name",
+   "confidence": "exact",
+   "value": "John Smith"
+  },
+  {
+   "instruction": "make the first letter capital (customer.firstName)",
+   "expr": "$capitalize(customer.firstName)",
+   "confidence": "exact",
+   "value": "John"
+  },
+  {
+   "instruction": "first name in caps and last name in small letters",
+   "expr": "$uppercase(customer.firstName) & \" \" & $lowercase(customer.lastName)",
+   "confidence": "guessed",
+   "value": "JOHN smith"
+  },
+  {
+   "instruction": "i want the email in small letters",
+   "expr": "$lowercase(customer.email)",
+   "confidence": "exact",
+   "value": "john.smith@example.com"
+  },
+  {
+   "instruction": "the phone number without spaces and dashes",
+   "expr": "$replace($replace(customer.phone, /\\s+/, \"\"), \"-\", \"\")",
+   "confidence": "exact",
+   "value": "+966501234567"
+  },
+  {
+   "instruction": "take only first 10 characters from the notes",
+   "expr": "$substring(notes, 0, 10)",
+   "confidence": "exact",
+   "value": "  hello   "
+  },
+  {
+   "instruction": "cut the notes to 20 chars",
+   "expr": "$substring(notes, 0, 20)",
+   "confidence": "exact",
+   "value": "  hello   big world "
+  },
+  {
+   "instruction": "if notes is longer than 10 characters truncate to 10 characters",
+   "expr": "$length(notes) > 10 ? $substring(notes, 0, 10) : notes",
+   "confidence": "exact",
+   "value": "  hello   "
+  },
+  {
+   "instruction": "if the name is longer than 5 characters take the first 5 characters otherwise keep it",
+   "expr": "$length(customer.name) > 5 ? $substring(customer.name, 0, 5) : customer.name",
+   "confidence": "exact",
+   "value": "John "
+  },
+  {
+   "instruction": "if gender is M then \"Male\" else if gender is F then \"Female\" else \"Unknown\"",
+   "expr": "customer.gender = \"M\" ? \"Male\" : customer.gender = \"F\" ? \"Female\" : \"Unknown\"",
+   "confidence": "exact",
+   "value": "Male"
+  },
+  {
+   "instruction": "for gender, M becomes Male and F becomes Female",
+   "expr": "$translate(customer.gender, {\"M\": \"Male\", \"F\": \"Female\"})",
+   "confidence": "exact",
+   "value": "Male"
+  },
+  {
+   "instruction": "when the status is CONFIRMED send 1 else send 0",
+   "expr": "order.status = \"CONFIRMED\" ? 1 : 0",
+   "confidence": "exact",
+   "value": 1
+  },
+  {
+   "instruction": "1 if active else 0",
+   "expr": "customer.active = true ? 1 : 0",
+   "confidence": "exact",
+   "value": 1
+  },
+  {
+   "instruction": "Y if the customer is active, N otherwise",
+   "expr": "customer.active = true ? \"Y\" : \"N\"",
+   "confidence": "exact",
+   "value": "Y"
+  },
+  {
+   "instruction": "if active then \"Y\" else \"N\"",
+   "expr": "customer.active = true ? \"Y\" : \"N\"",
+   "confidence": "exact",
+   "value": "Y"
+  },
+  {
+   "instruction": "if the email is not provided put \"no-email@example.com\"",
+   "expr": "$coalesce(customer.email, \"no-email@example.com\")",
+   "confidence": "exact",
+   "value": "John.Smith@Example.com"
+  },
+  {
+   "instruction": "if email is blank leave it out",
+   "expr": "$not($isEmpty(customer.email)) ? customer.email",
+   "confidence": "exact",
+   "value": "John.Smith@Example.com"
+  },
+  {
+   "instruction": "skip when email is empty (customer.email)",
+   "expr": "$not($isEmpty(customer.email)) ? customer.email",
+   "confidence": "exact",
+   "value": "John.Smith@Example.com"
+  },
+  {
+   "instruction": "if nickname exists use nickname otherwise use first name",
+   "expr": "$coalesce(customer.nickname, customer.firstName)",
+   "confidence": "exact",
+   "value": "john"
+  },
+  {
+   "instruction": "if there is no nickname use the first name",
+   "expr": "$coalesce(customer.nickname, customer.firstName)",
+   "confidence": "exact",
+   "value": "john"
+  },
+  {
+   "instruction": "if total is between 100 and 500 then \"mid\" otherwise \"other\"",
+   "expr": "order.total >= 100 and order.total <= 500 ? \"mid\" : \"other\"",
+   "confidence": "exact",
+   "value": "other"
+  },
+  {
+   "instruction": "if quantity is 0 then \"none\" otherwise quantity",
+   "expr": "order.quantity = 0 ? \"none\" : order.quantity",
+   "confidence": "exact",
+   "value": 3
+  },
+  {
+   "instruction": "if total is greater than 1000 and currency is SAR then \"big\" otherwise \"small\"",
+   "expr": "order.total > 1000 and order.currency = \"SAR\" ? \"big\" : \"small\"",
+   "confidence": "exact",
+   "value": "big"
+  },
+  {
+   "instruction": "if status is CONFIRMED or status is PAID then \"ok\" otherwise \"pending\"",
+   "expr": "order.status = \"CONFIRMED\" or order.status = \"PAID\" ? \"ok\" : \"pending\"",
+   "confidence": "exact",
+   "value": "ok"
+  },
+  {
+   "instruction": "if status is not CANCELLED then total otherwise 0",
+   "expr": "order.status != \"CANCELLED\" ? order.total : 0",
+   "confidence": "exact",
+   "value": 1234.567
+  },
+  {
+   "instruction": "if currency is SAR then total times 100 otherwise total",
+   "expr": "order.currency = \"SAR\" ? order.total * 100 : order.total",
+   "confidence": "exact",
+   "value": 123456.7
+  },
+  {
+   "instruction": "total in halalas",
+   "expr": "$toMinorUnits(order.total)",
+   "confidence": "exact",
+   "value": 123457
+  },
+  {
+   "instruction": "unit price multiplied by the quantity, to 2 decimals",
+   "expr": "$round((order.unitPrice * order.quantity), 2)",
+   "confidence": "exact",
+   "value": 59.97
+  },
+  {
+   "instruction": "total / 1.15",
+   "expr": "order.total / 1.15",
+   "confidence": "exact",
+   "value": 1073.5365217391304
+  },
+  {
+   "instruction": "total + 10",
+   "expr": "order.total + 10",
+   "confidence": "exact",
+   "value": 1244.567
+  },
+  {
+   "instruction": "total rounded down",
+   "expr": "$floor(order.total)",
+   "confidence": "exact",
+   "value": 1234
+  },
+  {
+   "instruction": "total rounded to nearest 10",
+   "expr": "$round(order.total / 10) * 10",
+   "confidence": "exact",
+   "value": 1230
+  },
+  {
+   "instruction": "quantity as text padded to 3 digits with zeros",
+   "expr": "$pad($string(order.quantity), -3, \"0\")",
+   "confidence": "exact",
+   "value": "003"
+  },
+  {
+   "instruction": "invoice number padded with leading zeros to length 10",
+   "expr": "$pad($string(invoice.number), -10, \"0\")",
+   "confidence": "exact",
+   "value": "0000000421"
+  },
+  {
+   "instruction": "pad the invoice number to 6 characters with 0 on the left",
+   "expr": "$pad($string(invoice.number), -6, \"0\")",
+   "confidence": "exact",
+   "value": "000421"
+  },
+  {
+   "instruction": "add leading zeros to make invoice number 8 digits long",
+   "expr": "$pad($string(invoice.number), -8, \"0\")",
+   "confidence": "exact",
+   "value": "00000421"
+  },
+  {
+   "instruction": "\"INV-\" followed by the invoice number",
+   "expr": "\"INV-\" & $string(invoice.number)",
+   "confidence": "exact",
+   "value": "INV-421"
+  },
+  {
+   "instruction": "INV- plus invoice number padded to 6 digits",
+   "expr": "\"INV-\" & $pad($string(invoice.number), -6, \"0\")",
+   "confidence": "exact",
+   "value": "INV-000421"
+  },
+  {
+   "instruction": "order id in uppercase with \"-\" removed",
+   "expr": "$replace($uppercase(order.id), \"-\", \"\")",
+   "confidence": "exact",
+   "value": "ORD7781"
+  },
+  {
+   "instruction": "order date formatted as \"dd-MMM-yyyy\"",
+   "expr": "$formatDate(order.date, \"dd-MMM-yyyy\")",
+   "confidence": "exact",
+   "value": "09-Mar-2026"
+  },
+  {
+   "instruction": "order date in the format MM/dd/yyyy",
+   "expr": "$formatDate(order.date, \"MM/dd/yyyy\")",
+   "confidence": "exact",
+   "value": "03/09/2026"
+  },
+  {
+   "instruction": "change birth date to dd/MM/yyyy",
+   "expr": "$formatDate(customer.birthDate, \"dd/MM/yyyy\")",
+   "confidence": "exact",
+   "value": "17/05/1990"
+  },
+  {
+   "instruction": "birth date year",
+   "expr": "$number($formatDate(customer.birthDate, \"yyyy\"))",
+   "confidence": "exact",
+   "value": 1990
+  },
+  {
+   "instruction": "age from birth date",
+   "expr": "$dateDiff(customer.birthDate, $now(), \"years\")",
+   "confidence": "exact"
+  },
+  {
+   "instruction": "check out minus check in in days",
+   "expr": "$dateDiff(booking.checkIn, booking.checkOut, \"days\")",
+   "confidence": "exact",
+   "value": 7
+  },
+  {
+   "instruction": "difference between check out and check in in days",
+   "expr": "$abs($dateDiff(booking.checkOut, booking.checkIn, \"days\"))",
+   "confidence": "exact",
+   "value": 7
+  },
+  {
+   "instruction": "check in date plus 2 weeks",
+   "expr": "$addTime(booking.checkIn, 2, \"weeks\")",
+   "confidence": "exact",
+   "value": "2026-04-15"
+  },
+  {
+   "instruction": "one day before check in",
+   "expr": "$addTime(booking.checkIn, -1, \"days\")",
+   "confidence": "exact",
+   "value": "2026-03-31"
+  },
+  {
+   "instruction": "the day after check out",
+   "expr": "$addTime(booking.checkOut, 1, \"days\")",
+   "confidence": "exact",
+   "value": "2026-04-09"
+  },
+  {
+   "instruction": "is check in before check out",
+   "expr": "$epochMillis(booking.checkIn) < $epochMillis(booking.checkOut)",
+   "confidence": "guessed",
+   "value": true
+  },
+  {
+   "instruction": "whether total is at least 1000",
+   "expr": "order.total >= 1000",
+   "confidence": "exact",
+   "value": true
+  },
+  {
+   "instruction": "if check in is in the past then \"past\" otherwise \"future\"",
+   "expr": "$epochMillis(booking.checkIn) < $millis() ? \"past\" : \"future\"",
+   "confidence": "exact"
+  },
+  {
+   "instruction": "count tags",
+   "expr": "$count(order.tags)",
+   "confidence": "exact",
+   "value": 3
+  },
+  {
+   "instruction": "number of items in the lines",
+   "expr": "$count(order.lines)",
+   "confidence": "exact",
+   "value": 3
+  },
+  {
+   "instruction": "sum the qty of the lines",
+   "expr": "$sum(order.lines.qty)",
+   "confidence": "exact",
+   "value": 7
+  },
+  {
+   "instruction": "add up the line amounts and round to 2 decimals",
+   "expr": "$round($sum(order.lines.amount), 2)",
+   "confidence": "exact",
+   "value": 37.75
+  },
+  {
+   "instruction": "the highest price among the lines",
+   "expr": "$max(order.lines.price)",
+   "confidence": "exact",
+   "value": 20
+  },
+  {
+   "instruction": "the cheapest line price",
+   "expr": "$min(order.lines.price)",
+   "confidence": "exact",
+   "value": 1.81
+  },
+  {
+   "instruction": "list of skus",
+   "expr": "order.lines.sku",
+   "confidence": "exact",
+   "value": [
+    "A1",
+    "B2",
+    "C3"
+   ]
+  },
+  {
+   "instruction": "comma separated skus in upper case",
+   "expr": "$uppercase($join(order.lines.sku, \", \"))",
+   "confidence": "exact",
+   "value": "A1, B2, C3"
+  },
+  {
+   "instruction": "second tag",
+   "expr": "(order.tags)[1]",
+   "confidence": "exact",
+   "value": "gift"
+  },
+  {
+   "instruction": "the last tag in uppercase",
+   "expr": "$uppercase((order.tags)[-1])",
+   "confidence": "exact",
+   "value": "VIP"
+  },
+  {
+   "instruction": "tags joined by \" | \"",
+   "expr": "$join(order.tags, \" | \")",
+   "confidence": "exact",
+   "value": "vip | gift | vip"
+  },
+  {
+   "instruction": "are there any lines",
+   "expr": "$not($isEmpty(order.lines))",
+   "confidence": "guessed",
+   "value": true
+  },
+  {
+   "instruction": "if there are no lines then 0 otherwise the number of lines",
+   "expr": "$isEmpty(order.lines) ? 0 : $count(order.lines)",
+   "confidence": "exact",
+   "value": 3
+  },
+  {
+   "instruction": "first line amount",
+   "expr": "(order.lines.amount)[0]",
+   "confidence": "exact",
+   "value": 10.5
+  },
+  {
+   "instruction": "amount of the last line",
+   "expr": "order.lines[-1].amount",
+   "confidence": "exact",
+   "value": 7.25
+  },
+  {
+   "instruction": "qty of second line",
+   "expr": "order.lines[1].qty",
+   "confidence": "exact",
+   "value": 1
+  },
+  {
+   "instruction": "count the lines whose status is cancelled",
+   "expr": "$count(order.lines[$lowercase(status) = \"cancelled\"])",
+   "confidence": "exact",
+   "value": 1
+  },
+  {
+   "instruction": "lines with amount greater than 10",
+   "expr": "order.lines[amount > 10]",
+   "confidence": "exact",
+   "value": [
+    {
+     "sku": "A1",
+     "amount": 10.5,
+     "qty": 2,
+     "price": 5.25,
+     "status": "active"
+    },
+    {
+     "sku": "B2",
+     "amount": 20,
+     "qty": 1,
+     "price": 20,
+     "status": "cancelled"
+    }
+   ]
+  },
+  {
+   "instruction": "does tags contain gift",
+   "expr": "\"gift\" in order.tags",
+   "confidence": "guessed",
+   "value": true
+  },
+  {
+   "instruction": "true when tags includes \"vip\"",
+   "expr": "\"vip\" in order.tags",
+   "confidence": "exact",
+   "value": true
+  },
+  {
+   "instruction": "currency in lower case",
+   "expr": "$lowercase(order.currency)",
+   "confidence": "exact",
+   "value": "sar"
+  },
+  {
+   "instruction": "currency and total separated by a space",
+   "expr": "order.currency & \" \" & $string(order.total)",
+   "confidence": "exact",
+   "value": "SAR 1234.567"
+  },
+  {
+   "instruction": "total followed by a space and the currency",
+   "expr": "$string(order.total) & \" \" & order.currency",
+   "confidence": "exact",
+   "value": "1234.567 SAR"
+  },
+  {
+   "instruction": "concatenate currency, \" \", total",
+   "expr": "order.currency & \" \" & $string(order.total)",
+   "confidence": "exact",
+   "value": "SAR 1234.567"
+  },
+  {
+   "instruction": "id and status with a colon in between",
+   "expr": "order.id & \":\" & order.status",
+   "confidence": "exact",
+   "value": "ord-7781:CONFIRMED"
+  },
+  {
+   "instruction": "join id, status and currency with a dash",
+   "expr": "order.id & \"-\" & order.status & \"-\" & order.currency",
+   "confidence": "exact",
+   "value": "ord-7781-CONFIRMED-SAR"
+  },
+  {
+   "instruction": "combine first name, middle name and last name with spaces",
+   "expr": "customer.firstName & \" \" & customer.middleName & \" \" & customer.lastName",
+   "confidence": "exact",
+   "value": "john  smith"
+  },
+  {
+   "instruction": "first name plus last name",
+   "expr": "customer.firstName & \" \" & customer.lastName",
+   "confidence": "guessed",
+   "value": "john smith"
+  },
+  {
+   "instruction": "first name + \" \" + last name",
+   "expr": "customer.firstName & \" \" & customer.lastName",
+   "confidence": "exact",
+   "value": "john smith"
+  },
+  {
+   "instruction": "put a space between first name and last name",
+   "expr": "customer.firstName & \" \" & customer.lastName",
+   "confidence": "exact",
+   "value": "john smith"
+  },
+  {
+   "instruction": "remove spaces and dashes from the phone",
+   "expr": "$replace($replace(customer.phone, /\\s+/, \"\"), \"-\", \"\")",
+   "confidence": "exact",
+   "value": "+966501234567"
+  },
+  {
+   "instruction": "difference between check in and check out in days",
+   "expr": "$abs($dateDiff(booking.checkIn, booking.checkOut, \"days\"))",
+   "confidence": "exact",
+   "value": 7
+  },
+  {
+   "instruction": "total plus 10",
+   "expr": "order.total + 10",
+   "confidence": "exact",
+   "value": 1244.567
+  },
+  {
+   "instruction": "quantity plus 1",
+   "expr": "order.quantity + 1",
+   "confidence": "exact",
+   "value": 4
+  },
+  {
+   "instruction": "if status is active then \"A\" otherwise \"B\"",
+   "expr": "$lowercase(order.status) = \"active\" ? \"A\" : \"B\"",
+   "confidence": "exact",
+   "value": "B"
+  },
+  {
+   "instruction": "days between check in and check out",
+   "expr": "$dateDiff(booking.checkIn, booking.checkOut, \"days\")",
+   "confidence": "exact",
+   "value": 7
+  },
+  {
+   "instruction": "phone without spaces, dashes and brackets",
+   "expr": "$replace($replace($replace(customer.phone, /\\s+/, \"\"), \"-\", \"\"), \"()\", \"\")",
+   "confidence": "exact",
+   "value": "+966501234567"
+  },
+  {
+   "instruction": "remove dashes and spaces (customer.phone)",
+   "expr": "$replace($replace(customer.phone, \"-\", \"\"), /\\s+/, \"\")",
+   "confidence": "exact",
+   "value": "+966501234567"
+  },
+  {
+   "instruction": "if the customer is active then \"Y\" otherwise \"N\"",
+   "expr": "customer.active = true ? \"Y\" : \"N\"",
+   "confidence": "exact",
+   "value": "Y"
+  }
+ ],
+ "rejected": [
+  "full name as last name, comma, first name",
+  "is the order confirmed",
+  "make it nice",
+  "do the needful",
+  "fix the name",
+  "calculate the thing",
+  "order by priority and regroup",
+  "send an email to the customer",
+  "blah blah blah",
+  "if the moon is full then howl",
+  "use the customer's favourite colour",
+  "phone without the country code +966",
+  "gender should be Male when M and Female when F",
+  "Male if gender is M, Female if gender is F",
+  "email, or \"n/a\" when empty",
+  "if status is one of CONFIRMED, PAID then \"ok\" otherwise \"pending\"",
+  "total excluding 15% vat",
+  "vat amount at 15 percent of total",
+  "convert the total to a string with 2 decimals",
+  "show the order date like 09 March 2026",
+  "stay length in nights (booking.checkIn, booking.checkOut)",
+  "total quantity of all lines",
+  "skus of the lines where qty is more than 1 joined with a comma",
+  "title in capital then a dot then a space then the last name"
+ ]
+}

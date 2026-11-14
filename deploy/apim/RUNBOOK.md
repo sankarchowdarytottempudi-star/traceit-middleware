@@ -105,10 +105,15 @@ dropped into `repository/deployment/server` by hand, or extra jars). The gateway
 deployed APIs from the database on every start, which the restart test covers. In-memory throttle
 counters start from zero after a restart.
 
-Not carried over from blue: sign-in sessions, authorization codes and refresh tokens that blue
-issued after the snapshot green was seeded from (`cat /root/apim-bluegreen/seed/TAKEN_AT`). Access
-tokens are self-contained JWTs signed with the same key, so tokens issued by blue keep working on
-green until they expire; console users may have to sign in once more.
+Not carried over from blue: whatever blue wrote between the snapshot green was seeded from
+(`cat /root/apim-bluegreen/seed/TAKEN_AT`, 20:10:37 UTC) and the switch (20:17:34 UTC). `go_live.sh`
+proved that no API, application, subscription, key, DCR client, user or policy changed in that
+window, but it cannot carry over tokens: sign-in sessions, authorization codes, refresh tokens and
+access tokens for the management REST APIs (Publisher / DevPortal / Admin) that blue issued in
+those seven minutes are unknown to green and answer 401 ("ACTIVE access token is not found" in
+`wso2carbon.log`; six such calls were seen in the first minutes). The holder signs in again or
+requests a new token. Tokens issued before the snapshot keep working, and gateway access tokens
+are self-contained JWTs signed with the same key, so API consumers are not affected at all.
 
 Not protected: the volume is a directory on this one node and there is no scheduled or off-node
 backup. The PersistentVolume was switched to reclaim policy `Retain` after go-live, so deleting

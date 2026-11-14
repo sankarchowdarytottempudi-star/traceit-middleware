@@ -49,8 +49,9 @@ async function add(type, name) {
   return page.locator(".ws-panel");
 }
 async function selectByName(name) {
+  await page.waitForTimeout(500); // let the canvas finish moving to the step that was just added
   await page.getByRole("button", { name: "Fit the flow on screen" }).click();
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(500);
   await page.locator(`.ws-node[data-node-name="${name}"] .ws-node-name`).first().click();
   const panel = page.locator(".ws-panel");
   await panel.waitFor();

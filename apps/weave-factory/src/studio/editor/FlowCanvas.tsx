@@ -269,6 +269,25 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
     return () => document.removeEventListener("keydown", onKey);
   }, [store, readOnly]);
 
+  // A browser scrolls even a clipped container to reveal a focused or clicked step that lies outside
+  // the view. That would shift the whole canvas under its own controls, so any such scroll is undone
+  // at once and the step is brought into view by moving the canvas instead.
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const onScroll = (e: Event) => {
+      const t = e.target;
+      if (!(t instanceof HTMLElement) || t.closest(".react-flow__node")) return;
+      if (!t.scrollTop && !t.scrollLeft) return;
+      t.scrollTop = 0; t.scrollLeft = 0;
+      const id = document.activeElement?.closest?.(".react-flow__node")?.getAttribute("data-id");
+      const n = id ? store.getState().nodes.find((x) => x.id === id) : undefined;
+      if (n) void rf.setCenter(n.position.x + NODE_W / 2, n.position.y + (n.measured?.height ?? 70) / 2, { zoom: rf.getZoom(), duration: 200 });
+    };
+    el.addEventListener("scroll", onScroll, true);
+    return () => el.removeEventListener("scroll", onScroll, true);
+  }, [rf, store]);
+
   const onConnect = useCallback((c: Connection) => {
     const v = store.connect(c.source, c.sourceHandle, c.target);
     if (!v.ok) toast(v.reason, "bad");

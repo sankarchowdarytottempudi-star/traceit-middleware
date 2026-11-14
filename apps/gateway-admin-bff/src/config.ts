@@ -9,6 +9,7 @@ const schema = z.object({
   SESSION_SECRET: z.string().min(16),
   PUBLIC_BASE_URL: z.string().url(),
   MIGRATION_TOOL_URL: z.string().url().optional().or(z.literal("")),
+  REDIS_URL: z.string().optional().or(z.literal("")),
   PORT: z.coerce.number().int().positive().default(8787),
 });
 

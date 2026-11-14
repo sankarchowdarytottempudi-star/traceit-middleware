@@ -13,6 +13,7 @@ config:
   PUBLIC_BASE_URL: "https://weave-gateway.example.internal"
   APIM_CA_CERT_PATH: "/etc/weave/wso2-ca.pem"
   MIGRATION_TOOL_URL: ""
+  REDIS_URL: "redis://intg-redis.wso2.svc:6379"
 # Name of a pre-created Secret with APIM_DCR_USERNAME, APIM_DCR_PASSWORD, SESSION_SECRET.
 existingSecret: weave-gateway-secrets
 resources:

@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { loadConfig } from "./config.js";
 import { dcrRegister } from "./wso2.js";
 import { buildServer } from "./server.js";
+import { createSessionStore } from "./sessionStore.js";
 import type { ClientCreds } from "./auth.js";
 
 async function ensureCreds(cfg: ReturnType<typeof loadConfig>): Promise<ClientCreds> {
@@ -16,7 +17,8 @@ async function ensureCreds(cfg: ReturnType<typeof loadConfig>): Promise<ClientCr
 async function main() {
   const cfg = loadConfig();
   const creds = await ensureCreds(cfg);
-  const app = await buildServer(cfg, creds);
+  const store = await createSessionStore(cfg.REDIS_URL || undefined);
+  const app = await buildServer(cfg, creds, store);
   await app.listen({ port: cfg.PORT, host: "0.0.0.0" });
 }
 

@@ -6,15 +6,16 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { Config } from "./config.js";
 import { registerAuth, type ClientCreds } from "./auth.js";
+import type { SessionStore } from "./sessionStore.js";
 import { registerRoutes } from "./routes.js";
 
-export async function buildServer(cfg: Config, creds: ClientCreds): Promise<FastifyInstance> {
+export async function buildServer(cfg: Config, creds: ClientCreds, store: SessionStore): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
   await app.register(cookie, { secret: cfg.SESSION_SECRET });
 
   app.get("/healthz", async () => ({ status: "UP" }));
 
-  registerAuth(app, cfg, creds);
+  registerAuth(app, cfg, creds, store);
   registerRoutes(app, cfg);
 
   app.setErrorHandler((err, _req, reply) => {

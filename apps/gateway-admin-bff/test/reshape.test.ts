@@ -3,13 +3,13 @@ import { reshapeSubPolicies, reshapeApis, isLocalhost, rankCompliance } from "..
 
 describe("reshapeSubPolicies", () => {
   it("maps WSO2 request-count policy to a row", () => {
-    const [p] = reshapeSubPolicies([{ policyName: "Gold", defaultLimit: { type: "REQUESTCOUNTLIMIT", requestCount: { requestCount: 5000, timeUnit: "min" } } }]);
+    const [p] = reshapeSubPolicies([{ policyName: "Gold", defaultLimit: { type: "REQUESTCOUNTLIMIT", requestCount: { requestCount: 5000, timeUnit: "min" } } }] as any);
     expect(p).toMatchObject({ name: "Gold", quotaType: "requestCount", limit: 5000, timeUnit: "min" });
   });
 });
 describe("reshapeApis", () => {
   it("extracts backend + operations", () => {
-    const [a] = reshapeApis([{ id: "1", name: "cms", context: "/cms", version: "v1", lifeCycleStatus: "PUBLISHED", securityScheme: ["oauth2"], apiThrottlingPolicy: "AroyaApiLimit", operations: [{ verb: "GET", target: "/x", authType: "None" }], endpointConfig: { production_endpoints: { url: "http://cms.svc" } } }]);
+    const [a] = reshapeApis([{ id: "1", name: "cms", context: "/cms", version: "v1", lifeCycleStatus: "PUBLISHED", securityScheme: ["oauth2"], apiThrottlingPolicy: "AroyaApiLimit", operations: [{ verb: "GET", target: "/x", authType: "None" }], endpointConfig: { production_endpoints: { url: "http://cms.svc" } } }] as any);
     expect(a.backend).toBe("http://cms.svc"); expect(a.operations[0].verb).toBe("GET"); expect(a.throttlingPolicy).toBe("AroyaApiLimit");
   });
 });

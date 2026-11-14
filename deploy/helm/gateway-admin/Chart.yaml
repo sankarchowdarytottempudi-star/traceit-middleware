@@ -1,0 +1,6 @@
+apiVersion: v2
+name: weave-gateway
+description: TraceIT Weave - Weave Gateway (API Gateway admin UI + BFF for WSO2 API Manager)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

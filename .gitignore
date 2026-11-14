@@ -3,4 +3,5 @@ dist/
 .data/
 .env
 *.log
-runs/
+playwright-report/
+test-results/

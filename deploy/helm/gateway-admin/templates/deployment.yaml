@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels: { app.kubernetes.io/name: weave-gateway }
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: weave-gateway }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: weave-gateway }
+    spec:
+      containers:
+        - name: weave-gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{ containerPort: {{ .Values.service.targetPort }} }]
+          envFrom:
+            - configMapRef: { name: {{ .Release.Name }}-config }
+            - secretRef: { name: {{ .Values.existingSecret }} }
+          readinessProbe:
+            httpGet: { path: /healthz, port: {{ .Values.service.targetPort }} }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: {{ .Values.service.targetPort }} }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources: {{ .Values.resources | toYaml | nindent 12 }}

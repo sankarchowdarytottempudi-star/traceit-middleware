@@ -1,0 +1,20 @@
+image:
+  repository: weave-gateway
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+replicaCount: 1
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8787
+# Non-secret config -> ConfigMap. Secrets (DCR creds, session secret) -> referenced Secret.
+config:
+  APIM_BASE_URL: "https://wso2am.wso2.svc:9443"
+  PUBLIC_BASE_URL: "https://weave-gateway.example.internal"
+  APIM_CA_CERT_PATH: "/etc/weave/wso2-ca.pem"
+  MIGRATION_TOOL_URL: ""
+# Name of a pre-created Secret with APIM_DCR_USERNAME, APIM_DCR_PASSWORD, SESSION_SECRET.
+existingSecret: weave-gateway-secrets
+resources:
+  requests: { cpu: 100m, memory: 160Mi }
+  limits: { cpu: "1", memory: 512Mi }

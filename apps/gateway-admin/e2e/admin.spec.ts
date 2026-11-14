@@ -64,7 +64,6 @@ for (const width of [820, 390]) {
       await expect(page.locator("main h1")).toBeVisible({ timeout: 15000 });
       await page.waitForTimeout(350);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-      await page.screenshot({ path: `runs/gateway-admin/${r.name}-${width}.png`, fullPage: true });
       expect(overflow, `${r.path} overflows by ${overflow}px at ${width}px`).toBeLessThanOrEqual(2);
     }
   });

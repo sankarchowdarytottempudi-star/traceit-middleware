@@ -178,4 +178,5 @@ html, body, #root { height: 100%; }
 .gw-tabs-scroll { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .gw-tabs-scroll::-webkit-scrollbar { display: none; }
 
-@media (max-width: 640px) { .gw-hide-sm { display: none; } }
+.gw-nowrap-lg { white-space: nowrap; }
+@media (max-width: 640px) { .gw-hide-sm { display: none; } .gw-namecell { width: 58%; } .gw-nowrap-lg { white-space: normal; } }

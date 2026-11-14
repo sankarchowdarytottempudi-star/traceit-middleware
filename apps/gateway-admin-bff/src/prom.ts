@@ -71,11 +71,12 @@ export async function fetchOnGrid(prom: Prom, query: string, g: Grid): Promise<P
   ]);
   return mergeInstant(range, last, g.to);
 }
+function noName(m: Record<string, string>): Record<string, string> { const metric = { ...m }; delete metric.__name__; return metric; }
 export function mergeInstant(range: PromSeries[], last: PromSample[], at: number): PromSeries[] {
   const by = new Map<string, PromSeries>();
-  for (const s of range) { const { __name__: _n, ...metric } = s.metric; by.set(seriesKey(metric), { metric, values: [...s.values] }); }
+  for (const s of range) { const metric = noName(s.metric); by.set(seriesKey(metric), { metric, values: [...s.values] }); }
   for (const s of last) {
-    const { __name__: _n, ...metric } = s.metric;
+    const metric = noName(s.metric);
     const k = seriesKey(metric);
     const cur = by.get(k) ?? { metric, values: [] };
     cur.values.push([at, s.value[1]]);

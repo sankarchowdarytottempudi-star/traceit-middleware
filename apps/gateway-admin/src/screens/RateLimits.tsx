@@ -56,9 +56,9 @@ export function RateLimits() {
                 const tu = (sub.timeUnit ?? adv.timeUnit ?? "min");
                 return (
                   <tr key={p.policyId} className="mf-row">
-                    <td style={{ padding: "12px 6px", overflowWrap: "anywhere" }}><span className="mf-mono" style={{ fontSize: 13.5 }}>{p.name}</span>
-                      {"quotaType" in p && <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 7px", borderRadius: 999, background: "var(--surface3)", color: "var(--muted)" }}>{sub.quotaType}</span>}</td>
-                    <td style={{ fontWeight: 700, whiteSpace: "nowrap", padding: "0 8px 0 0" }}>{formatQuota(limit)}<span style={{ color: "var(--faint)", fontWeight: 400 }}> / {tu}</span></td>
+                    <td className="gw-namecell" style={{ padding: "12px 6px", overflowWrap: "anywhere" }}><span className="mf-mono" style={{ fontSize: 13.5 }}>{p.name}</span>
+                      {"quotaType" in p && <span style={{ marginLeft: 8, display: "inline-block", whiteSpace: "nowrap", fontSize: 11, padding: "1px 7px", borderRadius: 999, background: "var(--surface3)", color: "var(--muted)" }}>{sub.quotaType}</span>}</td>
+                    <td className="gw-nowrap-lg" style={{ fontWeight: 700, padding: "0 8px 0 0" }}>{formatQuota(limit)}<span style={{ color: "var(--faint)", fontWeight: 400 }}> / {tu}</span></td>
                     <td className="gw-hide-sm"><span style={{ display: "block", height: 6, borderRadius: 999, background: "var(--surface3)", overflow: "hidden" }}><span className="mf-bar" style={{ display: "block", height: "100%", width: `${logBarWidth(limit)}%`, background: limit >= UNLIMITED ? "var(--ok)" : "var(--accent)" }} /></span></td>
                     <td style={{ textAlign: "right" }}><button className="mf-btn mf-dan" onClick={() => setConfirm({ id: p.policyId, name: p.name })} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}>Delete</button></td>
                   </tr>

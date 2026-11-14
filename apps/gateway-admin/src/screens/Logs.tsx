@@ -193,7 +193,7 @@ export function Logs() {
         <div className="gw-logbox" ref={box} onScroll={onScroll} tabIndex={0} role="log" aria-label="Log lines" aria-live="off">
           {!selected.length ? <div className="gw-logempty">Choose one or more APIs to see their logs.</div>
             : !data ? <div className="gw-logempty" aria-busy="true">Reading logs…</div>
-            : !lines.length ? <div className="gw-logempty">{cid ? "No log line mentions this request in the chosen APIs and period. Try searching every API, or a longer period." : term || level ? "No log line matches these filters in the chosen period." : "Nothing was logged in the chosen period."}</div>
+            : !lines.length ? <div className="gw-logempty">{cid ? "No log line mentions this request in the chosen APIs and period. A request leaves a line only where the gateway or the service writes its id into the log, so it can be counted in analytics without one. Try every API or a longer period, or stop following to read what was logged around that time." : term || level ? "No log line matches these filters in the chosen period." : "Nothing was logged in the chosen period."}</div>
             : lines.map((l, i) => (
               <div key={`${l.t}-${l.source}-${l.pod}-${i}`} className={`gw-logline${l.level === "ERROR" || l.level === "WARN" ? ` gw-logline-${l.level}` : ""}`}>
                 <span className="gw-logt" title={new Date(num(l.t)).toString()}>{num(l.t) > 0 ? fmtClockMs(num(l.t)) : ""}</span>

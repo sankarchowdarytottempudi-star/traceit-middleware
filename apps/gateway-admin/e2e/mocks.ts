@@ -116,6 +116,8 @@ export async function mockApi(page: Page, opts: { signedIn?: boolean } = {}) {
   await page.route("**/healthz", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "UP" }) }));
   await page.route("**/api/**", async (route) => {
     const url = route.request().url();
+    // A page address can contain "/api/" too (the per-API analytics screen); only calls under /api/ are mocked.
+    if (!new URL(url).pathname.startsWith("/api/")) return route.continue();
     if (url.includes("/api/auth/me")) {
       if (opts.signedIn === false) return route.fulfill({ status: 401, contentType: "application/problem+json", body: JSON.stringify({ title: "no", status: 401 }) });
       return route.fulfill(json({ user: "admin", role: "admin" }));

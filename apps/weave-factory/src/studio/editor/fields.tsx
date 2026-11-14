@@ -162,7 +162,7 @@ function ConditionsEditor({ value, onChange, readOnly, withExpr }: { value: unkn
             <input className="mf-control mf-control-sm" aria-label={`Label ${i + 1}`} placeholder="Label" value={r.label ?? ""} readOnly={readOnly} onChange={(e) => set(i, { label: e.target.value })} />
             {!readOnly && <IconButton label={`Remove ${r.label || `row ${i + 1}`}`} icon={Trash2} tone="danger" size={14} onClick={() => onChange(rows.filter((_, j) => j !== i))} />}
           </div>
-          {withExpr && <ExprInput mode="expr" value={r.expr ?? ""} onChange={(v) => set(i, { expr: v })} placeholder={'status = "CONFIRMED"'} ariaLabel={`Condition ${i + 1}`} readOnly={readOnly} />}
+          {withExpr && !(readOnly && !r.expr) && <ExprInput mode="expr" value={r.expr ?? ""} onChange={(v) => set(i, { expr: v })} placeholder={'status = "CONFIRMED"'} ariaLabel={`Condition ${i + 1}`} readOnly={readOnly} />}
         </div>
       ))}
       {!readOnly && <div><Button size="sm" variant="ghost" icon={Plus} onClick={add}>{withExpr ? "Add condition" : "Add branch"}</Button></div>}

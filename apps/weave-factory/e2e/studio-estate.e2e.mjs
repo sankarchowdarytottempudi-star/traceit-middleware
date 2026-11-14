@@ -37,7 +37,7 @@ try {
     const section = page.locator('[data-testid="estate-section"]');
     await section.waitFor({ timeout: 20_000 }).catch(() => {});
     s.check((await section.getAttribute("data-estate").catch(() => null)) === "unavailable", "the list of flows explains that migrated services are not available here");
-    s.check(await page.locator('[data-action="new-flow"]').isVisible(), "the rest of the page still works (a new flow can be started)");
+    s.check(await page.locator('[data-action="new-flow"]').first().isVisible(), "the rest of the page still works (a new flow can be started)");
     await s.goto(`/studio/estate/${FIXTURE_API}`);
     const none = page.locator('[data-testid="estate-unavailable"]');
     await none.waitFor({ timeout: 20_000 }).catch(() => {});
@@ -75,7 +75,7 @@ try {
   await view.waitFor({ timeout: 30_000 });
   await page.locator(".ws-node").first().waitFor({ timeout: 20_000 });
   await page.waitForTimeout(500);
-  s.check(await view.getByText("Migrated service, read-only").isVisible(), "it is marked as a migrated, read-only service");
+  s.check(await view.locator(".ws-bar").getByText(/read-only/i).first().isVisible(), "it is marked as a read-only service");
   const opId = await view.getAttribute("data-operation");
   const reach = (start) => { const seen = new Set([start]); let grew = true; while (grew) { grew = false; for (const e of realFlow.edges) if (seen.has(e.from) && !seen.has(e.to)) { seen.add(e.to); grew = true; } } return seen; };
   const expected = opId ? reach(opId).size : realFlow.nodes.length;

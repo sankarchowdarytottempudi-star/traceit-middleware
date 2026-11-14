@@ -10,7 +10,7 @@ import { useEditor, useEditorStore } from "../store.ts";
 import { Badge, Button, Callout, cx, DataView, Empty, Field, fmtDuration, IconButton, JsonEditor, Menu, Spinner, Tabs, toast, type MenuItem } from "../ui.tsx";
 import { txt } from "../../lib/text.ts";
 import { KeyValueEditor } from "./fields.tsx";
-import { httpTone, statusLabel, statusTone, StepDetail, StepList } from "./RunViews.tsx";
+import { httpTone, runLabel, runTone, statusLabel, statusTone, StepDetail, StepList } from "./RunViews.tsx";
 
 type KV = { key: string; value: string };
 interface Draft { method: string; params: Record<string, string>; query: KV[]; headers: KV[]; body: Json | undefined; payload: Json | undefined; }
@@ -207,11 +207,12 @@ export function TestPanel({ flowId, nodeTarget, onNodeTarget, onShowNode, onClos
     <div className="ws-test-col" hidden={!split && tab !== "result"}>
       {split && (
         <div className="ws-test-head">
-          <strong>Result</strong>
-          {run && <Badge tone={statusTone(run.status)}>{statusLabel(run.status)}</Badge>}
-          {run?.response?.status !== undefined && <Badge tone={httpTone(run.response.status)}>HTTP {txt(run.response.status)}</Badge>}
-          {run && <span className="mf-faint">{fmtDuration(run.durationMs)}</span>}
-          <span style={{ flex: 1 }} />
+          <span className="ws-test-headmain">
+            <strong>Result</strong>
+            {run && <Badge tone={runTone(run.status, run.response?.status)}>{runLabel(run.status, run.response?.status)}</Badge>}
+            {run?.response?.status !== undefined && <Badge tone={httpTone(run.response.status)}>HTTP {txt(run.response.status)}</Badge>}
+            {run && <span className="mf-faint">{fmtDuration(run.durationMs)}</span>}
+          </span>
           {run && <Button size="sm" variant="ghost" onClick={() => { store.setRun(null); setActive(null); }}>Clear</Button>}
           <IconButton label="Close test panel" icon={X} onClick={onClose} />
         </div>
@@ -222,7 +223,7 @@ export function TestPanel({ flowId, nodeTarget, onNodeTarget, onShowNode, onClos
         {!test.isPending && !run && !failure && <Empty icon={Play} title="No test run yet" hint="Run a test to see the response and what every step did. Nothing is deployed and no live traffic is affected." />}
         {run && !test.isPending && (
           <div className="mf-stack" data-testid="test-result" data-run-status={run.status} data-response-status={run.response?.status ?? ""}>
-            {!split && <div className="mf-hstack"><Badge tone={statusTone(run.status)}>{statusLabel(run.status)}</Badge>{run.response?.status !== undefined && <Badge tone={httpTone(run.response.status)}>HTTP {txt(run.response.status)}</Badge>}<span className="mf-faint">{fmtDuration(run.durationMs)}</span></div>}
+            {!split && <div className="mf-hstack"><Badge tone={runTone(run.status, run.response?.status)}>{runLabel(run.status, run.response?.status)}</Badge>{run.response?.status !== undefined && <Badge tone={httpTone(run.response.status)}>HTTP {txt(run.response.status)}</Badge>}<span className="mf-faint">{fmtDuration(run.durationMs)}</span></div>}
             {run.error && <Callout tone="bad" title="The flow failed">{txt(run.error.message)}</Callout>}
             {run.response && <div data-testid="test-response"><DataView label="Response" value={run.response.body ?? null} maxHeight={260} /></div>}
             <div className="mf-stack" style={{ gap: 6 }}>

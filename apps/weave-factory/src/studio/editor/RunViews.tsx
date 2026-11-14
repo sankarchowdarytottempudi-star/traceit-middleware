@@ -7,6 +7,11 @@ import { portLabel } from "../catalog.ts";
 import { txt } from "../../lib/text.ts";
 
 export const statusTone = (s: unknown): Tone => (s === "success" ? "ok" : s === "error" ? "bad" : s === "running" ? "info" : "neutral");
+/** A run that finished but answered the caller with an error status (the flow's own "on error" path)
+ *  is not shown as a plain success. */
+const answeredWithError = (s: unknown, http: unknown): boolean => s === "success" && typeof http === "number" && http >= 400;
+export const runTone = (s: unknown, http?: unknown): Tone => (answeredWithError(s, http) ? "warn" : statusTone(s));
+export const runLabel = (s: unknown, http?: unknown): string => (answeredWithError(s, http) ? "Answered with an error" : statusLabel(s));
 export const statusLabel = (s: unknown): string => (s === "success" ? "Succeeded" : s === "error" ? "Failed" : s === "running" ? "Running" : s === "skipped" ? "Skipped" : txt(s) || "Unknown");
 export const httpTone = (status: unknown): Tone => { const n = Number(status); return !n ? "neutral" : n < 300 ? "ok" : n < 400 ? "info" : n < 500 ? "warn" : "bad"; };
 /** What started a run, in words: "GET /orders/:id", "Schedule", never the raw object. */
@@ -81,7 +86,7 @@ export function ExecutionView({ execution: x, onShow }: { execution: Execution; 
   return (
     <div className="mf-stack" data-execution={x.id} data-execution-status={x.status}>
       <div className="mf-hstack">
-        <Badge tone={statusTone(x.status)}>{statusLabel(x.status)}</Badge>
+        <Badge tone={runTone(x.status, x.response?.status)}>{runLabel(x.status, x.response?.status)}</Badge>
         <Badge>{modeLabel(x.mode)}</Badge>
         {x.via && <Badge tone="info">{x.via === "gateway" ? "through the gateway" : "direct"}</Badge>}
         {triggerLabel(x.trigger) && <span className="mf-mono-sm">{triggerLabel(x.trigger)}</span>}

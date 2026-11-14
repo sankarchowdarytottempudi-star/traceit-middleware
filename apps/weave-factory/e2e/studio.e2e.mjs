@@ -40,7 +40,7 @@ s.log(`Weave Studio e2e against ${opts.base}, names start with ${PREFIX}`);
 async function connection() {
   s.step("1a. Create a connection and test it");
   await s.goto("/studio/connections");
-  await page.locator('[data-action="new-connection"]').click();
+  await page.locator('[data-action="new-connection"]').first().click();
   const form = page.locator('[data-testid="connection-form"]');
   await form.waitFor();
   await page.locator("#ws-conn-name").fill(CONN);
@@ -264,7 +264,7 @@ async function connector() {
   s.step("3. Import an OpenAPI description as a connector and use an operation in a flow");
   await s.goto("/studio/connectors");
   // from an address this server cannot read: a clear message, nothing saved
-  await page.locator('[data-action="import-openapi"]').click();
+  await page.locator('[data-action="import-openapi"]').first().click();
   const imp = page.locator('[data-testid="connector-import"]');
   await imp.waitFor();
   s.allow(/import-openapi/);

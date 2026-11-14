@@ -7,7 +7,7 @@ import type { Execution, ExecutionSummary, LogLine } from "@traceit/weave-flow";
 import { errorText, isUnavailable, studioApi } from "../api.ts";
 import { ago, Badge, Button, Callout, confirmDialog, cx, Empty, fmtDuration, fmtTime, IconButton, Sheet, Spinner, TableWrap, toast, Toggle, useDebounced } from "../ui.tsx";
 import { txt } from "../../lib/text.ts";
-import { ExecutionView, httpTone, modeLabel, statusLabel, statusTone, triggerLabel } from "./RunViews.tsx";
+import { ExecutionView, httpTone, modeLabel, runLabel, runTone, triggerLabel } from "./RunViews.tsx";
 
 export function Unreachable({ error, what, onRetry }: { error: unknown; what: string; onRetry?: () => void }) {
   const offline = isUnavailable(error);
@@ -79,7 +79,7 @@ export function ExecutionsList({ flowId, showFlow, openId, onOpen, onShowOnCanva
                 <tr key={x.id} className={cx("mf-clickrow", openId === x.id && "mf-clickrow-on")} tabIndex={0} data-execution-row={x.id} data-execution-status={x.status} data-execution-mode={x.mode}
                   onClick={() => onOpen(x.id)} onKeyDown={(e) => { if (e.key === "Enter") onOpen(x.id); }}>
                   <td className="mf-nowrap"><div className="mf-cellmain">{ago(x.startedAt)}</div><div className="mf-cellsub">{fmtTime(x.startedAt)}</div></td>
-                  <td><Badge tone={statusTone(x.status)}>{statusLabel(x.status)}</Badge></td>
+                  <td><Badge tone={runTone(x.status, x.responseStatus)}>{runLabel(x.status, x.responseStatus)}</Badge></td>
                   {showFlow && <td><span className="mf-cellmain">{txt(x.flowName) || txt(x.flowId)}</span></td>}
                   <td><div className="mf-cellmain">{triggerLabel(x.trigger) || "-"}</div><div className="mf-cellsub">{modeLabel(x.mode)}{x.via ? `, ${x.via === "gateway" ? "through the gateway" : txt(x.via)}` : ""}</div></td>
                   <td>{x.responseStatus !== undefined ? <Badge tone={httpTone(x.responseStatus)}>HTTP {txt(x.responseStatus)}</Badge> : <span className="mf-faint">-</span>}</td>

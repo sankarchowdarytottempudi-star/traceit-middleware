@@ -301,6 +301,9 @@ input.ws-bar-name:focus { outline: none; border-color: var(--accent); background
 .ws-test-col[hidden] { display: none; }
 .ws-test-split > .ws-test-col + .ws-test-col { border-left: 1px solid var(--border); }
 .ws-test-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 46px; padding: 7px 10px 7px 14px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+/* what happened stays on one line and gives way first; Clear and Close never drop to a second row */
+.ws-test-headmain { display: flex; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; }
+.ws-test-headmain > * { flex: 0 0 auto; }
 .ws-test-scroll { flex: 1 1 0; min-height: 0; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
 .ws-test-url { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .ws-test-path { flex: 1 1 0; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; overflow-wrap: anywhere; }

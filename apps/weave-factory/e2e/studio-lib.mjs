@@ -65,6 +65,8 @@ export class Session {
   async shot(name) {
     if (!this.opts.shots) return;
     const file = join(this.opts.shots, `${String(++this.shotNo).padStart(2, "0")}-${name}.png`);
+    // let a sheet or dialog finish sliding in, so the picture shows what a person would see
+    await this.page.waitForTimeout(350).catch(() => {});
     await this.page.screenshot({ path: file }).catch(() => {});
   }
   async goto(path) {
@@ -110,7 +112,7 @@ export async function toastText(page) {
 export async function createFlow(s, name, template = "blank") {
   const page = s.page;
   await s.goto("/studio");
-  await page.locator('[data-action="new-flow"]').click();
+  await page.locator('[data-action="new-flow"]').first().click();
   await page.locator("#ws-new-name").fill(name);
   await page.locator("#ws-new-desc").fill("Created by the end-to-end check. Safe to delete.");
   await page.locator(`[data-template="${template}"]`).click();

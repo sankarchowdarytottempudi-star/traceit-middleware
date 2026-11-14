@@ -30,6 +30,7 @@ export interface CatalogResponse {
 // POST   /flows/:id/duplicate           <- { name?: string }            -> Flow
 // GET    /flows/:id/versions            -> { versions: FlowVersion[] }
 // GET    /flows/:id/versions/:revision  -> Flow
+// POST   /flows/:id/versions/:revision/restore -> Flow (a new revision with that version's content)
 // POST   /flows/validate                <- { flow: Flow }               -> { issues: ValidationIssue[] }
 // GET    /flows/:id/export              -> Flow (portable JSON; connection ids kept, no secrets)
 // POST   /flows/import                  <- { flow: Flow, name?: string } -> Flow
@@ -102,7 +103,12 @@ export interface SaveConnectionRequest { name: string; type: string; config: Rec
 // POST /expr/eval                       <- { expr: string; context: TestNodeRequest["context"]; template?: boolean } -> { ok: boolean; result?: Json; error?: string }
 export interface MappingPreviewResponse {
   output: Json;
-  rules: { id: string; ok: boolean; value?: Json; error?: string }[];
+  rules: {
+    id: string; ok: boolean; value?: Json; error?: string;
+    warning?: string;                     // the rule ran but deserves a look (e.g. the source path is missing in this sample)
+    compiled?: CompiledInstruction;       // instruction rules: what the words were compiled to for this preview
+    suggestions?: string[];               // instruction rules that were not understood: phrasings that are
+  }[];
   diff?: { path: string; got: Json | undefined; want: Json | undefined }[]; // against spec.sampleTarget when present
 }
 export interface CompileInstructionRequest {
@@ -116,7 +122,14 @@ export interface CompileInstructionResponse {
   preview?: Json;                         // result on sampleSource
   matchesDesired?: boolean;
   suggestions: string[];                  // nearest supported phrasings
+  ok?: boolean;                           // same as compiled !== null
+  reason?: string;                        // not understood: what could not be worked out, in plain words
+  understood?: string[];                  // the parts that were understood (fields found, partial readings, typo fixes)
+  fields?: string[];                      // input paths the expression reads
+  previewError?: string;                  // compiled, but evaluating it on sampleSource failed
 }
+/** A rule proposed by POST /mapping/infer. `confidence` is 0..1; `comment` says why it was proposed. */
+export type InferredMappingRule = MappingRule & { confidence?: number };
 
 // Health
 // GET /healthz -> { status: "UP", flowsDeployed: number, gateway: "reachable" | "unreachable" }

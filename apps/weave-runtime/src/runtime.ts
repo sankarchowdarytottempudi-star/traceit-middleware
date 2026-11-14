@@ -73,7 +73,7 @@ export class Runtime {
       onFinish: (e) => {
         if (e.mode === "node-test") return;
         this.store.addExecution(e);
-        if (e.mode === "live") this.store.addMetric({ t: Date.parse(e.startedAt), flowId: e.flowId, ms: e.durationMs ?? 0, ok: e.status === "success" });
+        if (e.mode === "live") this.store.addMetric({ t: Date.parse(e.startedAt), flowId: e.flowId, ms: e.durationMs ?? 0, ok: e.status === "success" && (e.response?.status ?? 200) < 500 });   // a handled failure that still answers 5xx counts as an error
       },
     });
     this.refreshLive();

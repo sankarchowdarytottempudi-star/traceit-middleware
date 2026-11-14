@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gateway Admin — Rate limiting</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#92400E}a:hover{color:#7A330B}
+.mf{--bg:#F5F1EA;--side:#EFE9DF;--glass:rgba(245,241,234,.86);--surface:#FFFFFF;--surface2:#FAF7F2;--surface3:#EFE8DC;--border:#E4DCCD;--border2:#D3C7B2;--text:#1D1A16;--muted:#5F584D;--faint:#6F675B;--accent:#B45309;--accentHover:#92400E;--accentText:#92400E;--accentSoft:rgba(180,83,9,.09);--accentGlow:rgba(180,83,9,.35);--ok:#076307;--okSoft:rgba(7,99,7,.09);--warn:#8A5A00;--warnSoft:rgba(255,187,26,.18);--bad:#B53333;--badSoft:rgba(181,51,51,.08);--sys:#1E5A9E;--sysSoft:rgba(30,90,158,.09);--proc:#74399F;--procSoft:rgba(116,57,159,.09);--exp:#0F6A62;--expSoft:rgba(15,106,98,.09);--term:#1C1814;--termLine:#2E2820;--shadow:0 1px 2px rgba(60,40,10,.05),0 18px 40px -20px rgba(60,40,10,.30);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text);background:var(--bg);transition:background-color .45s ease,color .45s ease;-webkit-font-smoothing:antialiased}
+.mf:not(.t-light){--bg:#12100D;--side:#0E0C0A;--glass:rgba(18,16,13,.86);--surface:#1A1714;--surface2:#221E1A;--surface3:#2C2722;--border:#352F28;--border2:#4D4439;--text:#F2EDE5;--muted:#C2B8AA;--faint:#9A9083;--accent:#B45309;--accentHover:#C9620F;--accentText:#F2A65A;--accentSoft:rgba(242,166,90,.13);--accentGlow:rgba(242,166,90,.35);--ok:#2BC437;--okSoft:rgba(12,168,12,.15);--warn:#FFBB1A;--warnSoft:rgba(255,187,26,.13);--bad:#F07070;--badSoft:rgba(240,112,112,.13);--sys:#8DB8F0;--sysSoft:rgba(141,184,240,.13);--proc:#CDA8F0;--procSoft:rgba(205,168,240,.13);--exp:#6FD9CB;--expSoft:rgba(111,217,203,.12);--term:#0E0C0A;--termLine:#2A251F;--shadow:0 1px 0 rgba(255,255,255,.03) inset,0 18px 40px -20px rgba(0,0,0,.75)}
+.mf *{box-sizing:border-box}
+.mf h1,.mf h2,.mf-disp{font-family:Manrope,Inter,sans-serif;letter-spacing:-0.02em}
+.mf button,.mf input,.mf textarea,.mf select{font-family:inherit}
+.mf-s{transition:background-color .45s ease,border-color .3s ease,box-shadow .3s ease,transform .3s cubic-bezier(.2,.7,.2,1),color .3s ease}
+.mf-in{animation:mfUp .7s cubic-bezier(.16,1,.3,1) both}
+@keyframes mfUp{from{opacity:0;transform:translateY(16px) scale(.985);filter:blur(4px)}to{opacity:1;transform:none;filter:none}}
+.mf-fade{animation:mfFade .5s ease both}
+@keyframes mfFade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.mf-bar{transform-origin:left center;animation:mfGrow 1.3s cubic-bezier(.16,1,.3,1) both}
+@keyframes mfGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.mf-ring{animation:mfRing 1.8s cubic-bezier(.16,1,.3,1) both;filter:drop-shadow(0 0 6px var(--accentGlow))}
+@keyframes mfRing{from{stroke-dashoffset:263.9}}
+.mf-spin{animation:mfSpin .9s linear infinite;transform-origin:center}
+@keyframes mfSpin{to{transform:rotate(360deg)}}
+.mf-live{position:relative}
+.mf-live::after{content:"";position:absolute;inset:0;border-radius:50%;background:inherit;animation:mfPing 2s cubic-bezier(0,0,.2,1) infinite}
+@keyframes mfPing{0%{transform:scale(1);opacity:.7}100%{transform:scale(3);opacity:0}}
+.mf-shim{background-image:linear-gradient(90deg,transparent 0%,var(--accentSoft) 50%,transparent 100%);background-size:200% 100%;animation:mfShim 1.8s linear infinite}
+@keyframes mfShim{from{background-position:200% 0}to{background-position:-200% 0}}
+.mf-btn{cursor:pointer;transition:transform .18s cubic-bezier(.2,.7,.2,1),background-color .2s ease,border-color .2s ease,box-shadow .25s ease,color .2s ease}
+.mf-btn:active{transform:scale(.96)}
+.mf-pri{position:relative;overflow:hidden;box-shadow:0 8px 20px -10px var(--accentGlow)}
+.mf-pri::before{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);transform:skewX(-20deg);transition:left .7s cubic-bezier(.2,.7,.2,1)}
+.mf-pri:hover{background:var(--accentHover) !important;transform:translateY(-1px);box-shadow:0 14px 28px -12px var(--accentGlow)}
+.mf-pri:hover::before{left:120%}
+.mf-gho:hover{background:var(--surface2) !important;border-color:var(--border2) !important;transform:translateY(-1px)}
+.mf-dan:hover{background:var(--badSoft) !important;color:var(--bad) !important;border-color:var(--bad) !important}
+.mf-lnk{text-decoration:none;transition:color .2s ease,background-color .2s ease}
+.mf-lnk:hover{color:var(--text) !important;background:var(--surface2)}
+.mf-seg{cursor:pointer;border:0;background:transparent;color:var(--faint);transition:all .3s cubic-bezier(.2,.7,.2,1)}
+.mf-seg:hover{color:var(--text)}
+.mf-seg-on{background:var(--surface) !important;color:var(--text) !important;box-shadow:0 1px 3px rgba(60,40,10,.18),0 0 0 1px var(--border)}
+.mf-api{cursor:pointer;text-align:left;width:100%}
+.mf-api:hover{border-color:var(--border2) !important;transform:translateX(3px);box-shadow:var(--shadow)}
+.mf-api-on{border-color:var(--accent) !important;background:var(--accentSoft) !important;box-shadow:0 0 0 3px var(--accentSoft) !important}
+.mf-chip{cursor:pointer;transition:all .22s ease}
+.mf-chip:hover{border-color:var(--accent) !important;color:var(--accentText) !important}
+.mf-chip-on{background:var(--text) !important;color:var(--bg) !important;border-color:var(--text) !important}
+.mf-tab{position:relative;cursor:pointer;background:transparent;border:0;color:var(--faint);transition:color .2s ease}
+.mf-tab:hover{color:var(--text)}
+.mf-tab-on{color:var(--text) !important}
+.mf-tab-on::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;border-radius:2px;background:var(--accent);transform-origin:center;animation:mfGrow .45s cubic-bezier(.16,1,.3,1) both}
+.mf-card:hover{transform:translateY(-4px);border-color:var(--border2) !important;box-shadow:var(--shadow)}
+.mf-row{transition:background-color .2s ease}
+.mf-row:hover{background:var(--surface2)}
+.mf-ph{cursor:pointer;width:100%;background:transparent;border:0;text-align:left;color:inherit}
+.mf-chev{transition:transform .35s cubic-bezier(.16,1,.3,1)}
+.mf-input{transition:border-color .2s ease,box-shadow .2s ease}
+.mf-input:focus{outline:none;border-color:var(--accent) !important;box-shadow:0 0 0 4px var(--accentSoft)}
+.mf-caret{display:inline-block;width:8px;height:15px;background:#F2A65A;vertical-align:-2px;animation:mfBlink 1.1s steps(1) infinite}
+@keyframes mfBlink{50%{opacity:0}}
+.mf-side{flex:0 0 264px}
+.mf-nav{position:relative;display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:10px;color:var(--muted);font-size:14px;font-weight:500;text-decoration:none;transition:background-color .2s ease,color .2s ease,transform .25s cubic-bezier(.2,.7,.2,1)}
+.mf-nav:hover{background:var(--surface3);color:var(--text);transform:translateX(3px)}
+.mf-nav-on{background:var(--surface) !important;color:var(--text) !important;font-weight:600;box-shadow:0 1px 2px rgba(60,40,10,.08),0 0 0 1px var(--border)}
+.mf-nav-on::before{content:"";position:absolute;left:-14px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent);transform-origin:center;animation:mfTall .5s cubic-bezier(.16,1,.3,1) both}
+@keyframes mfTall{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.mf-sub{display:flex;align-items:center;gap:10px;padding:7px 12px 7px 42px;border-radius:9px;font-size:13px;color:var(--faint);text-decoration:none;transition:color .2s ease,background-color .2s ease}
+.mf-sub:hover{color:var(--text);background:var(--surface3)}
+.mf-sub-on{color:var(--accentText) !important;font-weight:600}
+.mf-wave path{stroke-dasharray:40;animation:mfDraw 1.6s cubic-bezier(.16,1,.3,1) both}
+@keyframes mfDraw{from{stroke-dashoffset:40}to{stroke-dashoffset:0}}
+.mf :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.mf-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.6s;animation-timing-function:cubic-bezier(.16,1,.3,1)}
+::view-transition-new(root){animation-name:mfReveal}
+@keyframes mfReveal{from{clip-path:circle(0% at 40px 100%)}to{clip-path:circle(150% at 40px 100%)}}
+@media (max-width: 760px){.mf-side{flex:1 1 100%}}
+@media (prefers-reduced-motion: reduce){.mf *,.mf *::after,.mf *::before{animation:none !important;transition:none !important}::view-transition-new(root){animation:none}}
+.mf-drawer{animation:mfSlide .55s cubic-bezier(.16,1,.3,1) both}
+@keyframes mfSlide{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+.mf-scrim{animation:mfFade .35s ease both}
+</style>
+</helmet>
+<div class="mf {{themeClass}}" style="min-height: 100vh; display: flex; flex-wrap: wrap; position: relative">
+<aside aria-label="Gateway admin navigation" class="mf-side mf-s" style="background: var(--side); border-right: 1px solid var(--border); padding: 22px 14px; display: flex; flex-direction: column; gap: 18px">
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 2px 8px; text-decoration: none; color: var(--text)">
+<svg class="mf-wave" role="img" aria-label="TraceIT" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18c3-9 6-12 9-6s6 3 9-6"></path></svg>
+<span style="display: flex; flex-direction: column; line-height: 1.1"><span class="mf-disp" style="font-weight: 800; font-size: 19px">Trace<span style="color: var(--accent)">IT</span></span><span style="font-size: 11.5px; font-weight: 600; color: var(--faint)">API Gateway Admin</span></span>
+</a>
+<div class="mf-s mf-in" style="animation-delay: 60ms; display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px">
+<span class="mf-disp" aria-hidden="true" style="width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px">CS</span>
+<span style="display: flex; flex-direction: column; min-width: 0"><span style="font-weight: 600; font-size: 14px">Cruise Saudi</span><span style="font-size: 12px; color: var(--faint)">WSO2 API-M 4.5.0</span></span>
+</div>
+<nav aria-label="Sections" style="display: flex; flex-direction: column; gap: 2px">
+<a class="mf-nav " href="Main.dc.html"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>Overview</a>
+<span style="padding: 12px 12px 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--faint)">TRAFFIC</span>
+<a class="mf-nav mf-nav-on" aria-current="page" href="RateLimits.dc.html"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 13l4-4"></path><path d="M3.5 18a9 9 0 1 1 17 0"></path></svg>Rate limiting</a>
+<a class="mf-nav" href="RateLimits.dc.html"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>Deny policies</a>
+<span style="padding: 12px 12px 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--faint)">PLATFORM</span>
+<a class="mf-nav " href="Gateways.dc.html"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="6" rx="1.5"></rect><rect x="3" y="14" width="18" height="6" rx="1.5"></rect></svg>Gateways &amp; keys</a>
+<a class="mf-nav" href="#"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"></path></svg>AI / LLM vendors</a>
+<a class="mf-nav" href="#"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7"></path></svg>Categories &amp; labels</a>
+<a class="mf-nav" href="#"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="M9 7h6M9 11h6M9 15h3"></path></svg>Organizations</a>
+<span style="padding: 12px 12px 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--faint)">GOVERNANCE</span>
+<a class="mf-nav " href="Compliance.dc.html"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"></path></svg>Compliance<span style="margin-left: auto; padding: 1px 7px; border-radius: 999px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 700">5</span></a>
+<a class="mf-nav" href="#"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>Policies &amp; rulesets</a>
+<span style="padding: 12px 12px 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--faint)">WORKFLOWS</span>
+<a class="mf-nav " href="Approvals.dc.html"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"></path></svg>Approvals</a>
+<a class="mf-nav" href="#"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"></path></svg>Settings</a>
+</nav>
+<div style="margin-top: auto; display: flex; flex-direction: column; gap: 10px">
+<div role="group" aria-label="Theme" class="mf-s" style="display: flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--surface3)">
+<button type="button" aria-label="Light theme" aria-pressed="{{isLight}}" onClick="{{setLight}}" class="mf-seg {{lightCls}}" style="flex: 1 1 0; height: 30px; border-radius: 999px; font-size: 12px; font-weight: 600">Light</button>
+<button type="button" aria-label="Dark theme" aria-pressed="{{isDark}}" onClick="{{setDark}}" class="mf-seg {{darkCls}}" style="flex: 1 1 0; height: 30px; border-radius: 999px; font-size: 12px; font-weight: 600">Dark</button>
+<button type="button" aria-label="Match system theme" aria-pressed="{{isAuto}}" onClick="{{setAuto}}" class="mf-seg {{autoCls}}" style="flex: 1 1 0; height: 30px; border-radius: 999px; font-size: 12px; font-weight: 600">Auto</button>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 12px 8px 4px 12px; border-top: 1px solid var(--border)">
+<span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 50%; background: var(--text); color: var(--bg); display: grid; place-items: center; font-size: 12px; font-weight: 700">AD</span>
+<span style="display: flex; flex-direction: column; min-width: 0; flex: 1 1 0"><span style="font-size: 13px; font-weight: 600">admin</span><span style="font-size: 11px; color: var(--faint)">Super admin</span></span>
+<a href="#" aria-label="Sign out" class="mf-btn mf-gho" style="flex: none; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--muted); display: grid; place-items: center"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3"></path></svg></a>
+</div>
+</div>
+</aside>
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<main style="width: 100%; max-width: 1280px; margin: 0 auto; padding: 32px 36px 48px; display: flex; flex-direction: column; gap: 22px">
+
+<header class="mf-in" style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 10px; max-width: 720px">
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.14em; color: var(--faint)">TRAFFIC / <span style="color: var(--text)">RATE LIMITING</span></div>
+<h1 style="margin: 0; font-size: 36px; line-height: 1.1; font-weight: 800">Rate limiting</h1>
+<p style="margin: 0; font-size: 15px; line-height: 1.55; color: var(--muted)">Every throttling tier in one place. {{tabHelp}}</p>
+</div>
+<button type="button" onClick="{{openNew}}" class="mf-btn mf-pri" style="display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; font-size: 14px; font-weight: 600"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>{{addLabel}}</button>
+</header>
+
+<div role="tablist" aria-label="Policy types" class="mf-in" style="animation-delay: 80ms; display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--surface3); align-self: flex-start; flex-wrap: wrap">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+<button type="button" role="tab" aria-selected="{{t.on}}" onClick="{{t.pick}}" class="mf-seg {{t.cls}}" style="height: 36px; padding: 0 16px; border-radius: 999px; font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px">{{t.label}}<sc-if value="{{t.hasN}}" hint-placeholder-val="{{ true }}"><span style="padding: 0 7px; border-radius: 999px; background: var(--surface2); font-size: 11.5px; color: var(--muted)">{{t.n}}</span></sc-if></button>
+</sc-for>
+</div>
+
+<sc-if value="{{hasRows}}" hint-placeholder-val="{{ true }}">
+<section class="mf-s mf-fade" aria-label="{{tabTitle}}" style="border-radius: 16px; background: var(--surface); border: 1px solid var(--border); overflow: hidden">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border)">
+<h2 style="margin: 0; font-size: 17px; font-weight: 700">{{tabTitle}}</h2>
+<label class="mf-sr" for="rl-filter">Filter policies</label>
+<input id="rl-filter" class="mf-input mf-s" placeholder="Filter by name" style="height: 38px; width: 240px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px">
+</div>
+<div style="overflow-x: auto">
+<div style="min-width: 720px">
+<div style="display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 2fr) 90px 60px; gap: 12px; padding: 10px 18px; background: var(--surface2); font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; color: var(--faint)"><span>NAME</span><span>QUOTA TYPE</span><span>LIMIT</span><span>WINDOW</span><span></span></div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+<button type="button" onClick="{{r.open}}" class="mf-row mf-in" style="animation-delay: {{r.delay}}; width: 100%; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 2fr) 90px 60px; gap: 12px; align-items: center; padding: 14px 18px; border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--text); text-align: left; cursor: pointer">
+<span style="font-size: 14px; font-weight: 600">{{r.name}}</span>
+<span><span style="padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 650; color: {{r.tC}}; background: {{r.tB}}">{{r.type}}</span></span>
+<span style="display: flex; align-items: center; gap: 12px; min-width: 0"><span class="mf-disp" style="font-size: 15px; font-weight: 700; min-width: 84px">{{r.limit}}</span><span style="flex: 1 1 0; height: 6px; border-radius: 999px; background: var(--surface3); overflow: hidden"><span class="mf-bar" style="display: block; height: 100%; width: {{r.w}}%; border-radius: 999px; background: var(--accent); animation-delay: {{r.delay}}"></span></span></span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--muted)">{{r.unit}}</span>
+<span style="justify-self: end; color: var(--faint)"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"></path></svg></span>
+</button>
+</sc-for>
+</div>
+</div>
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--faint)"><span>{{footer}}</span><span>Bars use a log scale so small and unlimited tiers stay comparable</span></div>
+</section>
+</sc-if>
+
+<sc-if value="{{noRows}}" hint-placeholder-val="{{ false }}">
+<section class="mf-s mf-fade" style="padding: 48px 24px; border-radius: 16px; background: var(--surface); border: 1px dashed var(--border2); display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center">
+<span style="width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: var(--accentSoft); color: var(--accentText)"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 13l4-4"></path><path d="M3.5 18a9 9 0 1 1 17 0"></path></svg></span>
+<h2 style="margin: 0; font-size: 18px; font-weight: 700">{{emptyTitle}}</h2>
+<p style="margin: 0; max-width: 520px; font-size: 14px; color: var(--muted); line-height: 1.55">{{emptyText}}</p>
+<button type="button" onClick="{{openNew}}" class="mf-btn mf-gho mf-s" style="height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 13.5px; font-weight: 600">{{addLabel}}</button>
+</section>
+</sc-if>
+
+</main>
+</div>
+
+<sc-if value="{{drawer}}" hint-placeholder-val="{{ false }}">
+<div class="mf-scrim" style="position: fixed; inset: 0; background: rgba(20,14,6,.35); backdrop-filter: blur(2px); z-index: 30; display: flex; justify-content: flex-end">
+<button type="button" aria-label="Close editor" onClick="{{close}}" style="flex: 1 1 0; border: 0; background: transparent; cursor: default"></button>
+<aside role="dialog" aria-label="{{edTitle}}" class="mf-drawer mf-s" style="width: 440px; max-width: 100%; height: 100%; overflow-y: auto; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -24px 0 48px -24px rgba(20,14,6,.4); padding: 26px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: var(--faint)">{{edKind}}</span><h2 style="margin: 0; font-size: 22px; font-weight: 800">{{edTitle}}</h2></div>
+<button type="button" onClick="{{close}}" aria-label="Close" class="mf-btn mf-gho" style="width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); display: grid; place-items: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</div>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Policy name<input class="mf-input mf-s" value="{{ed.name}}" style="height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 14px; font-weight: 400"></label>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Description<textarea class="mf-input mf-s" rows="3" placeholder="What this tier is for and who gets it" style="resize: vertical; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 14px; font-weight: 400"></textarea></label>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Request limit<input class="mf-input mf-s" value="{{ed.raw}}" style="height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13.5px; font-weight: 400"></label>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600">Per<input class="mf-input mf-s" value="{{ed.unit}}" style="height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13.5px; font-weight: 400"></label>
+</div>
+<div class="mf-s" style="padding: 14px; border-radius: 12px; background: var(--surface2); border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--faint)">IN PLAIN WORDS</span>
+<span style="font-size: 14px; line-height: 1.5">{{ed.plain}}</span>
+</div>
+<div style="margin-top: auto; display: flex; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border)">
+<button type="button" class="mf-btn mf-dan mf-s" style="height: 42px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--faint); font-size: 13.5px; font-weight: 600">Delete</button>
+<span style="flex: 1 1 0"></span>
+<button type="button" onClick="{{close}}" class="mf-btn mf-gho mf-s" style="height: 42px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 13.5px; font-weight: 600">Cancel</button>
+<button type="button" onClick="{{close}}" class="mf-btn mf-pri" style="height: 42px; padding: 0 18px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; font-size: 13.5px; font-weight: 600">Save policy</button>
+</div>
+</aside>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["auto","light","dark"],"default":"auto"},"$preview":{"width":1440,"height":1200}}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    try {
+      this._mq = window.matchMedia('(prefers-color-scheme: dark)');
+      this._h = (e) => this.setState({ sysDark: e.matches });
+      this.setState({ sysDark: this._mq.matches });
+      this._mq.addEventListener('change', this._h);
+    } catch (e) {}
+    this.countUp();
+  }
+  componentWillUnmount() {
+    try { this._mq.removeEventListener('change', this._h); } catch (e) {}
+    try { cancelAnimationFrame(this._raf); } catch (e) {}
+    clearTimeout(this._t);
+  }
+  countUp() {
+    let reduce = false;
+    try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    if (reduce || !window.requestAnimationFrame) { this.setState({ t: 1 }); return; }
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / 1400);
+      this.setState({ t });
+      if (t < 1) this._raf = requestAnimationFrame(step);
+    };
+    this._raf = requestAnimationFrame(step);
+  }
+  vt(p) {
+    try {
+      if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.startViewTransition(() => new Promise((r) => this.setState(p, r)));
+        return;
+      }
+    } catch (e) {}
+    this.setState(p);
+  }
+  theme(s) {
+    const mode = s.mode || this.props.theme || 'auto';
+    const sysDark = s.sysDark === undefined ? true : s.sysDark;
+    const dark = mode === 'auto' ? sysDark : mode === 'dark';
+    const tt = s.t === undefined ? 0 : s.t;
+    return {
+      ez: 1 - Math.pow(1 - tt, 4),
+      themeClass: dark ? '' : 't-light',
+      isLight: mode === 'light', isDark: mode === 'dark', isAuto: mode === 'auto',
+      lightCls: mode === 'light' ? 'mf-seg-on' : '', darkCls: mode === 'dark' ? 'mf-seg-on' : '', autoCls: mode === 'auto' ? 'mf-seg-on' : '',
+      setLight: () => this.vt({ mode: 'light' }), setDark: () => this.vt({ mode: 'dark' }), setAuto: () => this.vt({ mode: 'auto' })
+    };
+  }
+  renderVals() {
+    const s = this.state || {};
+    const th = this.theme(s);
+    const tab = s.tab || 'advanced';
+    const fmt = (n) => n >= 2147483647 ? 'Unlimited' : n >= 1000 ? (n / 1000).toLocaleString() + 'K' : String(n);
+    const D = {
+      advanced: { label: 'Advanced', n: 5, title: 'Advanced rate limiting policies', help: 'Advanced policies cap traffic per API or per API resource.', rows: [['10KPerMin', 'Request count', 10000, '1 min'], ['20KPerMin', 'Request count', 20000, '1 min'], ['50KPerMin', 'Request count', 50000, '1 min'], ['AroyaApiLimit', 'Request count', 6000, '1 min'], ['Unlimited', 'Request count', 2147483647, '1 min']], footer: '5 policies' },
+      application: { label: 'Application', n: 3, title: 'Application rate limiting policies', help: 'Application policies cap each access token generated for an application.', rows: [['50PerMin', 'Request count', 50, '1 min'], ['20PerMin', 'Request count', 20, '1 min'], ['10PerMin', 'Request count', 10, '1 min']], footer: '3 policies' },
+      subscription: { label: 'Subscription', n: 17, title: 'Subscription rate limiting policies', help: 'Subscription tiers control access per subscription, including async event and AI API quotas.', rows: [['Gold', 'Request count'], ['Silver', 'Request count'], ['Bronze', 'Request count'], ['Unauthenticated', 'Request count'], ['Unlimited', 'Request count'], ['AsyncGold', 'Event count'], ['AsyncSilver', 'Event count'], ['AsyncBronze', 'Event count'], ['AsyncUnlimited', 'Event count'], ['AIGold', 'AI API quota']], footer: 'Showing 10 of 17 · limits load from the gateway' },
+      custom: { label: 'Custom', n: 0, title: 'Custom policies', help: 'Custom policies apply dynamic rules across all tenants.', rows: [], footer: '' },
+      deny: { label: 'Deny', n: 0, title: 'Deny policies', help: 'Deny policies block specific APIs, applications, users or IP ranges.', rows: [], footer: '' }
+    };
+    const cur = D[tab];
+    const TC = { 'Request count': ['var(--sys)', 'var(--sysSoft)'], 'Event count': ['var(--proc)', 'var(--procSoft)'], 'AI API quota': ['var(--exp)', 'var(--expSoft)'] };
+    const rows = cur.rows.map((r, i) => {
+      const raw = r[2];
+      const has = raw !== undefined;
+      const w = has ? Math.min(100, Math.round(100 * Math.log10(Math.max(raw, 1)) / Math.log10(2147483647))) : 0;
+      const item = { name: r[0], type: r[1], tC: TC[r[1]][0], tB: TC[r[1]][1], limit: has ? fmt(raw) : '[limit]', raw: has ? (raw >= 2147483647 ? '∞' : String(raw)) : '', unit: r[3] || '[window]', w, delay: (120 + i * 55) + 'ms' };
+      item.plain = has ? (raw >= 2147483647 ? 'No cap. Every request is allowed through.' : 'Up to ' + raw.toLocaleString() + ' requests every ' + item.unit.replace('1 ', '') + ', then callers get HTTP 429 until the window resets.') : 'Limit and window load from the gateway when this tier is opened.';
+      item.open = () => this.setState({ ed: item, drawer: true });
+      return item;
+    });
+    const tabs = Object.keys(D).map((id) => ({ label: D[id].label, n: D[id].n, hasN: D[id].n > 0, on: tab === id, cls: tab === id ? 'mf-seg-on' : '', pick: () => this.setState({ tab: id }) }));
+    const blank = { name: '', raw: '', unit: '1 min', plain: 'Set a limit and a window to see what callers will experience.' };
+    const ed = s.ed || blank;
+    return {
+      ...th, tabs, rows, hasRows: rows.length > 0, noRows: rows.length === 0,
+      tabTitle: cur.title, tabHelp: cur.help, footer: cur.footer,
+      addLabel: 'Add ' + cur.label.toLowerCase() + ' policy',
+      emptyTitle: cur.title, emptyText: cur.help + ' Their entries load from the gateway; open this tab in the live build to see and edit them.',
+      drawer: !!s.drawer, ed, edTitle: ed.name || 'New ' + cur.label.toLowerCase() + ' policy', edKind: cur.label.toUpperCase() + ' POLICY',
+      openNew: () => this.setState({ ed: blank, drawer: true }),
+      close: () => this.setState({ drawer: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

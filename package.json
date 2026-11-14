@@ -1,0 +1,7 @@
+{
+  "name": "traceit-middleware",
+  "private": true,
+  "description": "TraceIT middleware tooling (WSO2 admin portal + low-code canvas), isolated from TraceIT monitoring and the WSO2 runtime",
+  "engines": { "node": ">=22" },
+  "packageManager": "pnpm@9.15.9"
+}

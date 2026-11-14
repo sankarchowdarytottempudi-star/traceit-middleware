@@ -7,6 +7,8 @@ COPY apps/weave-factory/package.json ./apps/weave-factory/package.json
 COPY apps/weave-factory-bff/package.json ./apps/weave-factory-bff/package.json
 RUN pnpm install --frozen-lockfile=false
 COPY . .
+ARG VITE_WEAVE_GATEWAY_URL=""
+ENV VITE_WEAVE_GATEWAY_URL=$VITE_WEAVE_GATEWAY_URL
 RUN pnpm --filter weave-factory build && pnpm --filter weave-factory-bff build
 RUN pnpm --filter weave-factory-bff deploy --prod /prod-bff
 FROM node:22-bookworm-slim AS runtime

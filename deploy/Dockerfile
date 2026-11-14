@@ -8,6 +8,8 @@ COPY apps/gateway-admin/package.json ./apps/gateway-admin/package.json
 COPY apps/gateway-admin-bff/package.json ./apps/gateway-admin-bff/package.json
 RUN pnpm install --frozen-lockfile=false
 COPY . .
+ARG VITE_WEAVE_FACTORY_URL=""
+ENV VITE_WEAVE_FACTORY_URL=$VITE_WEAVE_FACTORY_URL
 RUN pnpm --filter gateway-admin build && pnpm --filter gateway-admin-bff build
 RUN pnpm --filter gateway-admin-bff deploy --prod /prod-bff
 

@@ -111,3 +111,34 @@ Flow | Connectors | Mappings | Logs and a "Clone to editable flow" action.
 /migrations/:id         Migration detail (phases, docs, run)    migrate
 /workspaces /playground /knowledge                              migrate
 ```
+
+## Additions by the runtime stream (all optional / additive; nothing above changed)
+
+```
+POST /v1/flows/:id/versions/:revision/restore  -> Flow            a new revision carrying that version's content
+PUT  /v1/flows/:id  (stale revision)           -> 409 problem     carries `currentRevision`
+POST /v1/flows/:id/deploy (flow has errors)    -> 422 problem     carries `issues: ValidationIssue[]`
+/run/...                                       response header    `x-weave-execution-id` (the live execution it produced)
+POST /v1/mapping/infer                         also accepts `sampleTarget` as a synonym of `desiredOutput`;
+                                               rules are InferredMappingRule (MappingRule + confidence 0..1, comment = why).
+                                               A target field nothing explains comes back as a low-confidence `const`
+                                               rule with a comment, never dropped.
+POST /v1/mapping/compile-instruction           response adds ok, reason, understood[], fields[], previewError
+                                               (not understood: compiled = null, ok = false, reason + suggestions[])
+POST /v1/mapping/preview                       rule entries add warning, compiled, suggestions[]
+```
+
+Mapping rules written in plain words (`kind: "instruction"`):
+- they are compiled when the flow is saved, validated, tested or deployed; the result is stored in `compiled`
+  (`engine: "rules"`, or `"in-estate-model"` when MODEL_URL is configured and the rules did not understand it);
+- an instruction that is not understood is a validation **error** on the flow and a per-rule error in
+  preview and test runs (`{ id, ok: false, error, suggestions }`); the other rules are still evaluated;
+- text that is already a valid expression is accepted as written.
+
+Expressions: connector operations bind `$params` (the operation's parameters) next to the standard bindings.
+Extra helpers (all listed with examples in `GET /v1/catalog` -> `functions`): `$titleCase $capitalize $initials
+$words $digits $isEmpty $coalesce $translate $toBool $yesNo $parseDate $formatDate $addTime $dateDiff
+$epochMillis $toMinorUnits $fromMinorUnits $uuid $hash $parseJson $xmlToJson $jsonToXml`.
+
+Stats: `errors` counts live executions that failed or answered 5xx (a handled failure that still answers 5xx
+is an error for the caller). Only live executions are counted; test runs never are.

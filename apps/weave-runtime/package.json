@@ -1,0 +1,32 @@
+{
+  "name": "weave-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "description": "Weave runtime: stores, executes and publishes the integration flows designed on the Factory canvas.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@traceit/weave-flow": "workspace:*",
+    "croner": "9.0.0",
+    "fast-xml-parser": "4.5.0",
+    "fastify": "5.1.0",
+    "jsonata": "2.0.5",
+    "pg": "8.13.1",
+    "redis": "4.7.0",
+    "yaml": "2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.9.0",
+    "@types/pg": "8.11.10",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3",
+    "vitest": "2.1.5"
+  }
+}

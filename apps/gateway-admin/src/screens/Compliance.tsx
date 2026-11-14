@@ -46,19 +46,19 @@ export function Compliance() {
             <h2 style={{ margin: 0, fontSize: 18 }}>APIs</h2>
             <SegTabs tabs={[{ id: "findings", label: "Most findings" }, { id: "name", label: "Name" }]} value={sort} onChange={setSort} />
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div className="gw-tablewrap"><table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr style={{ textAlign: "left", color: "var(--faint)", fontSize: 12 }}><th style={{ padding: "8px 6px" }}>API</th><th>Errors</th><th>Warnings</th><th></th></tr></thead>
             <tbody>
               {apis.map((a) => (
                 <tr key={a.apiId} className="mf-row" style={{ cursor: "pointer" }} onClick={() => setSel(a)}>
-                  <td style={{ padding: "12px 6px" }}><span className="mf-mono" style={{ fontSize: 13.5 }}>{a.name}</span> <span style={{ color: "var(--faint)", fontSize: 12 }}>{a.version}</span></td>
+                  <td style={{ padding: "12px 6px", overflowWrap: "anywhere" }}><span className="mf-mono" style={{ fontSize: 13.5 }}>{a.name}</span> <span style={{ color: "var(--faint)", fontSize: 12 }}>{a.version}</span></td>
                   <td style={{ color: a.errors ? "var(--bad)" : "var(--faint)", fontWeight: 700 }}>{a.errors}</td>
                   <td style={{ color: "var(--warn)", fontWeight: 700 }}>{a.warnings}</td>
-                  <td style={{ textAlign: "right", color: "var(--accentText)", fontSize: 13 }}>View →</td>
+                  <td style={{ textAlign: "right", color: "var(--accentText)", fontSize: 13, whiteSpace: "nowrap" }}>View →</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </Card>
       </>)}
 

@@ -1,8 +1,8 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import crypto from "node:crypto";
 import type { Config } from "./config.js";
 import type { SessionStore } from "./sessionStore.js";
-import { authorizeUrl, exchangeCode, pkce, refreshToken, type TokenSet } from "./wso2.js";
+import { authorizeUrl, exchangeCode, passwordGrant, pkce, refreshToken, type TokenSet } from "./wso2.js";
 
 export interface ClientCreds { clientId: string; clientSecret: string; }
 interface Session { tokens: TokenSet; expiresAt: number; user: string; }
@@ -30,6 +30,29 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
     } catch { await store.del(`sess:${sid}`); return null; }
   }
   app.decorate("tokenFor", tokenFor);
+
+  // Loopback dev mode (automated UI tests): only when bound to 127.0.0.1 AND DEV_AUTH_USER is set.
+  // index.ts refuses to start with DEV_AUTH_USER on any other host. No browser sign-in; the BFF
+  // calls the gateway with a token obtained from the service credentials already in the env.
+  const devUser = process.env.HOST === "127.0.0.1" ? (process.env.DEV_AUTH_USER || "") : "";
+  // Asked for again every minute: the gateway hands back the same token while it is valid and a
+  // new one when it has expired or been revoked, so a stale token never sticks for long.
+  let devTok: { token: string; expiresAt: number } | null = null;
+  let devPending: Promise<string> | null = null;
+  async function devToken(): Promise<string> {
+    if (devTok && Date.now() < devTok.expiresAt) return devTok.token;
+    if (!devPending) {
+      devPending = passwordGrant(w, creds.clientId, creds.clientSecret, cfg.APIM_DCR_USERNAME, cfg.APIM_DCR_PASSWORD, SCOPE)
+        .then((t) => { devTok = { token: t.access_token, expiresAt: Date.now() + Math.max(5, Math.min(60, t.expires_in - 30)) * 1000 }; return t.access_token; })
+        .finally(() => { devPending = null; });
+    }
+    return devPending;
+  }
+  app.decorate("tokenForRequest", async (req: FastifyRequest) => {
+    if (devUser) return devToken();
+    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
+    return sid ? tokenFor(sid) : null;
+  });
 
   app.get("/api/auth/login", async (_req, reply) => {
     const { verifier, challenge } = pkce();
@@ -60,6 +83,7 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
   });
 
   app.get("/api/auth/me", async (req, reply) => {
+    if (devUser) return { user: devUser, role: "admin" };
     const sid = req.unsignCookie(req.cookies.sid ?? "").value;
     const s = sid ? await store.get<Session>(`sess:${sid}`) : null;
     if (!s) return reply.code(401).send({ type: "about:blank", title: "Not signed in", status: 401 });

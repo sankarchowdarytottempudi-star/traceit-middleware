@@ -18,9 +18,9 @@ export function StatCard({ label, value, suffix, status }: { label: string; valu
   );
 }
 
-export function SegTabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string; count?: number }[]; value: T; onChange: (t: T) => void }) {
+export function SegTabs<T extends string>({ tabs, value, onChange, label = "views" }: { tabs: { id: T; label: string; count?: number }[]; value: T; onChange: (t: T) => void; label?: string }) {
   return (
-    <div role="tablist" aria-label="views" style={{ display: "inline-flex", gap: 4, padding: 4, borderRadius: 12, background: "var(--surface2)", border: "1px solid var(--border)" }}
+    <div role="tablist" aria-label={label} className="gw-tabs-scroll" style={{ display: "inline-flex", gap: 4, padding: 4, borderRadius: 12, background: "var(--surface2)", border: "1px solid var(--border)" }}
       onKeyDown={(e) => {
         const i = tabs.findIndex((t) => t.id === value);
         if (e.key === "ArrowRight") onChange(tabs[(i + 1) % tabs.length].id);
@@ -29,7 +29,7 @@ export function SegTabs<T extends string>({ tabs, value, onChange }: { tabs: { i
       {tabs.map((t) => (
         <button key={t.id} role="tab" aria-selected={t.id === value} tabIndex={t.id === value ? 0 : -1}
           className={`mf-seg mf-btn ${t.id === value ? "mf-seg-on" : ""}`}
-          style={{ height: 34, padding: "0 14px", borderRadius: 9, fontSize: 13.5, fontWeight: 600 }}
+          style={{ height: 34, padding: "0 14px", borderRadius: 9, fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", flex: "0 0 auto" }}
           onClick={() => onChange(t.id)}>
           {t.label}{t.count !== undefined && <span style={{ marginLeft: 6, opacity: 0.7 }}>{t.count}</span>}
         </button>

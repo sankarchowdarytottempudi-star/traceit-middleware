@@ -8,6 +8,8 @@ import type { Config } from "./config.js";
 import { registerAuth, type ClientCreds } from "./auth.js";
 import type { SessionStore } from "./sessionStore.js";
 import { registerRoutes } from "./routes.js";
+import { registerInsightRoutes } from "./insightRoutes.js";
+import { classifyUnmatched } from "./spaFallback.js";
 
 export async function buildServer(cfg: Config, creds: ClientCreds, store: SessionStore): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
@@ -17,6 +19,7 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
 
   registerAuth(app, cfg, creds, store);
   registerRoutes(app, cfg);
+  registerInsightRoutes(app, cfg);
 
   app.setErrorHandler((err, _req, reply) => {
     const status = (err as any).statusCode ?? 500;
@@ -25,7 +28,7 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
     });
   });
 
-  const spa = join(dirname(fileURLToPath(import.meta.url)), "../../gateway-admin/dist");
+  const spa = cfg.SPA_DIR || join(dirname(fileURLToPath(import.meta.url)), "../../gateway-admin/dist");
   if (existsSync(spa)) {
     await app.register(fstatic, {
       root: spa,
@@ -36,12 +39,11 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
       },
     });
     app.setNotFoundHandler((req, reply) => {
-      const url = req.raw.url || "/";
-      const seg = url.split("?")[0]; const last = seg.substring(seg.lastIndexOf("/") + 1);
-      if (url.startsWith("/api") || last.includes(".")) {
+      const kind = classifyUnmatched(req.raw.url || "/");
+      if (kind !== "page") {
         // concrete file or api: never serve HTML (stale asset must 404, not parse as JS)
-        reply.code(404).type(url.startsWith("/api") ? "application/problem+json" : "text/plain")
-          .send(url.startsWith("/api") ? { type: "about:blank", title: "Not found", status: 404 } : "Not found");
+        reply.code(404).type(kind === "api" ? "application/problem+json" : "text/plain")
+          .send(kind === "api" ? { type: "about:blank", title: "Not found", status: 404 } : "Not found");
         return;
       }
       reply.header("cache-control", "no-cache, no-store, must-revalidate").sendFile("index.html");

@@ -6,5 +6,73 @@
 @import "@fontsource/manrope/800.css";
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@traceit/tokens/tokens.css";
+@import "@xyflow/react/dist/style.css";
+@import "./studio/studio.css";
+@import "./studio/editor.css";
 html, body, #root { height: 100%; }
 #root { min-height: 100vh; }
+html { -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+
+/* ------------------------------------------------------------------ responsive shell
+   >= 901px: sticky sidebar (optionally collapsed to an icon rail).
+   <= 900px: top bar with a menu button; the sidebar is an off-canvas drawer. */
+.mf-shell { display: flex; min-height: 100vh; min-height: 100dvh; }
+.mf-side { flex: 0 0 248px; width: 248px; background: var(--side); border-right: 1px solid var(--border); padding: 16px 14px; display: flex; flex-direction: column; gap: 16px; position: sticky; top: 0; height: 100vh; height: 100dvh; z-index: 20; }
+.mf-side-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px; min-height: 30px; }
+.mf-side-logo { flex: 1; min-width: 0; display: inline-flex; align-items: center; }
+.mf-side-product { display: flex; align-items: center; gap: 10px; padding: 4px 10px; }
+.mf-side-nav { display: flex; flex-direction: column; gap: 16px; flex: 1; overflow-y: auto; overflow-x: hidden; margin: 0 -14px; padding: 0 14px; }
+.mf-side-group { display: flex; flex-direction: column; gap: 4px; }
+.mf-side-title { font-size: 10.5px; letter-spacing: 0.14em; color: var(--faint); padding: 0 12px 2px; }
+.mf-side-foot { display: flex; flex-direction: column; gap: 12px; }
+.mf-side-user { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
+.mf-side-avatar { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px; background: var(--accentWash); color: var(--accentText); display: grid; place-items: center; font-weight: 700; }
+.mf-topbtn { width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; border: 1px solid transparent; color: var(--muted); cursor: pointer; }
+.mf .mf-topbtn { color: var(--muted); }
+.mf-topbtn:hover { background: var(--surface3); color: var(--text); }
+.mf-side-close { display: none; }
+.mf-side-rail { width: 30px; height: 30px; }
+.mf-topbar { display: none; }
+.mf-side-scrim { display: none; }
+.mf-main { flex: 1; min-width: 0; padding: 28px 32px; display: flex; flex-direction: column; gap: 20px; }
+.mf-main > * { min-width: 0; max-width: 100%; }
+.mf-main-bleed { padding: 0; gap: 0; height: 100vh; height: 100dvh; overflow: hidden; }
+
+/* icon rail (large screens only) */
+@media (min-width: 901px) {
+  .mf-shell-rail .mf-side { flex-basis: 64px; width: 64px; padding: 16px 10px; }
+  .mf-shell-rail .mf-side-text, .mf-shell-rail .mf-side-title, .mf-shell-rail .mf-side-logo { display: none !important; }
+  .mf-shell-rail .mf-side-head, .mf-shell-rail .mf-side-product { justify-content: center; padding: 2px 0; }
+  .mf-shell-rail .mf-side-nav { margin: 0 -10px; padding: 0 10px; }
+  .mf-shell-rail .mf-nav { justify-content: center; padding: 10px 0; }
+  .mf-shell-rail .mf-nav:hover { transform: none; }
+  .mf-shell-rail .mf-nav-on::before { left: -10px; }
+  .mf-shell-rail .mf-side-user { padding: 6px; justify-content: center; border: 0; background: transparent; }
+  .mf-shell-rail .mf-side-group { gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .mf-shell-rail .mf-side-group:last-child { border-bottom: 0; }
+}
+
+@media (max-width: 900px) {
+  .mf-shell { flex-direction: column; }
+  .mf-topbar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 30; height: 52px; flex: 0 0 52px; padding: 0 12px 0 8px; background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+  .mf-topbar-title { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mf-topbar-brand { display: inline-flex; align-items: center; opacity: .9; }
+  .mf-side { position: fixed; top: 0; left: 0; bottom: 0; width: min(300px, 86vw); flex: none; height: 100dvh; transform: translateX(-104%); transition: transform .28s cubic-bezier(.2,.7,.2,1); z-index: 70; box-shadow: var(--shadow); visibility: hidden; }
+  .mf-side-open { transform: none; visibility: visible; }
+  .mf-side-scrim { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 65; animation: mfFade .25s ease both; }
+  .mf-side-close { display: grid; }
+  .mf-side-rail { display: none; }
+  .mf-main { padding: 18px 16px 28px; gap: 16px; }
+  .mf-main-bleed { padding: 0; gap: 0; flex: none; height: calc(100vh - 52px); height: calc(100dvh - 52px); }
+  /* screens written for desktop: keep headings and wide content inside the viewport */
+  .mf-main h1 { font-size: clamp(24px, 7vw, 40px) !important; overflow-wrap: anywhere; }
+  .mf-main table:not(.mf-table) { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .mf-main pre { max-width: 100%; overflow-x: auto; }
+  .mf-main input, .mf-main textarea, .mf-main select { max-width: 100%; }
+}
+@media (max-width: 480px) {
+  .mf-topbar-brand { display: none; }
+  /* card grids that ask for 320-380px columns in an inline style: one column on a phone */
+  .mf-main [style*="minmax(3"] { grid-template-columns: minmax(0, 1fr) !important; }
+}

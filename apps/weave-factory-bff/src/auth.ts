@@ -31,6 +31,15 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
     } catch { await store.del(`sess:${sid}`); return null; }
   }
   app.decorate("tokenFor", devUser ? async () => "dev-token" : tokenFor);
+  /** Signed-in user name for a request, or null. Use this to guard every /api route. */
+  app.decorate("userFor", async (req: import("fastify").FastifyRequest): Promise<string | null> => {
+    if (devUser) return devUser;
+    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
+    if (!sid) return null;
+    if (!(await tokenFor(sid))) return null;
+    const s = await store.get<Session>(`sess:${sid}`);
+    return s ? s.user : null;
+  });
 
   app.get("/api/auth/login", async (_req, reply) => {
     const { verifier, challenge } = pkce();

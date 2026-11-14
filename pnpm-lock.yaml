@@ -169,6 +169,9 @@ importers:
       '@traceit/weave-brand':
         specifier: workspace:*
         version: link:../../packages/weave-brand
+      '@traceit/weave-flow':
+        specifier: workspace:*
+        version: link:../../packages/weave-flow
       lucide-react:
         specifier: 0.460.0
         version: 0.460.0(react@19.0.0)
@@ -242,6 +245,9 @@ importers:
       '@fastify/static':
         specifier: 8.0.3
         version: 8.0.3
+      '@traceit/weave-flow':
+        specifier: workspace:*
+        version: link:../../packages/weave-flow
       fastify:
         specifier: 5.1.0
         version: 5.1.0
@@ -305,6 +311,12 @@ importers:
       vitest:
         specifier: 2.1.5
         version: 2.1.5(@types/node@22.9.0)(jsdom@25.0.1)
+
+  packages/weave-flow:
+    devDependencies:
+      typescript:
+        specifier: 5.6.3
+        version: 5.6.3
 
 packages:
 

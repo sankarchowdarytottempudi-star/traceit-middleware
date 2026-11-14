@@ -1,14 +1,11 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Shell } from "./components/Shell.tsx";
 import { api } from "./api.ts";
 import { WeaveLockup, WeaveMark, TAGLINE, COMPANY_LINE } from "./brand.tsx";
 import { useTheme } from "./theme.tsx";
-import { Migrations } from "./screens/Migrations.tsx";
-import { Workspaces } from "./screens/Workspaces.tsx";
-import { Playground } from "./screens/Playground.tsx";
-import { Knowledge } from "./screens/Knowledge.tsx";
-import { Canvas } from "./screens/Canvas.tsx";
+import { migrateRoutes } from "./migrate/routes.tsx";
+import { studioRoutes } from "./studio/routes.tsx";
 
 function SignIn() {
   const { resolved } = useTheme();
@@ -32,11 +29,10 @@ export function App() {
   return (
     <Routes>
       <Route element={<Shell />}>
-        <Route index element={<Migrations />} />
-        <Route path="workspaces" element={<Workspaces />} />
-        <Route path="playground" element={<Playground />} />
-        <Route path="knowledge" element={<Knowledge />} />
-        <Route path="canvas" element={<Canvas />} />
+        <Route index element={<Navigate to="/migrations" replace />} />
+        {migrateRoutes()}
+        {studioRoutes()}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );

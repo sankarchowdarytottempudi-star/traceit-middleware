@@ -8,6 +8,7 @@ import type { Config } from "./config.js";
 import { registerAuth, type ClientCreds } from "./auth.js";
 import type { SessionStore } from "./sessionStore.js";
 import { registerRoutes } from "./routes.js";
+import { registerStudio } from "./studio.js";
 
 function resolveSpaDir(): string | null {
   if (process.env.SPA_DIR && existsSync(process.env.SPA_DIR)) return process.env.SPA_DIR;
@@ -29,11 +30,12 @@ function looksLikeFile(url: string): boolean {
 }
 
 export async function buildServer(cfg: Config, creds: ClientCreds, store: SessionStore): Promise<FastifyInstance> {
-  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
+  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" }, bodyLimit: 20 * 1024 * 1024 });
   await app.register(cookie, { secret: cfg.SESSION_SECRET });
   app.get("/healthz", async () => ({ status: "UP" }));
   registerAuth(app, cfg, creds, store);
   registerRoutes(app, cfg);
+  registerStudio(app, { runtimeUrl: cfg.RUNTIME_URL, internalKey: cfg.RUNTIME_INTERNAL_KEY || "" }, (req) => app.userFor(req));
   app.setErrorHandler((err, _req, reply) => {
     const status = (err as any).statusCode ?? 500;
     reply.code(status).type("application/problem+json").send({ type: "about:blank", title: err.message || "Error", status });

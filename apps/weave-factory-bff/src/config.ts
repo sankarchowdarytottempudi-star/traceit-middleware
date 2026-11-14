@@ -13,6 +13,8 @@ const schema = z.object({
   MT_ADMIN_TOKEN: z.string().min(1),
   REDIS_URL: z.string().optional().or(z.literal("")),
   DATA_DIR: z.string().default(".data"),
+  RUNTIME_URL: z.string().url().default("http://127.0.0.1:8790"),
+  RUNTIME_INTERNAL_KEY: z.string().optional().or(z.literal("")),
   PORT: z.coerce.number().int().positive().default(8788),
 });
 

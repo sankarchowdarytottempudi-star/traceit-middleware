@@ -1,21 +1,16 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Boxes, Layers, FlaskConical, BookOpen, Workflow, ExternalLink, Info } from "lucide-react";
+import { Boxes, ExternalLink, Info } from "lucide-react";
+import type { NavGroup } from "../nav.ts";
+import { studioNav } from "../studio/routes.tsx";
+import { migrateNav } from "../migrate/routes.tsx";
 import { BRAND, WEAVE_GATEWAY_URL, WeaveMark, WeaveLockup, TraceItLogo, PRODUCT_NAME, TAGLINE, COMPANY_LINE } from "../brand.tsx";
 import { useTheme } from "../theme.tsx";
 import { ThemeSwitch } from "./ThemeSwitch.tsx";
 import { api } from "../api.ts";
 
-const groups: { title: string; items: { to: string; label: string; icon: typeof Boxes; end?: boolean }[] }[] = [
-  { title: "MIGRATE", items: [
-    { to: "/", label: "Migrations", icon: Boxes, end: true },
-    { to: "/workspaces", label: "Workspaces", icon: Layers },
-  ] },
-  { title: "TEST", items: [{ to: "/playground", label: "Playground", icon: FlaskConical }] },
-  { title: "BUILD", items: [{ to: "/canvas", label: "Flow canvas", icon: Workflow }] },
-  { title: "KNOWLEDGE", items: [{ to: "/knowledge", label: "Knowledge base", icon: BookOpen }] },
-];
+const groups: NavGroup[] = [...studioNav, ...migrateNav];
 
 export function Shell() {
   const { resolved } = useTheme();

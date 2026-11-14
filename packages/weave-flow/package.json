@@ -1,0 +1,16 @@
+{
+  "name": "@traceit/weave-flow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared contract for Weave Studio: flow model, node catalog, runtime REST DTOs. Types and static data only.",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src", "CONTRACT.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": { "typescript": "5.6.3" }
+}

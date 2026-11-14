@@ -1,0 +1,19 @@
+# Verification entrance to green. It selects ONLY green's pods and uses NodePorts nothing else
+# uses, so green can be tested end to end while the live Service `wso2am` (30443/30243/30280)
+# still points at blue. It stays in place after the switch as a second way in.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wso2am-green
+  namespace: apim
+  labels:
+    app.kubernetes.io/name: wso2am
+    app.kubernetes.io/instance: green
+spec:
+  type: NodePort
+  selector:
+    app: wso2am-green
+  ports:
+    - { name: console,  port: 9443, targetPort: 9443, nodePort: 31443, protocol: TCP }
+    - { name: gw-https, port: 8243, targetPort: 8243, nodePort: 31243, protocol: TCP }
+    - { name: gw-http,  port: 8280, targetPort: 8280, nodePort: 31280, protocol: TCP }

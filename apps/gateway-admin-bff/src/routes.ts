@@ -18,12 +18,8 @@ const SUB_PATH: Record<string, string> = {
 export function registerRoutes(app: FastifyInstance, cfg: Config) {
   const w = { baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem };
 
-  async function token(req: FastifyRequest): Promise<string | null> {
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
-    return sid ? app.tokenFor(sid) : null;
-  }
   async function need(req: FastifyRequest): Promise<string> {
-    const t = await token(req);
+    const t = await app.tokenForRequest(req);
     if (!t) throw Object.assign(new Error("Not signed in"), { statusCode: 401 });
     return t;
   }

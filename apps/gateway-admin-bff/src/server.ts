@@ -8,6 +8,7 @@ import type { Config } from "./config.js";
 import { registerAuth, type ClientCreds } from "./auth.js";
 import type { SessionStore } from "./sessionStore.js";
 import { registerRoutes } from "./routes.js";
+import { registerInsightRoutes } from "./insightRoutes.js";
 
 export async function buildServer(cfg: Config, creds: ClientCreds, store: SessionStore): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
@@ -17,6 +18,7 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
 
   registerAuth(app, cfg, creds, store);
   registerRoutes(app, cfg);
+  registerInsightRoutes(app, cfg);
 
   app.setErrorHandler((err, _req, reply) => {
     const status = (err as any).statusCode ?? 500;
@@ -25,7 +27,7 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
     });
   });
 
-  const spa = join(dirname(fileURLToPath(import.meta.url)), "../../gateway-admin/dist");
+  const spa = cfg.SPA_DIR || join(dirname(fileURLToPath(import.meta.url)), "../../gateway-admin/dist");
   if (existsSync(spa)) {
     await app.register(fstatic, {
       root: spa,

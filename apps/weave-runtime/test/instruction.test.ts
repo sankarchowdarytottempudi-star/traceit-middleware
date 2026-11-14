@@ -51,6 +51,9 @@ describe("instruction compiler: library of phrasings", () => {
   it("gives the expected values for everyday rules", async () => {
     const want: [string, unknown][] = [
       ["convert to upper case (customer.name)", "JOHN SMITH"],
+      ["uppercase the first two characters of customer.name", "JO"],
+      ["upper case of the first two characters (customer.name)", "JO"],
+      ["lowercase the last word of customer.name", "smith"],
       ["first name and last name joined with a space", "john smith"],
       ["add a hyphen between first name and last name", "john-smith"],
       ["the phone number without spaces and dashes", "+966501234567"],

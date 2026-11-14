@@ -1396,6 +1396,9 @@ function normalize(t: string): string {
     .replace(/^does\s+(.+?)\s+(contain|include|start with|end with|begin with|have|exist|equal|match)(?![A-Za-z])/i, (_m, a: string, v: string) => `${a} ${v === "have" ? "has" : v === "match" ? "matches" : v.replace(/^([a-z]+)/i, "$1s")}`)
     .replace(/^(?:are|is)\s+there\s+(?:any|some)\s+(.+)$/i, "$1 is not empty")
     .replace(/\s+among(?:st)?\s+(?:all\s+)?(?:the\s+)?/gi, " of ")
+    // "uppercase the first two characters of X" -> "first two characters of X in uppercase"
+    .replace(/^(upper ?case|lower ?case|title ?case|capitali[sz]e|capitals|caps)\s+(?:of\s+)?(?:the\s+)?(?!first\s+(?:letter|character|char)\b)((?:first|last|second|third)\s+(?:(?!\s(?:and|then)\s).)+)$/i,
+      (_m, w: string, rest: string) => `${rest} in ${/^upper|^cap(?:ital)?s/i.test(w) ? "uppercase" : /^lower/i.test(w) ? "lowercase" : "titlecase"}`)
     .replace(/\s+with\s+(⟦q\d+⟧|[^\s⟦]+)\s+removed(?![A-Za-z])/gi, ", remove $1")
     .trim();
 }

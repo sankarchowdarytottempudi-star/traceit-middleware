@@ -14,7 +14,8 @@ const SCOPE = "openid apim:admin apim:tier_view apim:tier_manage apim:admin_sett
 
 export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCreds, store: SessionStore) {
   const redirectUri = `${cfg.PUBLIC_BASE_URL}/api/auth/callback`;
-  const w = { baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem };
+  const w = { baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem }; // server-side (localhost; cert CN matches)
+  const publicBase = cfg.APIM_PUBLIC_URL; // browser-facing only
 
   async function tokenFor(sid: string): Promise<string | null> {
     const s = await store.get<Session>(`sess:${sid}`);
@@ -34,7 +35,7 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
     const { verifier, challenge } = pkce();
     const state = crypto.randomBytes(16).toString("hex");
     await store.set(`pkce:${state}`, { verifier }, PKCE_TTL);
-    reply.redirect(authorizeUrl(w, creds.clientId, redirectUri, challenge, state, SCOPE));
+    reply.redirect(authorizeUrl(publicBase, creds.clientId, redirectUri, challenge, state, SCOPE));
   });
 
   app.get("/api/auth/callback", async (req, reply) => {

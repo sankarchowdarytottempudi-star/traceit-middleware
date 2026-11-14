@@ -44,11 +44,11 @@ export function pkce(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-export function authorizeUrl(opts: Wso2Opts, clientId: string, redirectUri: string,
+export function authorizeUrl(publicBaseUrl: string, clientId: string, redirectUri: string,
   challenge: string, state: string, scope: string): string {
   const q = new URLSearchParams({ response_type: "code", client_id: clientId,
     redirect_uri: redirectUri, scope, state, code_challenge: challenge, code_challenge_method: "S256" });
-  return `${opts.baseUrl}/oauth2/authorize?${q.toString()}`;
+  return `${publicBaseUrl}/oauth2/authorize?${q.toString()}`;
 }
 
 export interface TokenSet { access_token: string; refresh_token?: string; expires_in: number; scope?: string; }

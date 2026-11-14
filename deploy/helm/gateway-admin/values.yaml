@@ -10,6 +10,8 @@ service:
 # Non-secret config -> ConfigMap. Secrets (DCR creds, session secret) -> referenced Secret.
 config:
   APIM_BASE_URL: "https://wso2am.wso2.svc:9443"
+  # Browser-facing WSO2 URL for the OAuth redirect (public hostname). Defaults to APIM_BASE_URL.
+  APIM_PUBLIC_URL: "https://wso2.example.com:30443"
   PUBLIC_BASE_URL: "https://weave-gateway.example.internal"
   APIM_CA_CERT_PATH: "/etc/weave/wso2-ca.pem"
   MIGRATION_TOOL_URL: ""

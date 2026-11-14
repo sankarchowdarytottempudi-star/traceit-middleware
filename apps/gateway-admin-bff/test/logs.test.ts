@@ -22,6 +22,11 @@ describe("parseLine", () => {
     expect(e.level).toBe("ERROR");
     expect(e.msg).toBe("API authentication failure due to Invalid Credentials (APIAuthenticationHandler)");
   });
+  it("reads a gateway mediation line that has no class in braces", () => {
+    const e = parseLine("2026-11-14T21:16:47.371093547+01:00 [2026-11-14 20:16:47,370]  INFO - LogMediator {api:ship-list:v1} STATUS = Executing default 'fault' sequence, ERROR_CODE = 404", "gw", "wso2am-1");
+    expect(e.level).toBe("INFO"); expect(e.t).toBe(Date.parse("2026-11-14T20:16:47.371Z"));
+    expect(e.msg).toBe("{api:ship-list:v1} STATUS = Executing default 'fault' sequence, ERROR_CODE = 404 (LogMediator)");
+  });
   it("classifies raw lines", () => {
     expect(parseLine("2026-11-14T12:00:00Z error: no matching service found for path: /bad-request", "s", "p").level).toBe("ERROR");
     expect(parseLine("2026-11-14T12:00:00Z Picked up JAVA_TOOL_OPTIONS: -Xmx256m", "s", "p").level).toBe("");

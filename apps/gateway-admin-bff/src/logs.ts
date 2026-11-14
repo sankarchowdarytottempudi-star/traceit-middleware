@@ -79,6 +79,11 @@ export function parseLine(raw: string, source: string, pod: string): LogEntry {
     // log4j: "[2026-11-14 12:00:00,123]  INFO {some.Class} - message" -> keep the message part
     const l4 = /^(?:TID: \[[^\]]*\] )?(?:\[[^\]]*\] )*\s*(?:TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s+\{([^}]*)\}\s+-\s+(.*)$/.exec(trimmed);
     if (l4) { const cls = l4[1].split(".").pop() ?? ""; msg = `${l4[2]}${cls ? ` (${cls})` : ""}`; }
+    else {
+      // gateway mediation logs: "[2026-11-14 12:00:00,123]  INFO - LogMediator message"
+      const l5 = /^(?:TID: \[[^\]]*\] )?(?:\[[^\]]*\] )+\s*(?:TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s+-\s+([A-Za-z_][\w.$]*)\s+(.*)$/.exec(trimmed);
+      if (l5) { const cls = l5[1].split(".").pop() ?? ""; msg = `${l5[2]}${cls ? ` (${cls})` : ""}`; }
+    }
   }
   if (!cid) { const c = CID_NEAR.exec(line); if (c) cid = c[1]; }
   return { t, source, pod, level, msg, cid, text: line };
@@ -167,12 +172,17 @@ export function createLogs(d: LogDeps) {
     const cache = new Map<string, Promise<K8sPod[]>>();
     const pods = (ns: string) => { let p = cache.get(ns); if (!p) { p = d.k8s!.pods(ns); cache.set(ns, p); } return p; };
 
+    let names: Promise<Map<string, string>> | undefined;
+    const flowNames = () => (names ??= d.runtime.flows().then((r) => new Map(r.ok ? r.data.map((f): [string, string] => [f.id, f.name || f.slug]) : [])).catch(() => new Map<string, string>()));
+
     await Promise.all(ids.map(async (id) => {
       const m: LogResult["sources"][number] = { id, label: id, replicas: [], lines: 0 };
       meta.push(m);
       try {
         if (id.startsWith("flow:")) {
           const fid = id.slice(5); m.label = fid;
+          const fl = await flowNames();
+          m.label = fl.get(fid) ?? fid;
           const r = await d.runtime.flowLogs(fid, Math.min(perPod, 2000));
           if (!r.ok) { m.error = `Flow runtime: ${r.detail}`; return; }
           const cutoff = since ? Date.now() - since * 1000 : 0;

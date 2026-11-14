@@ -35,13 +35,15 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
   // index.ts refuses to start with DEV_AUTH_USER on any other host. No browser sign-in; the BFF
   // calls the gateway with a token obtained from the service credentials already in the env.
   const devUser = process.env.HOST === "127.0.0.1" ? (process.env.DEV_AUTH_USER || "") : "";
+  // Asked for again every minute: the gateway hands back the same token while it is valid and a
+  // new one when it has expired or been revoked, so a stale token never sticks for long.
   let devTok: { token: string; expiresAt: number } | null = null;
   let devPending: Promise<string> | null = null;
   async function devToken(): Promise<string> {
-    if (devTok && Date.now() < devTok.expiresAt - 30_000) return devTok.token;
+    if (devTok && Date.now() < devTok.expiresAt) return devTok.token;
     if (!devPending) {
       devPending = passwordGrant(w, creds.clientId, creds.clientSecret, cfg.APIM_DCR_USERNAME, cfg.APIM_DCR_PASSWORD, SCOPE)
-        .then((t) => { devTok = { token: t.access_token, expiresAt: Date.now() + t.expires_in * 1000 }; return t.access_token; })
+        .then((t) => { devTok = { token: t.access_token, expiresAt: Date.now() + Math.max(5, Math.min(60, t.expires_in - 30)) * 1000 }; return t.access_token; })
         .finally(() => { devPending = null; });
     }
     return devPending;

@@ -1,0 +1,11 @@
+[acme.orders_proc_api]
+env = "test"
+basePath = "/orders-proc-api/v1"
+signingSecret = "fixture-not-a-real-value"
+
+[acme.orders_proc_api.stock]
+url = "http://stock-sys-api.shop.svc:80"
+apiPassword = "fixture-not-a-real-value"
+
+[acme.orders_proc_api.billing]
+url = "https://user:fixture@billing.example.test/pay?token=fixture"

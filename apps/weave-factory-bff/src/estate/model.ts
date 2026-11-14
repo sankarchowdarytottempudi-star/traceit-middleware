@@ -601,5 +601,10 @@ export function buildApi(entry: SourceEntry, configDirs: string[] = []): ApiMode
   }
   model.mappings.push(...inline);
   model.features = [...features];
+  if (!model.operations.length) {
+    warnings.push(model.mappings.length
+      ? "The deployed code answers health checks only. The business operations of this API were not generated; the transformations listed under Mappings exist in the code but nothing calls them yet."
+      : "The deployed code answers health checks only; no business operations were found.");
+  }
   return model;
 }

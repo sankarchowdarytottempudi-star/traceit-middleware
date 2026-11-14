@@ -1,0 +1,6 @@
+[acme.orders_proc_api]
+env = "example"
+basePath = "/orders-proc-api/v1"
+
+[acme.orders_proc_api.stock]
+url = "http://localhost:9090"

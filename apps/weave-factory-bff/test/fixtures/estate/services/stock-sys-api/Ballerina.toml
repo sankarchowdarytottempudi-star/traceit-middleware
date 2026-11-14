@@ -1,0 +1,4 @@
+[package]
+org = "acme"
+name = "stock_sys_api"
+version = "1.0.0"

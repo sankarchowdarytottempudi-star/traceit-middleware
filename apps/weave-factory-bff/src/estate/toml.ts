@@ -185,7 +185,7 @@ const NOT_SECRET = /^(keyPrefix|keyspace|cacheKey|keyTtl\w*|keysPerBatch|primary
 export function isSecretKey(key: string): boolean {
   const last = key.split(".").pop() || key;
   if (NOT_SECRET.test(last)) return false;
-  return SECRET_KEY.test(last);
+  return SECRET_KEY.test(last) || /[a-z0-9](Pass|Pwd)$/.test(last);
 }
 
 /** Remove user:password@ from URLs and mask query-string credentials. */

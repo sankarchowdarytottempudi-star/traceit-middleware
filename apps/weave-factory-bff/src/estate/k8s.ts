@@ -113,7 +113,7 @@ export function parseLogs(raw: string, pod?: string): LogLine[] {
     const m = /^(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:?\d{2}))\s?(.*)$/.exec(line);
     const text = maskLog(m ? m[2] : line);
     const lv = /\blevel\s*=\s*"?(\w+)/i.exec(text) || /"level"\s*:\s*"(\w+)"/i.exec(text) || /^\s*(error|warn(?:ing)?|info|debug)\s*:/i.exec(text) || /\b(ERROR|WARN(?:ING)?|INFO|DEBUG|FATAL|SEVERE)\b/.exec(text);
-    const level = lv ? LEVELS[lv[1].toLowerCase()] : /\b(exception|panic|stack ?trace)\b|^\s+at\s/i.test(text) ? "error" : undefined;
+    const level = lv ? LEVELS[lv[1].toLowerCase()] : /exception\b|\bpanic\b|\bstack ?trace\b|^\s+at\s/i.test(text) ? "error" : undefined;
     // continuation lines of a stack trace belong to the line before them
     if (!m && out.length && /^\s+/.test(line)) { out[out.length - 1].text += "\n" + text; continue; }
     out.push({ at: m ? isoUtc(m[1]) : undefined, level, text, pod });

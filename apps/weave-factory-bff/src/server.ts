@@ -9,6 +9,8 @@ import { registerAuth, type ClientCreds } from "./auth.js";
 import type { SessionStore } from "./sessionStore.js";
 import { registerRoutes } from "./routes.js";
 import { registerStudio } from "./studio.js";
+import { registerEstate } from "./estate/routes.js";
+import { registerMigrate } from "./migrate/routes.js";
 
 function resolveSpaDir(): string | null {
   if (process.env.SPA_DIR && existsSync(process.env.SPA_DIR)) return process.env.SPA_DIR;
@@ -35,6 +37,8 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   app.get("/healthz", async () => ({ status: "UP" }));
   registerAuth(app, cfg, creds, store);
   registerRoutes(app, cfg);
+  registerMigrate(app, cfg);
+  registerEstate(app, cfg, creds);
   registerStudio(app, { runtimeUrl: cfg.RUNTIME_URL, internalKey: cfg.RUNTIME_INTERNAL_KEY || "" }, (req) => app.userFor(req));
   app.setErrorHandler((err, _req, reply) => {
     const status = (err as any).statusCode ?? 500;

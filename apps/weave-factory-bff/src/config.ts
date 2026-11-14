@@ -16,6 +16,18 @@ const schema = z.object({
   RUNTIME_URL: z.string().url().default("http://127.0.0.1:8790"),
   RUNTIME_INTERNAL_KEY: z.string().optional().or(z.literal("")),
   PORT: z.coerce.number().int().positive().default(8788),
+  // Estate (migrated services): all optional; a missing source only blanks its part of the screen.
+  SERVICES_DIR: z.string().optional(),        // comma separated; "name=/a+/b" for an API made of several packages
+  ESTATE_EXTRA_SOURCES: z.string().optional(), // more entries in the same syntax, added to SERVICES_DIR
+  ESTATE_CONFIG_DIR: z.string().optional(),   // deployed Config.toml copies (non-secret)
+  K8S_API_URL: z.string().optional(),
+  K8S_TOKEN_FILE: z.string().optional(),
+  K8S_CA_FILE: z.string().optional(),
+  K8S_NAMESPACE: z.string().min(1).default("wso2"),
+  PROMETHEUS_URL: z.string().optional(),
+  GATEWAY_PUBLIC_URL: z.string().optional(),  // e.g. https://host:8243 ; shown next to a published API
+  ESTATE_NODE_HOST: z.string().min(1).default("127.0.0.1"), // how the flow runtime reaches a service's node port
+  MT_UPLOAD_LIMIT_MB: z.coerce.number().int().positive().default(500),
 });
 
 export type Config = Omit<z.infer<typeof schema>, "APIM_PUBLIC_URL"> & { APIM_PUBLIC_URL: string; caPem: string };

@@ -6,7 +6,7 @@ import { FileArchive, UploadCloud, X } from "lucide-react";
 import { api, uploadMigration, type ApiError } from "../api.ts";
 import { txt } from "../lib/text.ts";
 import { fileSize, validateNewMigration } from "../lib/migrate.ts";
-import { Bar, Btn, Failed, Field, Head, LinkBtn, Loading, Notice, Panel, Pill, errText, useTitle } from "./ui.tsx";
+import { Bar, Btn, Failed, Field, Head, LinkBtn, Loading, Notice, Panel, Pill, SourceWays, errText, useTitle } from "./ui.tsx";
 
 const NEW = "__new__";
 function StepTitle({ n, children }: { n: number; children: string }) {
@@ -74,6 +74,7 @@ export function MigrationNew() {
     <>
       <Head area="Migrations" areaTo="/migrations" back={{ to: "/migrations", label: "All migrations" }} title="New migration"
         subtitle="Upload the source of an existing API or integration. It is read on this server, documented, and turned into a service you can test and deploy step by step." />
+      <SourceWays way="upload" />
       {opts.isLoading ? <Loading rows={3} h={120} /> : opts.isError || !opts.data ? <Failed what="The migration options are not available right now." error={opts.error} onRetry={() => opts.refetch()} /> : (
         <form className="mf-mg-wizard" onSubmit={(e) => { e.preventDefault(); void submit(); }} noValidate>
           <Panel title={<StepTitle n={1}>Name it and choose a workspace</StepTitle>}>

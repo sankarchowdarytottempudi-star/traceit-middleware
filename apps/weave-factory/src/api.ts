@@ -47,6 +47,8 @@ export interface Migration {
   id: string; name?: string; apiName?: string | null; workspace?: string; technology?: string; targetTech?: string; sourceType?: string; sourceFile?: string;
   layer?: string | null; estimateDays?: number | null; createdAt?: string; updatedAt?: string; serviceDir?: string; lessonsApplied?: number;
   busy?: boolean; phases: Phase[]; progress: Progress; log?: LogEntry[];
+  /** Place in the line of projects taken from a repository (0 or absent: not waiting). */
+  queued?: number; source?: { kind?: string; repoName?: string; path?: string; branch?: string; commit?: string };
   verifiedEnv?: string; verifiedAt?: string; verifyMs?: number;
   optimization?: { beforeMs?: number; afterMs?: number; actions?: string[]; meetsTarget?: boolean; at?: string };
   testNodePort?: number | string; testBasePath?: string; discoveredEnvs?: { name?: string; candidates?: string[] }[];
@@ -132,6 +134,11 @@ export interface EstateLogLine { at?: string; level?: string; text: string; pod?
 export interface EstateLogs { lines: EstateLogLine[]; pods?: EstatePod[]; errors?: string[]; }
 export interface EstateMetrics { total: number; errors: number; p50Ms: number; p95Ms: number; series: { at: string; total: number; errors: number }[]; available?: boolean; reason?: string; }
 
+// ---- projects taken from a git repository (read by the migration tool on its build server)
+export interface RepoProject { path: string; name: string; technology?: string; flows?: number; files?: number; bytes?: number; settings?: string[]; encrypted?: boolean; migrations?: { id: string; name?: string; outcome?: string; queued?: boolean }[]; }
+export interface Repo { id: string; name: string; url: string; branch?: string; username?: string; hasToken?: boolean; state: string; message?: string; readAt?: string | null; commit?: string; onBranch?: string; committedAt?: string; bytes?: number; projects?: RepoProject[]; environments?: { name: string; projects: number }[]; }
+export interface RepoImportResult { created: { id: string; name: string; path: string }[]; refused: { path: string; error: string }[]; workspace: string; }
+
 // ---- calls that went through the migrated services
 export type MigratedStatus = "success" | "error" | "running" | "unknown";
 export type MigratedVia = "gateway" | "direct" | "internal" | "unknown";
@@ -201,6 +208,11 @@ export const api = {
   doc: (id: string, name: string) => text(`${F}/migrations/${enc(id)}/docs/${enc(name)}`),
   docUrl: (id: string, name: string) => `${F}/migrations/${enc(id)}/docs/${enc(name)}?download=1`,
 
+  repos: () => j<{ repos: Repo[] }>(`${F}/repos`),
+  connectRepo: (body: { name: string; url: string; branch?: string; username?: string; token?: string }) => j<Repo>(`${F}/repos`, post(body)),
+  readRepo: (id: string, body: { token?: string } = {}) => j<Repo>(`${F}/repos/${enc(id)}/refresh`, post(body)),
+  importRepo: (id: string, body: { paths: string[]; workspace: string; environment?: string; build?: boolean }) => j<RepoImportResult>(`${F}/repos/${enc(id)}/import`, post(body)),
+  removeRepo: (id: string) => j<{ ok: boolean }>(`${F}/repos/${enc(id)}`, { method: "DELETE" }),
   workspaces: () => j<{ workspaces: Workspace[] }>(`${F}/workspaces`),
   addWorkspaceConfig: (body: { name: string; servers: Record<string, { host: string; port?: number; username?: string; password?: string }> }) => j<WorkspaceConfig>(`${F}/workspace-configs`, post(body)),
   deleteWorkspaceConfig: (id: string) => j<{ ok: boolean }>(`${F}/workspace-configs/${enc(id)}`, { method: "DELETE" }),

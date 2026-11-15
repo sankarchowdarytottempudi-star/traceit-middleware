@@ -1,7 +1,7 @@
 // Small building blocks shared by the migrate screens. Styling lives in migrate.css (mf-mg-*).
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link, type LinkProps } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, ChevronLeft, Info, Loader2, Search, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, GitBranch, Info, Loader2, Search, UploadCloud, X, XCircle } from "lucide-react";
 import { MODULES } from "../brand.tsx";
 import { txt } from "../lib/text.ts";
 import { LAYER_LABEL, healthLabel, healthTone, layerKey, type Tone } from "../lib/migrate.ts";
@@ -184,4 +184,19 @@ export function KV({ rows }: { rows: [string, ReactNode][] }) {
 }
 export function errText(e: unknown): string {
   return e instanceof Error ? e.message : txt(e) || "Something went wrong";
+}
+/** The two ways a migration can start: one uploaded file, or the projects of a git repository. */
+export function SourceWays({ way }: { way: "upload" | "git" }) {
+  return (
+    <nav className="mf-mg-ways" aria-label="Where the source comes from">
+      <Link className="mf-mg-way" to="/migrations/new" aria-current={way === "upload" ? "page" : undefined}>
+        <UploadCloud size={20} color="var(--accentText)" aria-hidden="true" />
+        <span><strong>Upload a file</strong><small>One project as a .zip or .jar, or a written specification.</small></span>
+      </Link>
+      <Link className="mf-mg-way" to="/migrations/from-git" aria-current={way === "git" ? "page" : undefined}>
+        <GitBranch size={20} color="var(--accentText)" aria-hidden="true" />
+        <span><strong>From a git repository</strong><small>Every project of a repository, with its settings files. Nothing to upload.</small></span>
+      </Link>
+    </nav>
+  );
 }

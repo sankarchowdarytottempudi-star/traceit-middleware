@@ -159,3 +159,47 @@ export function mergeWorkspaces(groups: any[], configs: any[], envs: any[], migr
   for (const e of envs || []) at(String(e.workspace || "Unassigned")).environments.push(withoutSecrets(e));
   return [...byName.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 }
+
+// ---- projects taken from a git repository
+/** A git repository to read projects from. The access token travels to the migration tool only, which keeps it on its own server. */
+export interface RepoInput { name: string; url: string; branch: string; username: string; token: string }
+const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+const tokenProblem = (t: string) => (t.length > 4000 || /[\r\n\0]/.test(t) ? "The access token is not in a form a git server accepts." : "");
+const branchProblem = (b: string) => (b && (!/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(b) || b.includes("..")) ? "A branch name has letters, digits, - _ . and / only." : "");
+export function repoOf(body: unknown): { ok: true; repo: RepoInput } | { ok: false; error: string } {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const name = str(b.name, 80).replace(/\s+/g, " "), url = str(b.url, 500), branch = str(b.branch, 120), username = str(b.username, 120);
+  const token = typeof b.token === "string" ? b.token.trim() : "";
+  if (!name) return { ok: false, error: "Give the repository a name people will recognise." };
+  if (!/^https?:\/\/\S+$/i.test(url)) return { ok: false, error: "The address of the repository must start with https:// and have no spaces." };
+  if (/^https?:\/\/[^/]*@/i.test(url)) return { ok: false, error: "Leave the user name and the access token out of the address. They have their own fields." };
+  const problem = branchProblem(branch) || tokenProblem(token);
+  if (problem) return { ok: false, error: problem };
+  return { ok: true, repo: { name, url, branch, username, token } };
+}
+/** Read a repository again, optionally with a new token or another branch. Only these fields travel on. */
+export function repoRefreshOf(body: unknown): { ok: true; change: { token?: string; branch?: string; username?: string } } | { ok: false; error: string } {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const change: { token?: string; branch?: string; username?: string } = {};
+  if (typeof b.token === "string" && b.token.trim()) change.token = b.token.trim();
+  if (typeof b.branch === "string") change.branch = str(b.branch, 120);
+  if (typeof b.username === "string") change.username = str(b.username, 120);
+  const problem = tokenProblem(change.token ?? "") || branchProblem(change.branch ?? "");
+  return problem ? { ok: false, error: problem } : { ok: true, change };
+}
+/** The projects of a repository that become migrations, and how they are worked through. */
+export interface RepoImport { paths: string[]; workspace: string; environment: string; build: boolean }
+export function repoImportOf(body: unknown): { ok: true; pick: RepoImport } | { ok: false; error: string } {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const raw = Array.isArray(b.paths) ? b.paths : [];
+  const paths = [...new Set(raw.filter((p): p is string => typeof p === "string").map((p) => p.trim().replace(/^\/+|\/+$/g, "")))];
+  if (!paths.length || paths.length !== raw.length) return { ok: false, error: "Choose at least one project." };
+  if (paths.length > 100) return { ok: false, error: "Choose at most 100 projects at a time." };
+  if (paths.some((p) => p.length > 300 || p.split("/").includes("..") || /[\0\r\n\\]/.test(p))) return { ok: false, error: "Choose the projects from the list." };
+  const workspace = str(b.workspace, 80).replace(/\s+/g, " ");
+  if (!workspace || /[^\x20-\x7E]/.test(workspace)) return { ok: false, error: "Choose a workspace, with plain letters, digits and punctuation in its name." };
+  // the name of a settings file in the projects: the tool reads the addresses there, on its own server
+  const environment = str(b.environment, 120);
+  if (environment && (!/^\w[\w.\- /]*$/.test(environment) || environment.includes(".."))) return { ok: false, error: "Choose one of the listed settings files." };
+  return { ok: true, pick: { paths, workspace, environment, build: b.build !== false } };
+}

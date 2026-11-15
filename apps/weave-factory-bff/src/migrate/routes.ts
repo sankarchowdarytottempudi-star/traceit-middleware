@@ -5,7 +5,7 @@ import { sidOf } from "../auth.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "../config.js";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
-import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, validateUpload, withoutSecrets } from "./options.js";
+import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
@@ -121,5 +121,37 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     const { id, tier } = req.params as { id: string; tier: string };
     if (!["dev", "qa", "uat", "prod"].includes(tier)) { reply.code(400); return { error: "Unknown server" }; }
     return pass(reply, await mtRequest(mt, "POST", `/api/workspace-configs/${encodeURIComponent(id)}/provision/${tier}`));
+  });
+
+  // Projects taken straight from a git repository, without an upload. The repository is read by the
+  // migration tool on its build server; this server only passes the request on. The access token is
+  // write-only: it goes to the tool with the request that sets it and never comes back.
+  const repoId = (req: FastifyRequest): string | null => { const id = (req.params as { id?: string }).id ?? ""; return /^[0-9a-f]{8,16}$/.test(id) ? id : null; };
+  app.get("/api/factory/repos", async (req, reply) => { await need(req); return pass(reply, await mtRequest(mt, "GET", "/api/repos")); });
+  app.post("/api/factory/repos", async (req, reply) => {
+    await need(req);
+    const v = repoOf(req.body);
+    if (!v.ok) { reply.code(400); return { error: v.error }; }
+    return pass(reply, await mtRequest(mt, "POST", "/api/repos", v.repo));
+  });
+  app.post("/api/factory/repos/:id/refresh", async (req, reply) => {
+    await need(req);
+    const id = repoId(req), v = repoRefreshOf(req.body);
+    if (!id) { reply.code(404); return { error: "No such repository" }; }
+    if (!v.ok) { reply.code(400); return { error: v.error }; }
+    return pass(reply, await mtRequest(mt, "POST", `/api/repos/${id}/refresh`, v.change));
+  });
+  app.post("/api/factory/repos/:id/import", async (req, reply) => {
+    await need(req);
+    const id = repoId(req), v = repoImportOf(req.body);
+    if (!id) { reply.code(404); return { error: "No such repository" }; }
+    if (!v.ok) { reply.code(400); return { error: v.error }; }
+    return pass(reply, await mtRequest(mt, "POST", `/api/repos/${id}/import`, v.pick));
+  });
+  app.delete("/api/factory/repos/:id", async (req, reply) => {
+    await need(req);
+    const id = repoId(req);
+    if (!id) { reply.code(404); return { error: "No such repository" }; }
+    return pass(reply, await mtRequest(mt, "DELETE", `/api/repos/${id}`));
   });
 }

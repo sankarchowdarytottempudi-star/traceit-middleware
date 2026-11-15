@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import { registerRoutes } from "../src/routes";
 import { registerMigrate } from "../src/migrate/routes";
-import { validateUpload, withoutSecrets, collisionOf, mergeWorkspaces, headerSafe, decisionOf, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES } from "../src/migrate/options";
+import { validateUpload, withoutSecrets, collisionOf, mergeWorkspaces, headerSafe, decisionOf, repoOf, repoRefreshOf, repoImportOf, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES } from "../src/migrate/options";
 import type { Config } from "../src/config";
 
 const MT = "http://localhost:30900";
@@ -264,5 +264,63 @@ describe("finish this migration", () => {
     const bad = await app().inject({ method: "POST", url: "/api/factory/migrations/m1/resolve", payload: { id: "op:GET /a", action: "forward", backend: "stock", method: "GET", path: "no-slash" } });
     expect(bad.statusCode).toBe(400);
     expect(nock.pendingMocks()).toEqual([]);
+  });
+});
+
+describe("projects from a git repository", () => {
+  const good = { name: "Integration", url: "https://git.example.test/team/apis.git", branch: "main", username: "", token: "tk-123" };
+  it("checks what is typed before anything is sent on", () => {
+    expect(repoOf(good)).toEqual({ ok: true, repo: good });
+    const bad = (b: unknown) => { const r = repoOf(b); return r.ok ? "" : r.error; };
+    expect(bad({ ...good, name: " " })).toMatch(/name/);
+    expect(bad({ ...good, url: "git@git.example.test:team/apis.git" })).toMatch(/https:\/\//);
+    expect(bad({ ...good, url: "https://me:pw@git.example.test/team/apis.git" })).toMatch(/own fields/);
+    expect(bad({ ...good, branch: "main; rm -rf" })).toMatch(/branch/);
+    expect(bad({ ...good, branch: "a/../b" })).toMatch(/branch/);
+    expect(bad({ ...good, token: "a\nb" })).toMatch(/token/);
+    expect(repoRefreshOf({ token: " new ", other: 1 })).toEqual({ ok: true, change: { token: "new" } });
+    expect(repoRefreshOf({})).toEqual({ ok: true, change: {} });
+    expect(repoRefreshOf({ branch: "x y" }).ok).toBe(false);
+  });
+  it("accepts a choice of projects and refuses a path that leaves the repository", () => {
+    expect(repoImportOf({ paths: ["apis/orders/", "apis/stock"], workspace: "Shop", environment: "shore/uat" }))
+      .toEqual({ ok: true, pick: { paths: ["apis/orders", "apis/stock"], workspace: "Shop", environment: "shore/uat", build: true } });
+    expect(repoImportOf({ paths: [""], workspace: "Shop", build: false })).toEqual({ ok: true, pick: { paths: [""], workspace: "Shop", environment: "", build: false } });
+    const bad = (b: unknown) => { const r = repoImportOf(b); return r.ok ? "" : r.error; };
+    expect(bad({ paths: [], workspace: "Shop" })).toMatch(/at least one/);
+    expect(bad({ paths: ["a", 3], workspace: "Shop" })).toMatch(/at least one/);
+    expect(bad({ paths: ["a/../../etc"], workspace: "Shop" })).toMatch(/from the list/);
+    expect(bad({ paths: ["a"], workspace: "" })).toMatch(/workspace/);
+    expect(bad({ paths: ["a"], workspace: "Shop", environment: "uat\"; rm" })).toMatch(/settings files/);
+    expect(bad({ paths: Array.from({ length: 101 }, (_, i) => `p${i}`), workspace: "Shop" })).toMatch(/at most 100/);
+  });
+  it("connects a repository, sends the token to the tool only and never returns it", async () => {
+    let sent: any = null;
+    nock(MT).post("/api/repos", (b) => { sent = b; return true; }).reply(201, { id: "ab12cd34ef56", name: "Integration", url: good.url, hasToken: true, state: "reading", token: "tk-123", projects: [] });
+    const r = await app().inject({ method: "POST", url: "/api/factory/repos", payload: { ...good, extra: "x" } });
+    expect(r.statusCode).toBe(201);
+    expect(sent).toEqual(good);
+    expect(r.body).not.toContain("tk-123");
+    expect(r.json()).toMatchObject({ id: "ab12cd34ef56", hasToken: true, state: "reading" });
+    expect((await app().inject({ method: "POST", url: "/api/factory/repos", payload: { ...good, url: "ftp://x" } })).statusCode).toBe(400);
+    expect((await app(false).inject({ method: "GET", url: "/api/factory/repos" })).statusCode).toBe(401);
+  });
+  it("lists, reads again, starts the chosen projects and removes a repository", async () => {
+    nock(MT).get("/api/repos").reply(200, { repos: [{ id: "ab12cd34ef56", name: "Integration", state: "ready", projects: [{ path: "apis/orders", name: "orders-api", settings: ["uat"] }] }] });
+    expect((await app().inject({ method: "GET", url: "/api/factory/repos" })).json().repos[0].projects[0].name).toBe("orders-api");
+    nock(MT).post("/api/repos/ab12cd34ef56/refresh", { token: "new" }).reply(202, { id: "ab12cd34ef56", state: "reading" });
+    expect((await app().inject({ method: "POST", url: "/api/factory/repos/ab12cd34ef56/refresh", payload: { token: "new" } })).statusCode).toBe(202);
+    nock(MT).post("/api/repos/ab12cd34ef56/import", { paths: ["apis/orders"], workspace: "Shop", environment: "uat", build: true }).reply(201, { created: [{ id: "m1", name: "orders-api", path: "apis/orders" }], refused: [], workspace: "Shop" });
+    const r = await app().inject({ method: "POST", url: "/api/factory/repos/ab12cd34ef56/import", payload: { paths: ["apis/orders"], workspace: "Shop", environment: "uat" } });
+    expect(r.statusCode).toBe(201);
+    expect(r.json().created).toHaveLength(1);
+    nock(MT).post("/api/repos/ab12cd34ef56/import").reply(409, { error: "Read the repository first." });
+    const no = await app().inject({ method: "POST", url: "/api/factory/repos/ab12cd34ef56/import", payload: { paths: ["apis/orders"], workspace: "Shop" } });
+    expect(no.statusCode).toBe(409);
+    expect(no.json().error).toMatch(/Read the repository first/);
+    expect((await app().inject({ method: "POST", url: "/api/factory/repos/..%2Fmigrations/import", payload: { paths: ["a"], workspace: "Shop" } })).statusCode).toBe(404);
+    nock(MT).delete("/api/repos/ab12cd34ef56").reply(200, { ok: true });
+    expect((await app().inject({ method: "DELETE", url: "/api/factory/repos/ab12cd34ef56" })).json()).toEqual({ ok: true });
+    expect((await app().inject({ method: "DELETE", url: "/api/factory/repos/nope" })).statusCode).toBe(404);
   });
 });

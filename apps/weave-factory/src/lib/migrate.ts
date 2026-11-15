@@ -110,7 +110,7 @@ export function baseName(path: unknown): string {
 }
 
 // ---- migrations list
-export interface MigrationRow { id: string; name?: unknown; apiName?: unknown; workspace?: unknown; technology?: unknown; busy?: boolean; progress?: { outcome?: unknown } | null }
+export interface MigrationRow { id: string; name?: unknown; apiName?: unknown; workspace?: unknown; technology?: unknown; busy?: boolean; queued?: number; progress?: { outcome?: unknown } | null }
 export interface MigrationFilter { q?: string; workspace?: string; outcome?: string; technology?: string }
 export function filterMigrations<T extends MigrationRow>(list: T[], f: MigrationFilter): T[] {
   const q = (f.q || "").trim().toLowerCase();
@@ -427,4 +427,54 @@ export function splitMatch(text: string, q: string): { text: string; hit: boolea
   }
   if (i < text.length) out.push({ text: text.slice(i), hit: false });
   return out;
+}
+
+// ---- projects taken from a git repository
+export interface RepoForm { name: string; url: string; branch: string; token: string }
+export function repoFormProblems(f: RepoForm): Partial<Record<"name" | "url" | "branch" | "token", string>> {
+  const e: Partial<Record<"name" | "url" | "branch" | "token", string>> = {};
+  if (!f.name.trim()) e.name = "Give the repository a name";
+  const url = f.url.trim();
+  if (!url) e.url = "Paste the https:// address of the repository";
+  else if (/^(git@|ssh:\/\/|git:\/\/)/i.test(url)) e.url = "Use the address that starts with https:// (git servers show it under \"Clone with HTTPS\")";
+  else if (!/^https:\/\/\S+$/i.test(url)) e.url = "The address must start with https:// and have no spaces";
+  else if (/^https:\/\/[^/]*@/i.test(url)) e.url = "Leave the user name and the token out of the address. They have their own fields.";
+  const b = f.branch.trim();
+  if (b && (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(b) || b.includes(".."))) e.branch = "A branch name has letters, digits, - _ . and / only";
+  if (/[\r\n]/.test(f.token.trim())) e.token = "Paste the token on one line";
+  return e;
+}
+export interface RepoLike { state?: unknown; message?: unknown; readAt?: unknown; commit?: unknown; onBranch?: unknown; projects?: unknown }
+/** The state of a connected repository in a word and a line. */
+export function repoState(r: RepoLike, now: number = Date.now()): { tone: Tone; label: string; detail: string } {
+  const st = txt(r.state);
+  if (st === "reading") return { tone: "accent", label: "Reading", detail: "The build server is reading the repository. This takes from a few seconds to a few minutes." };
+  if (st === "failed") return { tone: "bad", label: "Could not be read", detail: txt(r.message) || "The repository could not be read." };
+  const n = Array.isArray(r.projects) ? r.projects.length : 0;
+  const parts = [n === 0 ? "No project was found in it" : n === 1 ? "1 project" : `${n} projects`];
+  if (txt(r.onBranch)) parts.push(`branch ${txt(r.onBranch)}`);
+  if (txt(r.commit)) parts.push(`commit ${txt(r.commit).slice(0, 7)}`);
+  const when = ago(r.readAt, now);
+  if (when) parts.push(`read ${when}`);
+  return { tone: n ? "ok" : "warn", label: "Read", detail: parts.join(" · ") };
+}
+export interface RepoProjectLike { path: string; migrations?: { outcome?: unknown; queued?: unknown }[] }
+/** The projects that have no migration yet: the ones ticked when the list opens. */
+export function notMigratedYet(projects: RepoProjectLike[]): string[] {
+  return projects.filter((p) => !(p.migrations && p.migrations.length)).map((p) => p.path);
+}
+export function projectState(p: RepoProjectLike): { tone: Tone; text: string } {
+  const m = p.migrations?.[0];
+  if (!m) return { tone: "muted", text: "Not migrated yet" };
+  if (m.queued) return { tone: "accent", text: "Being migrated" };
+  return { tone: outcomeTone(m.outcome), text: txt(m.outcome) || "Migration started" };
+}
+/** What starts when the button is pressed, in one sentence. */
+export function importPlan(count: number, environment: string, build: boolean): string {
+  if (count <= 0) return "Tick the projects to migrate.";
+  const steps = ["read and documented", "turned into a service"];
+  if (environment) steps.push(`given the addresses from its settings file "${environment}"`);
+  if (build) steps.push("built and tested");
+  const list = steps.length > 1 ? `${steps.slice(0, -1).join(", ")} and ${steps[steps.length - 1]}` : steps[0];
+  return `${count === 1 ? "1 project is" : `${count} projects are`} worked through one after the other: each is ${list}. Nothing is deployed until you say so.`;
 }

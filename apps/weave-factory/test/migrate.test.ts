@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAND_MIN_WIDTH, ago, baseName, compact, distinct, fileSize, filterMigrations, healthLabel, healthTone, isSpec, layerKey, layoutLandscape,
-  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, NEW_API, newApiProblem, passOnLoses, passOnHint, placeholderLine, sourceEnvs, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
+  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, NEW_API, newApiProblem, passOnLoses, passOnHint, placeholderLine, sourceEnvs, repoFormProblems, repoState, notMigratedYet, projectState, importPlan, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
 } from "../src/lib/migrate.ts";
 
 describe("labels and tones", () => {
@@ -345,5 +345,41 @@ describe("finish this migration", () => {
     const m = { id: "m1", apiName: "a-proc-api", status: "deployed", serviceDir: "services/a", phases: done, progress: { outcome: "Deployed, not finished", failure: { phase: "Testing", phaseKey: "test", stepKey: "build", step: "Build", status: "action_required", detail: "",
       help: { kind: "pending-changes", what: "The installed service is still the earlier version.", why: "", todo: [], retry: true } } } };
     expect(failureView(m as never)?.retry).toEqual({ id: "test", label: "Build and check" });
+  });
+});
+
+describe("projects from a git repository", () => {
+  const form = { name: "Integration", url: "https://git.example.test/team/apis.git", branch: "", token: "" };
+  it("accepts an https address, with or without a branch and a token", () => {
+    expect(repoFormProblems(form)).toEqual({});
+    expect(repoFormProblems({ ...form, branch: "release/2.1", token: "abc" })).toEqual({});
+  });
+  it("says what is wrong with an address, a branch or a token", () => {
+    expect(repoFormProblems({ ...form, name: " ", url: "" })).toMatchObject({ name: expect.any(String), url: expect.stringMatching(/Paste/) });
+    expect(repoFormProblems({ ...form, url: "git@git.example.test:team/apis.git" }).url).toMatch(/Clone with HTTPS/);
+    expect(repoFormProblems({ ...form, url: "http://git.example.test/team/apis.git" }).url).toMatch(/https:\/\//);
+    expect(repoFormProblems({ ...form, url: "https://me:pw@git.example.test/team/apis.git" }).url).toMatch(/own fields/);
+    expect(repoFormProblems({ ...form, branch: "my branch" }).branch).toBeTruthy();
+    expect(repoFormProblems({ ...form, token: "a\nb" }).token).toMatch(/one line/);
+  });
+  it("describes the state of a repository", () => {
+    const now = Date.parse("2026-11-15T12:00:00Z");
+    expect(repoState({ state: "reading" }).label).toBe("Reading");
+    expect(repoState({ state: "failed", message: "The git server refused the sign-in." })).toMatchObject({ tone: "bad", detail: "The git server refused the sign-in." });
+    expect(repoState({ state: "ready", projects: [{}, {}], onBranch: "main", commit: "0123456789abcdef", readAt: "2026-11-15T11:57:00Z" }, now))
+      .toEqual({ tone: "ok", label: "Read", detail: "2 projects · branch main · commit 0123456 · read 3 min ago" });
+    expect(repoState({ state: "ready", projects: [] })).toMatchObject({ tone: "warn", detail: "No project was found in it" });
+  });
+  it("ticks only what is not migrated yet and names the state of the rest", () => {
+    const ps = [{ path: "a" }, { path: "b", migrations: [{ outcome: "Deployed" }] }, { path: "c", migrations: [{ outcome: "Ready to deploy", queued: true }] }, { path: "d", migrations: [] }];
+    expect(notMigratedYet(ps)).toEqual(["a", "d"]);
+    expect(projectState(ps[0]).text).toBe("Not migrated yet");
+    expect(projectState(ps[1])).toEqual({ tone: "ok", text: "Deployed" });
+    expect(projectState(ps[2])).toEqual({ tone: "accent", text: "Being migrated" });
+  });
+  it("says in one sentence what will start", () => {
+    expect(importPlan(0, "uat", true)).toMatch(/Tick/);
+    expect(importPlan(1, "", false)).toBe("1 project is worked through one after the other: each is read and documented and turned into a service. Nothing is deployed until you say so.");
+    expect(importPlan(3, "shore/uat", true)).toBe("3 projects are worked through one after the other: each is read and documented, turned into a service, given the addresses from its settings file \"shore/uat\" and built and tested. Nothing is deployed until you say so.");
   });
 });

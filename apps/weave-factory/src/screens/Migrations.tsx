@@ -2,7 +2,7 @@
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { GitBranch, Plus } from "lucide-react";
 import { api, type Migration } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
 import { ago, distinct, filterMigrations, NOT_FINISHED, outcomeTone, statusLabel } from "../lib/migrate.ts";
@@ -30,6 +30,7 @@ function MigrationCard({ m }: { m: Migration }) {
         {txt(m.technology) && txt(m.technology) !== "unknown" && <Pill>{txt(m.technology)}</Pill>}
         {txt(m.targetTech) && <Pill title="Target">to {txt(m.targetTech)}</Pill>}
         {m.busy && <Pill tone="accent">A step is running</Pill>}
+        {!m.busy && num(m.queued) > 0 && <Pill tone="accent" title="Projects taken from a repository are worked through one after the other">Waiting its turn</Pill>}
       </div>
       <div className="mf-mg-row" style={{ flexWrap: "nowrap" }}>
         <Bar pct={pct} tone={tone === "ok" ? "ok" : tone === "bad" ? "bad" : "accent"} label={`Overall progress of ${txt(m.name) || m.id}`} />
@@ -58,7 +59,7 @@ export function Migrations() {
   const [sp, setSp] = useSearchParams();
   const q = sp.get("q") ?? "", workspace = sp.get("workspace") ?? "", outcome = sp.get("outcome") ?? "", technology = sp.get("technology") ?? "";
   const set = (k: string, v: string) => { const n = new URLSearchParams(sp); if (v) n.set(k, v); else n.delete(k); setSp(n, { replace: true }); };
-  const list = useQuery({ queryKey: ["migrations"], queryFn: api.migrations, refetchInterval: (query) => ((query.state.data?.migrations ?? []).some((m) => m.busy) ? 3000 : 15000) });
+  const list = useQuery({ queryKey: ["migrations"], queryFn: api.migrations, refetchInterval: (query) => ((query.state.data?.migrations ?? []).some((m) => m.busy || num(m.queued) > 0) ? 3000 : 15000) });
   const all = list.data?.migrations ?? [];
   const shown = useMemo(() => filterMigrations(all, { q, workspace, outcome, technology }).sort((a, b) => txt(b.updatedAt || b.createdAt).localeCompare(txt(a.updatedAt || a.createdAt))), [all, q, workspace, outcome, technology]);
   const workspaces = useMemo(() => distinct(all.map((m) => m.workspace)), [all]);
@@ -69,7 +70,7 @@ export function Migrations() {
     <>
       <Head area="Migrations" title="Migrations"
         subtitle="Each migration takes one API from its old platform to a running service: read the source, agree the mapping, generate, test and deploy."
-        actions={newBtn} />
+        actions={<><LinkBtn to="/migrations/from-git" icon={<GitBranch size={16} aria-hidden="true" />}>From a git repository</LinkBtn>{newBtn}</>} />
       {list.isLoading ? <Loading rows={3} h={120} /> : list.isError ? <Failed what="The migrations are not available right now." error={list.error} onRetry={() => list.refetch()} /> : all.length === 0 ? (
         <Empty title="No migrations yet" hint="Start with the source of one API: a project archive or a written specification." action={newBtn} />
       ) : (

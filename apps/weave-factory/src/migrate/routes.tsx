@@ -11,6 +11,7 @@ import { Knowledge } from "../screens/Knowledge.tsx";
 import { EstateList } from "./EstateList.tsx";
 import { EstateDetail } from "./EstateDetail.tsx";
 import { MigrationNew } from "./MigrationNew.tsx";
+import { MigrationFromGit } from "./MigrationFromGit.tsx";
 import { MigrationDetail } from "./MigrationDetail.tsx";
 
 export const migrateNav: NavGroup[] = [
@@ -31,6 +32,7 @@ export function migrateRoutes() {
       <Route path="estate/:api" element={<EstateDetail />} />
       <Route path="migrations" element={<Migrations />} />
       <Route path="migrations/new" element={<MigrationNew />} />
+      <Route path="migrations/from-git" element={<MigrationFromGit />} />
       <Route path="migrations/:id" element={<MigrationDetail />} />
       <Route path="workspaces" element={<Workspaces />} />
       <Route path="playground" element={<Playground />} />

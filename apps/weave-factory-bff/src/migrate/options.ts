@@ -75,6 +75,40 @@ export function withoutSecrets<T>(value: T): T {
   return value;
 }
 
+/** One decision about one open item of a migration ("Finish this migration"). Only these fields travel on. */
+export type Decision =
+  | { id: string; action: "forward"; backend: string; method: string; path: string }
+  | { id: string; action: "not_needed"; reason: string }
+  | { id: string; action: "address"; url: string }
+  | { id: string; action: "note"; note: string };
+export const FORWARD_PATH = /^\/[A-Za-z0-9_\-./{}~%:]*$/;
+export function decisionOf(body: unknown): { ok: true; decision: Decision } | { ok: false; error: string } {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const s = (k: string, max: number) => (typeof b[k] === "string" ? (b[k] as string).trim().slice(0, max) : "");
+  const id = s("id", 400), action = s("action", 20);
+  if (!/^(op|entry|backend|code):.+/.test(id)) return { ok: false, error: "Choose an item first." };
+  if (action === "forward") {
+    const backend = s("backend", 80), method = s("method", 10).toUpperCase(), path = s("path", 400);
+    if (!/^[A-Za-z_]\w*$/.test(backend)) return { ok: false, error: "Choose the API the call is passed on to." };
+    if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method)) return { ok: false, error: "Choose the method of the call." };
+    if (!FORWARD_PATH.test(path)) return { ok: false, error: "The path must start with / and use letters, digits, - _ . / and {name} for a value from the address." };
+    return { ok: true, decision: { id, action, backend, method, path } };
+  }
+  if (action === "not_needed") {
+    const reason = s("reason", 300);
+    return reason.length < 3 ? { ok: false, error: "Say in a few words why it is not needed." } : { ok: true, decision: { id, action, reason } };
+  }
+  if (action === "address") {
+    const url = s("url", 500);
+    return /^https?:\/\/[^\s"]+$/i.test(url) ? { ok: true, decision: { id, action, url } } : { ok: false, error: "The address must start with http:// or https:// and have no spaces." };
+  }
+  if (action === "note") {
+    const note = s("note", 4000);
+    return note.length < 3 ? { ok: false, error: "Write the note first." } : { ok: true, decision: { id, action, note } };
+  }
+  return { ok: false, error: "This cannot be done for this item." };
+}
+
 export interface MigrationLite { id: string; name?: string; apiName?: string; workspace?: string; progress?: { outcome?: string; overallPercent?: number } }
 
 /** Another migration that already produced a service with the same name. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAND_MIN_WIDTH, ago, baseName, compact, distinct, fileSize, filterMigrations, healthLabel, healthTone, isSpec, layerKey, layoutLandscape,
-  ms, nextActions, failureView, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
+  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
 } from "../src/lib/migrate.ts";
 
 describe("labels and tones", () => {
@@ -237,5 +237,55 @@ describe("failureView", () => {
     expect(v.output).toBe("");
     expect(nextActions(m).map((a) => a.id)).toEqual(["document", "scaffold", "test"]);
     expect(nextActions({ ...m, progress: { outcome: "In progress", failure: null } }).map((a) => a.id)).toContain("deploy");
+  });
+});
+
+describe("finish this migration", () => {
+  const op = { id: "op:GET /items/{itemId}", kind: "operation", title: "GET /items/{itemId}", params: ["itemId"], suggest: null,
+    source: { steps: 4, parts: 1, transforms: 0, calls: [{ method: "get", path: "/items/{itemId}", backend: "catalogue" }] } };
+  it("names each kind of open item", () => {
+    expect(itemKindWord(op)).toBe("Operation not migrated");
+    expect(itemKindWord({ kind: "code" })).toBe("Operation being written");
+    expect(itemKindWord({ kind: "backend" })).toBe("Backend without an address");
+    expect(itemKindWord({ kind: "entry", starts: "every 5 minutes" })).toBe("Starts by itself: every 5 minutes");
+    expect(itemKindWord({ kind: "entry" })).toBe("Starts by itself");
+  });
+  it("starts the form from the old code's own call when it can be used as it is", () => {
+    expect(forwardStart(op, ["stock", "catalogue"])).toEqual({ backend: "catalogue", method: "GET", path: "/items/{itemId}" });
+    expect(forwardStart({ ...op, suggest: { backend: "stock", method: "POST", path: "/find" } }, ["stock", "catalogue"])).toEqual({ backend: "stock", method: "POST", path: "/find" });
+    // a call to a backend the new service does not know, or a path built in code: the operation's own method and "/"
+    expect(forwardStart({ ...op, title: "POST /pay", source: { calls: [{ method: "PUT", path: "#[vars.url]", backend: "gone" }] } }, ["stock"])).toEqual({ backend: "stock", method: "POST", path: "/" });
+    expect(forwardStart({ ...op, source: { calls: [{ method: "GET", path: "#[vars.url]", backend: "stock" }] } }, ["stock"])).toEqual({ backend: "stock", method: "GET", path: "/" });
+    expect(forwardStart({ ...op, source: null }, [])).toEqual({ backend: "", method: "GET", path: "/" });
+  });
+  it("says why a decision cannot be saved yet", () => {
+    const f = (path: string, backend = "catalogue") => decisionProblem({ action: "forward", backend, method: "GET", path }, op);
+    expect(f("/items/{itemId}")).toBe("");
+    expect(f("/v2/items.json")).toBe("");
+    expect(f("/items", "")).toMatch(/Choose the API/);
+    expect(f("items")).toMatch(/starts with/);
+    expect(f("/items?x=1")).toMatch(/letters/);
+    expect(f("/items/{other}")).toMatch(/only has \{itemId\}/);
+    expect(f("/items/{itemId")).toMatch(/only has/);
+    expect(decisionProblem({ action: "forward", backend: "a", method: "GET", path: "/a/{id}" }, {})).toMatch(/no values/);
+    expect(decisionProblem({ action: "not_needed", reason: "  " }, op)).toMatch(/why/);
+    expect(decisionProblem({ action: "not_needed", reason: "replaced by the new portal" }, op)).toBe("");
+    expect(decisionProblem({ action: "address", url: "catalogue.internal" }, op)).toMatch(/http/);
+    expect(decisionProblem({ action: "address", url: "http://localhost:8080" }, op)).toMatch(/localhost/);
+    expect(decisionProblem({ action: "address", url: "https://catalogue.internal/api" }, op)).toBe("");
+    expect(decisionProblem({ action: "note", note: "" }, op)).toMatch(/note/);
+    expect(decisionProblem({ action: "note", note: "Returns the guest's bookings." }, op)).toBe("");
+    expect(decisionProblem({ action: "" }, op)).toMatch(/Choose/);
+  });
+  it("sums up the old code in one line", () => {
+    expect(sourceSummary({ steps: 1, parts: 1, transforms: 0 })).toBe("1 step in the old code; none of them reshapes the data.");
+    expect(sourceSummary({ steps: 12, parts: 3, transforms: 1 })).toBe("12 steps in 3 parts of the old code; 1 of them reshapes the data.");
+    expect(sourceSummary({ steps: 9, parts: 2, transforms: 4 })).toBe("9 steps in 2 parts of the old code; 4 of them reshape the data.");
+  });
+  it("offers \"Build and check\" when decisions wait to be installed", () => {
+    const done = ["upload", "document", "scaffold", "test", "deploy"].map((key) => ({ key, status: "done" }));
+    const m = { id: "m1", apiName: "a-proc-api", status: "deployed", serviceDir: "services/a", phases: done, progress: { outcome: "Deployed, not finished", failure: { phase: "Testing", phaseKey: "test", stepKey: "build", step: "Build", status: "action_required", detail: "",
+      help: { kind: "pending-changes", what: "The installed service is still the earlier version.", why: "", todo: [], retry: true } } } };
+    expect(failureView(m as never)?.retry).toEqual({ id: "test", label: "Build and check" });
   });
 });

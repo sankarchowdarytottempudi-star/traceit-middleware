@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import { registerRoutes } from "../src/routes";
 import { registerMigrate } from "../src/migrate/routes";
-import { validateUpload, withoutSecrets, collisionOf, mergeWorkspaces, headerSafe, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES } from "../src/migrate/options";
+import { validateUpload, withoutSecrets, collisionOf, mergeWorkspaces, headerSafe, decisionOf, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES } from "../src/migrate/options";
 import type { Config } from "../src/config";
 
 const MT = "http://localhost:30900";
@@ -199,5 +199,52 @@ describe("migration routes", () => {
     expect(check.isDone()).toBe(true);
     expect((await app().inject({ method: "POST", url: "/api/factory/workspace-configs/w1/check/moon" })).statusCode).toBe(400);
     expect((await app().inject({ method: "POST", url: "/api/factory/workspace-configs/w1/provision/dev" })).statusCode).toBe(404);
+  });
+});
+
+describe("finish this migration", () => {
+  it("accepts the four decisions and forwards only their own fields", () => {
+    expect(decisionOf({ id: "op:GET /items/{itemId}", action: "forward", backend: "catalogue", method: "get", path: " /items/{itemId} ", extra: "x" }))
+      .toEqual({ ok: true, decision: { id: "op:GET /items/{itemId}", action: "forward", backend: "catalogue", method: "GET", path: "/items/{itemId}" } });
+    expect(decisionOf({ id: "entry:nightlyFlow", action: "not_needed", reason: "no longer used", url: "http://x" }))
+      .toEqual({ ok: true, decision: { id: "entry:nightlyFlow", action: "not_needed", reason: "no longer used" } });
+    expect(decisionOf({ id: "backend:catalogue", action: "address", url: "https://catalogue.internal:8443/api" })).toMatchObject({ ok: true });
+    expect(decisionOf({ id: "op:POST /pay", action: "note", note: "Calls the payment API and returns its receipt." })).toMatchObject({ ok: true });
+  });
+  it("says what is wrong with a decision", () => {
+    const bad = (b: unknown) => { const r = decisionOf(b); return r.ok ? "" : r.error; };
+    expect(bad(null)).toMatch(/item/);
+    expect(bad({ id: "x", action: "note", note: "abc" })).toMatch(/item/);
+    expect(bad({ id: "op:GET /a", action: "forward", backend: "a b", method: "GET", path: "/a" })).toMatch(/API/);
+    expect(bad({ id: "op:GET /a", action: "forward", backend: "a", method: "TRACE", path: "/a" })).toMatch(/method/);
+    expect(bad({ id: "op:GET /a", action: "forward", backend: "a", method: "GET", path: "a?x=`1`" })).toMatch(/path/);
+    expect(bad({ id: "op:GET /a", action: "forward", backend: "a", method: "GET", path: "/a${x}" })).toMatch(/path/);
+    expect(bad({ id: "op:GET /a", action: "not_needed", reason: "" })).toMatch(/why/);
+    expect(bad({ id: "backend:a", action: "address", url: "ftp://x" })).toMatch(/http/);
+    expect(bad({ id: "backend:a", action: "address", url: "http://a b" })).toMatch(/http/);
+    expect(bad({ id: "op:GET /a", action: "delete" })).toMatch(/cannot/);
+  });
+  it("reads what is open from the tool and needs a signed-in user", async () => {
+    const open = nock(MT).get("/api/migrations/m1/open-items").reply(200, { api: "orders-exp-api", exists: true, ready: false, items: [{ id: "op:GET /a", kind: "operation", title: "GET /a", can: ["forward"] }], closed: [], backends: ["stock"] });
+    const r = await app().inject({ method: "GET", url: "/api/factory/migrations/m1/open-items" });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().items[0].id).toBe("op:GET /a");
+    expect(open.isDone()).toBe(true);
+    expect((await app(false).inject({ method: "GET", url: "/api/factory/migrations/m1/open-items" })).statusCode).toBe(401);
+    expect((await app(false).inject({ method: "POST", url: "/api/factory/migrations/m1/resolve", payload: { id: "op:GET /a", action: "note", note: "abc" } })).statusCode).toBe(401);
+  });
+  it("sends a checked decision on, passes a refusal back and stops a malformed one", async () => {
+    const sent = nock(MT).post("/api/migrations/m1/resolve", { id: "op:GET /a", action: "forward", backend: "stock", method: "GET", path: "/a" }).reply(200, { ok: true, changed: true, message: "GET /a is now passed on to stock.", openItems: { items: [] } });
+    const ok = await app().inject({ method: "POST", url: "/api/factory/migrations/m1/resolve", payload: { id: "op:GET /a", action: "forward", backend: "stock", method: "GET", path: "/a", token: "nope" } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().changed).toBe(true);
+    expect(sent.isDone()).toBe(true);
+    nock(MT).post("/api/migrations/m1/resolve").reply(409, { error: "A step of this migration is running. Try again when it has finished." });
+    const busy = await app().inject({ method: "POST", url: "/api/factory/migrations/m1/resolve", payload: { id: "op:GET /a", action: "not_needed", reason: "unused" } });
+    expect(busy.statusCode).toBe(409);
+    expect(busy.json().error).toMatch(/running/);
+    const bad = await app().inject({ method: "POST", url: "/api/factory/migrations/m1/resolve", payload: { id: "op:GET /a", action: "forward", backend: "stock", method: "GET", path: "no-slash" } });
+    expect(bad.statusCode).toBe(400);
+    expect(nock.pendingMocks()).toEqual([]);
   });
 });

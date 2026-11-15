@@ -8,6 +8,7 @@ import { num, txt } from "../lib/text.ts";
 import { ago, baseName, clock, dateTime, failureView, isSpec, ms, nextActions, outcomeTone, statusLabel, statusTone, type FailureView, type NextAction } from "../lib/migrate.ts";
 import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, KV, LinkBtn, Loading, Notice, Panel, Pill, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
 import { Markdown } from "./markdown.tsx";
+import { Finish } from "./Finish.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
 const TABS: Tab[] = ["progress", "documents", "checks", "feedback"];
@@ -368,6 +369,7 @@ export function MigrationDetail() {
       {tab === "progress" && (
         <div className="mf-mg-stack">
           {failure && !m.busy && <WhatNow v={failure} disabled={!!m.busy} busy={run.isPending && run.variables?.phase === failure.retry?.id} onRetry={(a) => start(a)} />}
+          <Finish m={m} onRun={(a) => start(a)} />
           <Panel title="What you can do next">
             {m.busy ? <Notice><span className="mf-mg-row" style={{ gap: 8 }}><Loader2 size={14} className="mf-spin" aria-hidden="true" />A step is running. This screen updates by itself; the activity below shows what is happening.</span></Notice> : null}
             <div className="mf-mg-stack" style={{ gap: 10 }}>

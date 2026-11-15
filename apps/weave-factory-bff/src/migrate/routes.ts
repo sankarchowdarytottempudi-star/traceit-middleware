@@ -5,7 +5,7 @@ import { sidOf } from "../auth.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "../config.js";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
-import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, mergeWorkspaces, validateUpload, withoutSecrets } from "./options.js";
+import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, validateUpload, withoutSecrets } from "./options.js";
 
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
@@ -68,6 +68,20 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     reply.type(r.contentType.includes("json") ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8");
     if (q.download) reply.header("content-disposition", `attachment; filename="${id}-${name.replace(/[^\w.-]/g, "_")}"`);
     return reply.send(r.body);
+  });
+
+  // "Finish this migration": what is left of the generated service, with what the old application
+  // did at each point, and one decision of a person about one item (pass it on to an API, leave it
+  // out, set a backend's address, keep a note). The work happens in the migration tool, on this server.
+  app.get("/api/factory/migrations/:id/open-items", async (req, reply) => {
+    await need(req);
+    return pass(reply, await mtRequest(mt, "GET", `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/open-items`));
+  });
+  app.post("/api/factory/migrations/:id/resolve", async (req, reply) => {
+    await need(req);
+    const d = decisionOf(req.body);
+    if (!d.ok) { reply.code(400); return { error: d.error }; }
+    return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/resolve`, d.decision));
   });
 
   // Environments a migrated API is verified against (the token is write-only).

@@ -51,6 +51,21 @@ export interface Migration {
   optimization?: { beforeMs?: number; afterMs?: number; actions?: string[]; meetsTarget?: boolean; at?: string };
   testNodePort?: number | string; testBasePath?: string; discoveredEnvs?: { name?: string; candidates?: string[] }[];
 }
+/** "Finish this migration": what is left of a generated service and what the old application did there. */
+export interface SourceCall { method: string; path: string; config: string; backend?: string }
+export interface SourceView { flow: string; file?: string; steps: number; parts: number; does: string[]; more?: number; calls: SourceCall[]; transforms: number; simple?: boolean }
+export interface OpenItem {
+  id: string; kind: "operation" | "entry" | "backend" | "code"; title: string; starts?: string; sourceName?: string; source?: SourceView | null;
+  can: string[]; suggest?: { backend: string; method: string; path: string } | null; params?: string[]; notes?: { t?: string; text?: string }[];
+}
+export interface ClosedItem { id: string; kind?: string; title: string; how: string; detail?: string; t?: string }
+export interface OpenItems { api: string; exists: boolean; ready: boolean; summary?: string; items: OpenItem[]; closed: ClosedItem[]; backends: string[]; needsBuild?: boolean; pending?: string[]; busy?: boolean; installed?: boolean }
+export type Decision =
+  | { id: string; action: "forward"; backend: string; method: string; path: string }
+  | { id: string; action: "not_needed"; reason: string }
+  | { id: string; action: "address"; url: string }
+  | { id: string; action: "note"; note: string };
+export interface ResolveResult { ok: boolean; message: string; changed: boolean; openItems: OpenItems }
 export interface PhaseDef { key: string; title: string; weight: number; mode: string; steps: { key: string; title: string }[]; }
 export interface Lesson { id: string; scope: string; technology?: string | null; summary: string; mistakes?: string[]; apiName?: string; workspace?: string; status?: string; createdAt?: string; phase?: string; docType?: string; migrationId?: string; rating?: number | null; appliedIn?: string[]; }
 export interface ProxyResult { status: number; body: string; ms: number; slo: string; }
@@ -168,6 +183,8 @@ export const api = {
   verify: (id: string, body: { envId: string; path: string; method: string; headers?: Record<string, string>; body?: string }) => j<VerifyResult>(`${F}/migrations/${enc(id)}/verify`, post(body)),
   parity: (id: string, body: { envId: string; path: string; method: string; headers?: Record<string, string>; body?: string }) => j<ParityResult>(`${F}/migrations/${enc(id)}/parity`, post(body)),
   optimize: (id: string, confirmReplace = false) => j<OptimizeResult>(`${F}/migrations/${enc(id)}/optimize`, post(confirmReplace ? { confirmReplace: true } : {})),
+  openItems: (id: string) => j<OpenItems>(`${F}/migrations/${enc(id)}/open-items`),
+  resolve: (id: string, body: Decision) => j<ResolveResult>(`${F}/migrations/${enc(id)}/resolve`, post(body)),
   feedback: (id: string) => j<{ feedback: Lesson[] }>(`${F}/migrations/${enc(id)}/feedback`),
   addFeedback: (id: string, body: { summary: string; scope: string; phase?: string; mistakes?: string[]; technology?: string }) => j<Lesson>(`${F}/migrations/${enc(id)}/feedback`, post(body)),
   deleteMigration: (id: string) => j<{ ok: boolean }>(`${F}/migrations/${enc(id)}`, { method: "DELETE" }),

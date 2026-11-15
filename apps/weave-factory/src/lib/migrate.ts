@@ -204,8 +204,50 @@ export function failureView(m: MigrationState): FailureView | null {
     why: txt(h.why) || txt(f.detail),
     todo: todo.length ? todo : ["Run this step again. If it fails the same way, send the tool output through the Feedback tab."],
     output: txt(f.output) || (blocked ? "" : txt(f.detail)),
-    retry: id && offered ? { id, label: txt(h.kind) === "not-ready" ? "Check again (build and run the tests)" : "Run this step again" } : undefined,
+    retry: id && offered ? { id, label: txt(h.kind) === "not-ready" ? "Check again (build and run the tests)" : txt(h.kind) === "pending-changes" ? "Build and check" : "Run this step again" } : undefined,
   };
+}
+
+// ---- "Finish this migration": words and checks for one open item
+export interface OpenItemLike { id: string; kind: string; title: string; starts?: string; params?: string[]; suggest?: { backend?: string; method?: string; path?: string } | null;
+  source?: { steps?: number; parts?: number; transforms?: number; calls?: { method?: string; path?: string; backend?: string }[] } | null }
+export function itemKindWord(item: { kind: string; starts?: string }): string {
+  if (item.kind === "backend") return "Backend without an address";
+  if (item.kind === "entry") return txt(item.starts) ? `Starts by itself: ${txt(item.starts)}` : "Starts by itself";
+  return item.kind === "code" ? "Operation being written" : "Operation not migrated";
+}
+/** What the "pass it on" form starts with: the old code's own call when it is plain, else the operation's own method. */
+export function forwardStart(item: OpenItemLike, backends: string[]): { backend: string; method: string; path: string } {
+  const verb = txt(item.title).split(" ")[0].toUpperCase();
+  const own = ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(verb) ? verb : "GET";
+  const call = item.suggest ?? (item.source?.calls ?? []).find((c) => txt(c.backend) && backends.includes(txt(c.backend)));
+  const backend = call && backends.includes(txt(call.backend)) ? txt(call.backend) : backends[0] ?? "";
+  const plain = (p: string) => (/^\/[A-Za-z0-9_\-./{}~%:]*$/.test(p) ? p : "");
+  return { backend, method: txt(call?.method).toUpperCase() || own, path: plain(txt(call?.path)) || "/" };
+}
+export type DecisionLike = { action: string; backend?: string; method?: string; path?: string; reason?: string; url?: string; note?: string };
+/** Why a decision cannot be saved yet, in the words shown under the field; "" when it can. */
+export function decisionProblem(d: DecisionLike, item: { params?: string[] }): string {
+  if (d.action === "forward") {
+    const path = txt(d.path);
+    if (!txt(d.backend)) return "Choose the API the call is passed on to.";
+    if (!path.startsWith("/")) return "The path starts with /.";
+    if (!/^\/[A-Za-z0-9_\-./{}~%:]*$/.test(path)) return "Use letters, digits, - _ . / and {name} for a value from the caller's address.";
+    const used = [...path.matchAll(/\{(\w*)\}/g)].map((x) => x[1]);
+    const have = item.params ?? [];
+    const bad = used.find((u) => !have.includes(u));
+    if (bad !== undefined || (path.match(/[{}]/g) ?? []).length !== used.length * 2) return have.length ? `This operation only has ${have.map((p) => `{${p}}`).join(", ")} in its address.` : "This operation has no values in its address, so { } cannot be used.";
+    return "";
+  }
+  if (d.action === "not_needed") return txt(d.reason).length < 3 ? "Say in a few words why it is not needed." : "";
+  if (d.action === "address") return /^https?:\/\/[^\s"]+$/i.test(txt(d.url)) ? (/localhost/i.test(txt(d.url)) ? "localhost cannot be reached from the installed service. Use the backend's real address." : "") : "The address starts with http:// or https:// and has no spaces.";
+  if (d.action === "note") return txt(d.note).length < 3 ? "Write the note first." : "";
+  return "Choose what to do with this item.";
+}
+export function sourceSummary(src: { steps?: number; parts?: number; transforms?: number }): string {
+  const steps = num(src.steps), parts = num(src.parts), tr = num(src.transforms);
+  const size = `${steps} ${steps === 1 ? "step" : "steps"}${parts > 1 ? ` in ${parts} parts of the old code` : " in the old code"}`;
+  return tr > 0 ? `${size}; ${tr} of them ${tr === 1 ? "reshapes" : "reshape"} the data.` : `${size}; none of them reshapes the data.`;
 }
 
 // ---- the estate landscape (layer columns, left to right)

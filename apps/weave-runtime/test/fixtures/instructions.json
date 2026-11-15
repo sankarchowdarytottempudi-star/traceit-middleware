@@ -926,7 +926,7 @@
   },
   {
    "instruction": "tags in upper case",
-   "expr": "$map(order.tags, function($v) { $uppercase($v) })",
+   "expr": "$map(order.tags, function($v) { $uppercase($v) })[]",
    "confidence": "exact",
    "value": [
     "VIP",
@@ -975,7 +975,7 @@
   },
   {
    "instruction": "first 2 tags",
-   "expr": "$filter(order.tags, function($v, $i, $a) { $i < 2 })",
+   "expr": "$filter(order.tags, function($v, $i, $a) { $i < 2 })[]",
    "confidence": "exact",
    "value": [
     "vip",

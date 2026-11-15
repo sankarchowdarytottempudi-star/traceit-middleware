@@ -97,4 +97,17 @@ describe("mapping inference", () => {
     expect(r.output).toEqual(want);
   });
   it("returns nothing for a non-object target", () => { expect(inferMapping(src as never, "x" as never)).toEqual([]); });
+  it("reads the words again when the stored reading fails, and reports the new reading", async () => {
+    const src = { items: [{ name: "Canadian Dollar" }, { name: "Riyal" }] };
+    const stale = { expr: '$count($split($trim(items.name), /\\s+/)) = 2 ? items.name : items.name', explanation: "old", confidence: "exact", engine: "rules" };
+    const rules = [{ id: "r1", target: "names", kind: "instruction", instruction: "add the _ in between if name came as two words (items.name)", compiled: stale }];
+    const compiler = async (rule: { instruction?: string }) => { const o = compileLocal({ instruction: rule.instruction ?? "", sampleSource: src as never }); return { compiled: o.compiled, reason: o.reason, suggestions: o.suggestions }; };
+    const r = await applyMapping({ rules } as never, src, { payload: src } as never, compiler as never);
+    expect(r.output).toEqual({ names: ["Canadian_Dollar", "Riyal"] });
+    expect(r.rules[0].ok).toBe(true);
+    expect(r.rules[0].compiled?.explanation).toMatch(/^For each item of items.name/);
+    // without the words to read again, the failure is reported as before
+    const plain = await applyMapping({ rules: [{ ...rules[0], instruction: "" }] } as never, src, { payload: src } as never, compiler as never);
+    expect(plain.rules[0].ok).toBe(false);
+  });
 });

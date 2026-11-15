@@ -92,7 +92,16 @@ export async function applyMapping(spec: MappingSpec | undefined, source: unknow
             }
             compiled = r.compiled; res.compiled = compiled;
           }
-          value = await evalExpr(compiled.expr, ruleScope);
+          try { value = await evalExpr(compiled.expr, ruleScope); }
+          catch (e) {
+            // The stored reading of the words fails on this input. Read the words again: a newer interpreter may read them
+            // better (a rule about each item of a list, for one). The same reading again means the failure is real.
+            const stored = compiled;
+            const again = stored === rule.compiled && compiler && rule.instruction?.trim() ? await compiler(rule, source).catch(() => null) : null;
+            if (!again?.compiled?.expr || again.compiled.expr === stored.expr) throw e;
+            value = await evalExpr(again.compiled.expr, ruleScope);
+            res.compiled = again.compiled;
+          }
           break;
         }
         default: throw new Error(`Unknown rule kind "${String((rule as { kind?: unknown }).kind)}"`);

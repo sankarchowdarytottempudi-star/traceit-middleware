@@ -14,7 +14,7 @@ import { ExprInput } from "./fields.tsx";
 
 const DND_PATH = "application/x-weave-path";
 const KINDS: RuleKind[] = ["direct", "expr", "const", "instruction"];
-type RuleResult = { id: string; ok: boolean; value?: Json; error?: string };
+type RuleResult = { id: string; ok: boolean; value?: Json; error?: string; compiled?: { expr?: string } | null };
 
 function dropPath(e: React.DragEvent): string | null {
   const p = e.dataTransfer.getData(DND_PATH);
@@ -37,7 +37,7 @@ const constText = (v: Json | undefined) => (v === undefined ? "" : typeof v === 
 const constType = (v: Json | undefined) => (v === null ? "empty value" : Array.isArray(v) ? "list" : typeof v === "object" ? "object" : typeof v === "number" ? "number" : typeof v === "boolean" ? "true / false" : "text");
 
 // ---------------------------------------------------------------- "in your words"
-function InstructionEditor({ rule, onChange, sample, examples, readOnly }: { rule: MappingRule; onChange: (r: MappingRule) => void; sample: Json | undefined; examples: string[]; readOnly?: boolean }) {
+function InstructionEditor({ rule, onChange, sample, examples, readOnly, stale }: { rule: MappingRule; onChange: (r: MappingRule) => void; sample: Json | undefined; examples: string[]; readOnly?: boolean; stale?: boolean }) {
   const latest = useRef(rule);
   latest.current = rule;
   const [info, setInfo] = useState<{ forText: string; res?: CompileInstructionResponse; error?: string; offline?: boolean } | null>(null);
@@ -58,6 +58,12 @@ function InstructionEditor({ rule, onChange, sample, examples, readOnly }: { rul
     if (info?.forText === debounced || compile.isPending) return;
     compile.mutate(debounced);
   }, [debounced]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The stored reading failed on the sample, or the server had to read the words again: fetch the current reading once.
+  useEffect(() => {
+    const t = (latest.current.instruction ?? "").trim();
+    if (!stale || readOnly || !t || !latest.current.compiled?.expr || info?.forText === latest.current.instruction || compile.isPending) return;
+    compile.mutate(latest.current.instruction ?? "");
+  }, [stale]); // eslint-disable-line react-hooks/exhaustive-deps
   const c = rule.compiled;
   const current = info && info.forText === text ? info : null;
   const notUnderstood = !c?.expr && !!current?.res && !current.res.compiled;
@@ -160,7 +166,7 @@ function RuleCard({ rule, index, result, sample, paths, examples, readOnly, onCh
             <Badge>{constType(rule.value ?? "")}</Badge>
           </div>
         )}
-        {rule.kind === "instruction" && <InstructionEditor rule={rule} onChange={onChange} sample={sample} examples={examples} readOnly={readOnly} />}
+        {rule.kind === "instruction" && <InstructionEditor rule={rule} onChange={onChange} sample={sample} examples={examples} readOnly={readOnly} stale={!!result && (!result.ok || !!result.compiled?.expr) && !!rule.compiled?.expr} />}
         {prose && !readOnly && (
           <Callout tone="info" title="This reads like a sentence, not an expression" actions={<Button size="sm" icon={Sparkles} onClick={() => onChange(convertRule(rule, "instruction"))} data-action="treat-as-words">Treat this as a rule in your words</Button>}>
             <span>Expressions use field names and functions. If you meant to describe the rule in plain words, switch it and it will be interpreted for you.</span>

@@ -36,6 +36,43 @@ describe("instruction compiler: the owner's rule", () => {
   });
 });
 
+describe("instruction compiler: a rule about the values of a list is decided item by item", () => {
+  const LIST = { kind: "currencies", items: [{ code: "CAD", name: "Canadian Dollar" }, { code: "SAR", name: "Riyal" }, { code: "AED", name: "United Arab Emirates Dirham" }], tags: ["vip", "gift"], amounts: [5, 120] };
+  const c = (instruction: string) => compileLocal({ instruction, target: "items", sampleSource: LIST as never });
+  it("the owner's rule on a list of names", async () => {
+    const r = c("add the _ in between if name came as two words (items.name)");
+    expect(r.compiled).toEqual({
+      expr: '$map(items.name, function($v) { $count($split($trim($v), /\\s+/)) = 2 ? $join($split($trim($v), /\\s+/), "_") : $v })[]',
+      explanation: "For each item of items.name: if it has exactly two words, join them with _, otherwise keep it as is", confidence: "exact", engine: "rules",
+    });
+    expect(await run(r.compiled!.expr, LIST)).toEqual(["Canadian_Dollar", "Riyal", "United Arab Emirates Dirham"]);
+  });
+  it.each([
+    ["if items.code is CAD use Canada otherwise keep it", ["Canada", "SAR", "AED"]],
+    ["if items.name is longer than 10 characters take the first 10 characters (items.name)", ["Canadian D", "Riyal", "United Ara"]],
+    ["unless items.name has one word convert to upper case (items.name)", ["CANADIAN DOLLAR", "Riyal", "UNITED ARAB EMIRATES DIRHAM"]],
+    ["if amounts is more than 100 use big otherwise small", ["small", "big"]],
+  ])("%s", async (instruction, value) => {
+    const r = c(instruction);
+    expect(r.compiled?.explanation).toMatch(/^For each item of /);
+    expect(await run(r.compiled!.expr, LIST)).toEqual(value);
+  });
+  it("a list with a single item stays a list", async () => {
+    const ONE = { items: [{ code: "CAD", name: "Canadian Dollar" }], tags: ["vip"] };
+    expect(await run(c("add the _ in between if name came as two words (items.name)").compiled!.expr, ONE)).toEqual(["Canadian_Dollar"]);
+    expect(await run(c("items.code in lower case").compiled!.expr, ONE)).toEqual(["cad"]);
+    expect(await run(c("first 2 items of tags").compiled!.expr, ONE)).toEqual(["vip"]);
+  });
+  it.each([
+    ["if tags includes vip use yes otherwise no", '"vip" in tags ? "yes" : "no"', "yes"],
+    ["if tags has more than 1 items use many otherwise few", '$count(tags) > 1 ? "many" : "few"', "many"],
+  ])("a question about the list as a whole stays one decision: %s", async (instruction, expr, value) => {
+    const r = c(instruction);
+    expect(r.compiled?.expr).toBe(expr);
+    expect(await run(r.compiled!.expr, LIST)).toBe(value);
+  });
+});
+
 describe("instruction compiler: library of phrasings", () => {
   it("has a broad set of reviewed phrasings", () => { expect(fx.cases.length).toBeGreaterThan(200); });
   it.each(fx.cases.map((c) => [c.instruction, c] as const))("%s", async (_name, c) => {

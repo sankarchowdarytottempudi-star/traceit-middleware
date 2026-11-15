@@ -92,12 +92,14 @@ interface Ctx {
   pool?: PathInfo[];              // every known path (sample + explicitly named)
   rel?: string;                   // inside "items where ...": paths are relative to this array
   needSubject?: boolean;          // parsing stopped because no field could be identified
+  each?: { path: string; x: X };  // inside a rule decided item by item: this list field reads as one of its values
 }
 const L = "⟦", R = "⟧";
 const ph = (i: number) => `${L}f${i}${R}`;
 const fieldIds = (t: string): number[] => { const out: number[] = []; for (const m of t.matchAll(/⟦f(\d+)⟧/g)) if (!out.includes(+m[1])) out.push(+m[1]); return out; };
 function fieldX(c: Ctx, i: number): X {
   const f = c.fields[i];
+  if (c.each && f.path === c.each.path) return c.each.x;
   if (c.rel && (f.root ?? f.path).startsWith(c.rel + ".")) return { e: f.path.slice(c.rel.length + 1), np: f.path.slice(c.rel.length + 1), p: 0, t: f.elemT, field: f.path };
   return { e: f.path, np: f.root ? f.said : f.path, p: 0, t: f.t, elemT: f.elemT, field: f.path, g: f.guess };
 }
@@ -405,7 +407,8 @@ function qop(mod?: string, tail?: string): [string, string] {
   return ["=", "exactly"];
 }
 const cond = (s: X, e: string, np: string, kind?: string, p = 4, g?: boolean): X => ({ e, np, p, t: "boolean", base: s, kind, g: g || s.g });
-const negate = (x: X, np: string): X => ({ ...x, e: `$not(${x.e})`, np, p: 0, kind: x.kind === "empty" ? "nonempty" : x.kind === "nonempty" ? "empty" : undefined });
+const LIST_KINDS = new Set(["empty", "nonempty", "list"]);   // conditions about a list as a whole, not about each of its values
+const negate = (x: X, np: string): X => ({ ...x, e: `$not(${x.e})`, np, p: 0, kind: x.kind === "empty" ? "nonempty" : x.kind === "nonempty" ? "empty" : x.kind === "list" ? "list" : undefined });
 function subjOf(c: Ctx, raw: string | undefined, subj?: X): X | null {
   const t = clean(raw ?? "").replace(/\s+(?:value|field)$/i, "").replace(/^(?:value (?:of|in)|field)\s+/i, "");
   if (!t || /^(?:it|this|that|value|they|there|input|field|its value|one|result|text|string)$/i.test(t)) { const s = subj ?? c.defaultSubject; if (!s) c.needSubject = true; return s ?? null; }
@@ -457,7 +460,7 @@ const CONDS: [string, CondFn][] = [
     const s = sub(g.s); if (!s) return null; const k = g.n!.toLowerCase();
     let [op, words] = qop(g.mod, g.tail); let n: number;
     if (k === "multiple" || k === "several" || k === "many") { op = ">"; words = "more than"; n = 1; } else if (k === "any") { op = ">"; words = "more than"; n = 0; } else if (k === "no") { op = "="; words = "exactly"; n = 0; } else n = toNum(k);
-    return cond(s, `$count(${s.e}) ${op} ${n}`, `${s.np} has ${words} ${nWord(n)} item${n === 1 ? "" : "s"}`);
+    return cond(s, `$count(${s.e}) ${op} ${n}`, `${s.np} has ${words} ${nWord(n)} item${n === 1 ? "" : "s"}`, "list");
   }],
   ["{S}(?: (?:is|are|was|lies|falls|value))? (?:between|in range|within range|in range of|within) {X} (?:and|to|-) {Y}(?: inclusive)?", (g, sub, c, subj) => {
     const s = sub(g.s); if (!s) return null; const a = numArg(c, g.x!, subj), b = numArg(c, g.y!, subj); if (!a || !b) return null;
@@ -499,7 +502,7 @@ const CONDS: [string, CondFn][] = [
     if (cls) r = cond(s, `$contains(${str(s)}, ${cls[0]})`, `${s.np} contains ${cls[1]}`, undefined, 0);
     else {
       const v = valArg(c, g.x!, true) ?? (litText(c, g.x!) !== null ? lit(litText(c, g.x!)!) : parseValue(c, g.x!, subj)); if (!v) return null;
-      r = s.t === "array" ? cond(s, `${w(v, 3)} in ${w(s, 3)}`, `${s.np} includes ${v.np}`, undefined, 4, G(v)) : cond(s, `$contains(${str(s)}, ${str(v)})`, `${s.np} contains ${v.np}`, undefined, 0, G(v));
+      r = s.t === "array" ? cond(s, `${w(v, 3)} in ${w(s, 3)}`, `${s.np} includes ${v.np}`, "list", 4, G(v)) : cond(s, `$contains(${str(s)}, ${str(v)})`, `${s.np} contains ${v.np}`, undefined, 0, G(v));
     }
     return g.not ? negate(r, r.np.replace(/ contains | includes /, " does not contain ")) : r;
   }],
@@ -592,7 +595,7 @@ function parseCond(c: Ctx, raw: string, subj?: X): X | null {
     for (const m of t.matchAll(re)) {
       const left = parseCond(c, t.slice(0, m.index), subj); if (!left) continue;
       const right = parseCond(c, t.slice(m.index! + m[0].length), left.base ?? subj); if (!right) continue;
-      r = { e: `${w(left, p)} ${word} ${w(right, p)}`, np: `${left.np} ${word} ${right.np}`, p, t: "boolean", base: left.base, g: G(left, right) };
+      r = { e: `${w(left, p)} ${word} ${w(right, p)}`, np: `${left.np} ${word} ${right.np}`, p, t: "boolean", base: left.base, g: G(left, right), kind: LIST_KINDS.has(left.kind ?? "") && LIST_KINDS.has(right.kind ?? "") ? "list" : undefined };
       break;
     }
     if (r) break;
@@ -674,7 +677,7 @@ function removeOne(c: Ctx, raw: string, s: X): X | null {
   if (/^(?:leading|preceding|starting|initial)\s+(?:zeros?|zeroes|0s?)$/i.test(x)) return step(s, `$replace(${S}, /^0+(?=.)/, "")`, `${s.np} without leading zeros`, "remove leading zeros", "string");
   if (/^(?:decimals?|decimal part|decimal places?|fractions?|fractional part|digits after (?:decimal )?point)$/i.test(x)) return step(s, `$floor(${num(s)})`, `${s.np} without decimals`, "drop the decimals", "number");
   if (/^(?:duplicates?|duplicate (?:values|items|entries)|repeated (?:values|items)|repeats)$/i.test(x)) return step(s, `$distinct(${s.e})`, `the distinct values of ${s.np}`, "remove duplicates", "array");
-  if (/^(?:empty|blank|null)\s+(?:values|items|entries|elements|strings|ones)$/i.test(x)) return step(s, `$filter(${s.e}, function($v) { $not($isEmpty($v)) })`, `the non-empty values of ${s.np}`, "remove empty values", "array");
+  if (/^(?:empty|blank|null)\s+(?:values|items|entries|elements|strings|ones)$/i.test(x)) return step(s, `$filter(${s.e}, function($v) { $not($isEmpty($v)) })[]`, `the non-empty values of ${s.np}`, "remove empty values", "array");
   if ((m = /^(?:(?:everything|anything|all|text|part|characters)\s+)?(after|from|following|before|up to|until|preceding)\s+(?:(?:first)\s+)?(.+)$/i.exec(x))) { const l = litText(c, m[2]); if (l) { const after = /after|from|following/i.test(m[1]); return step(s, `${after ? "$substringBefore" : "$substringAfter"}(${S}, ${q(l)})`, `the part of ${s.np} ${after ? "before" : "after"} ${show(l)}`, `remove everything ${after ? "after" : "before"} ${show(l)}`, "string"); } }
   if ((m = /^(.+?)\s+(prefix|suffix)$/i.exec(x))) { const l = litText(c, m[1]) ?? bareWord(m[1]); if (l) { const pre = /prefix/i.test(m[2]); return R(pre ? `/^${reEsc(l)}/` : `/${reEsc(l)}$/`, "", `${show(l)} at the ${pre ? "start" : "end"}`); } }
   if ((m = /^(prefix|suffix|leading|trailing)\s+(.+)$/i.exec(x))) { const l = litText(c, m[2]) ?? bareWord(m[2]); if (l) { const pre = /prefix|leading/i.test(m[1]); return R(pre ? `/^${reEsc(l)}/` : `/${reEsc(l)}$/`, "", `${show(l)} at the ${pre ? "start" : "end"}`); } }
@@ -841,7 +844,7 @@ ar("(?:max|maximum|largest|highest|biggest|greatest)(?: of)?(?: (?:value|one|ite
 ar("(?:earliest|oldest)(?: of)?(?: (?:value|one|item|date))?", (_m, s) => step(s, `$sort(${s.e})[0]`, `the earliest of ${s.np}`, "take the earliest value", s.elemT));
 ar("(?:latest|newest|most recent)(?: of)?(?: (?:value|one|item|date))?", (_m, s) => step(s, `$sort(${s.e})[-1]`, `the latest of ${s.np}`, "take the latest value", s.elemT));
 ar("(?:(?:item|element|entry|value) (?:number |no |# ?)?){N}", (m, s) => { const n = toNum(m[1]); return n >= 1 ? step(s, at(s, n - 1), `item ${n} of ${s.np}`, `take item number ${n}`, s.elemT) : null; });
-ar("(first|top|last|bottom) {N}(?: (?:items|elements|entries|ones|values|records|rows))?", (m, s) => { const n = toNum(m[2]); const first = /first|top/i.test(m[1]); return step(s, `$filter(${s.e}, function($v, $i, $a) { ${first ? `$i < ${n}` : `$i >= $count($a) - ${n}`} })`, `the ${first ? "first" : "last"} ${nWord(n)} of ${s.np}`, `keep the ${first ? "first" : "last"} ${nWord(n)} items`, "array"); });
+ar("(first|top|last|bottom) {N}(?: (?:items|elements|entries|ones|values|records|rows))?", (m, s) => { const n = toNum(m[2]); const first = /first|top/i.test(m[1]); return step(s, `$filter(${s.e}, function($v, $i, $a) { ${first ? `$i < ${n}` : `$i >= $count($a) - ${n}`} })[]`, `the ${first ? "first" : "last"} ${nWord(n)} of ${s.np}`, `keep the ${first ? "first" : "last"} ${nWord(n)} items`, "array"); });
 ar("{ORD}(?: (?:item|element|entry|one|value|record|row))?(?: of)?", (m, s) => { const i = toOrd(m[1]); return step(s, at(s, i), `the ${ordName(i)} of ${s.np}`, `take the ${ordName(i)} item`, s.elemT); });
 const joinArr = (sep: string): StepFn => (_m, s) => step(s, `$join(${elems(s)}, ${q(sep)})`, `${s.np} joined with ${show(sep)}`, `join the items with ${show(sep === ", " ? "a comma and a space" : sep)}`, "string");
 ar("(?:join|joined|concatenate|concatenated|combine|combined|merge|merged|list|listed|separated|delimited|separate|glue|string)(?: (?:them|all|items|values|together|into text|into string|into one string|as text))*(?: (?:with|by|using|on))? {X}(?: (?:in between|between(?: them)?|separated|delimited|as separator))?", (m, s, c) => { const l = litText(c, m[1]); return l === null ? null : joinArr(l)(m, s, c); });
@@ -865,7 +868,7 @@ function oneStep(c: Ctx, raw: string, s: X): X | null {
     if (arr && list === STEPS) {
       const el: X = { e: "$v", np: "each item", p: 0, t: s.elemT === "object" ? undefined : s.elemT, field: "$v" };
       const r = fn(m, el, c); if (!r || r.lit) continue;
-      return step(s, `$map(${s.e}, function($v) { ${r.e} })`, `${s.np}, each one changed`, `for each item: ${r.vps?.[r.vps.length - 1] ?? "change it"}`, "array");
+      return step(s, `$map(${s.e}, function($v) { ${r.e} })[]`, `${s.np}, each one changed`, `for each item: ${r.vps?.[r.vps.length - 1] ?? "change it"}`, "array");
     }
     const r = fn(m, s, c); if (r) return r;
   }
@@ -1007,6 +1010,23 @@ function parseAction(c: Ctx, raw: string, subj?: X): X | null {
   if (c.pool && bare.split(/\s+/).some((x) => /^[a-z]+$/.test(x) && c.pool!.some((pi) => pi.keys.includes(singular(x))))) return null;
   return valArg(c, bare, true);
 }
+/**
+ * A rule about the values of a list ("if name came as two words" where name is a list of names) is decided
+ * for each item on its own; the condition cannot be asked of the list as a whole.
+ */
+function perItem(c: Ctx, root: X, build: (el: X) => X | null): X | null {
+  const el: X = { e: "$v", np: "it", p: 0, t: root.elemT, field: "$v" };
+  const keep = { each: c.each, memo: c.memo, ds: c.defaultSubject };
+  c.each = { path: root.field!, x: el }; c.memo = new Map();
+  if (keep.ds && keep.ds.e === root.e) c.defaultSubject = el;
+  let r: X | null = null;
+  try { r = build(el); } finally { c.each = keep.each; c.memo = keep.memo; c.defaultSubject = keep.ds; }
+  if (!r || !r.e || r.kind === "omit" || !r.sent) return null;
+  // another list in the same rule cannot be read item by item alongside this one
+  if (c.fields.some((f) => f.path !== root.field && f.t === "array" && r!.e.includes(f.path))) return null;
+  return { e: `$map(${root.e}, function($v) { ${r.e} })[]`, np: `${root.np}, each item decided on its own`, p: 0, t: "array", elemT: r.t, g: G(r, root), kind: "if",
+    sent: `For each item of ${root.np}: ${r.sent.charAt(0).toLowerCase()}${r.sent.slice(1)}` };
+}
 function buildCond(c: Ctx, condRaw: string, actRaw: string, neg: boolean, elseRaw: string | null, subj?: X): X | null {
   if (!clean(condRaw) || !clean(actRaw)) return null;
   let cnd = parseCond(c, condRaw, subj);
@@ -1018,6 +1038,11 @@ function buildCond(c: Ctx, condRaw: string, actRaw: string, neg: boolean, elseRa
     cnd = parseCond(c, condRaw, f); if (!cnd) return null;
   }
   const root = fieldOf(cnd.base);
+  if (!c.each && !c.rel && root?.field && root.e === root.field && root.t === "array" && (root.elemT === "string" || root.elemT === "number" || root.elemT === "boolean")
+    && !LIST_KINDS.has(cnd.kind ?? "") && (!subj || subj.e === root.e || fieldOf(subj)?.e !== root.e)) {
+    const r = perItem(c, root, (el) => buildCond(c, condRaw, actRaw, neg, elseRaw, subj && subj.e === root.e ? el : subj));
+    if (r) return r;
+  }
   const asubj = subj ?? c.defaultSubject ?? root;
   act = act ?? parseAction(c, actRaw, asubj); if (!act) return null;
   let els: X | null = null;

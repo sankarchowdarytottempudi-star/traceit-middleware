@@ -121,7 +121,9 @@ export function correctBasePaths(models: ApiModel[]): void {
     for (const o of m.operations) o.fullPath = found + o.path;
     for (const c of m.connectors) c.usedBy = c.usedBy.filter((u) => !dropped.includes(u));
     for (const mp of m.mappings) if (mp.usedBy) mp.usedBy = mp.usedBy.filter((u) => !dropped.includes(u));
-    m.warnings.push(`The deployed configuration of this service is kept in a cluster secret and is not readable here. The base path ${found} is taken from how other services call it${firstBase && firstBase !== found ? ` (the example file says ${firstBase})` : ""}; other settings show the example values.`);
+    // the reader has already said that the installed settings file cannot be opened
+    const told = m.warnings.some((w) => w.includes("cannot be read by the Factory"));
+    m.warnings.push(`${told ? "" : "The deployed configuration of this service is kept in a cluster secret and is not readable here. "}The base path ${found} is taken from how other services call it${firstBase && firstBase !== found ? ` (the example file says ${firstBase})` : ""}; other settings show the example values.`);
     m.basePath = found; m.basePaths = [found];
   }
 }

@@ -203,7 +203,7 @@ function recordDefaults(pkg: BalPackage, libs: Libs, type: string, module: strin
   return out;
 }
 
-interface DeployedConfig { table?: Record<string, Plain>; platform: Record<string, Plain>; source: "deployed" | "example" | "defaults"; file?: string; }
+interface DeployedConfig { table?: Record<string, Plain>; platform: Record<string, Plain>; source: "deployed" | "example" | "defaults"; file?: string; unreadable?: string; }
 function readDeployed(pkg: BalPackage, dir: string, configDirs: string[]): DeployedConfig {
   const pick = (t: Record<string, unknown>): Record<string, Plain> | undefined => {
     const o = pkg.org ? (t[pkg.org] as Record<string, unknown> | undefined) : undefined;
@@ -216,18 +216,25 @@ function readDeployed(pkg: BalPackage, dir: string, configDirs: string[]): Deplo
     return out;
   };
   let best: { mtime: number; t: Record<string, unknown>; file: string } | undefined;
+  // a settings file named after this service that exists but cannot be opened
+  const own = new Set([basename(dir), pkg.name.replace(/_/g, "-")].map((n) => `${n}.toml`));
+  let unreadable: string | undefined;
   for (const cd of configDirs) {
     let names: string[] = [];
     try { names = readdirSync(cd); } catch { continue; }
     for (const n of names) {
       if (!n.endsWith(".toml")) continue;
+      let text: string; let mtime: number;
       try {
         const p = join(cd, n);
         const st = statSync(p);
         if (!st.isFile() || st.size > 1_000_000) continue;
-        const t = parseToml(readFileSync(p, "utf8")) as Record<string, unknown>;
-        if (pick(t) && (!best || st.mtimeMs > best.mtime)) best = { mtime: st.mtimeMs, t, file: n };
-      } catch { /* unreadable or not toml */ }
+        text = readFileSync(p, "utf8"); mtime = st.mtimeMs;
+      } catch { if (own.has(n)) unreadable = n; continue; }
+      try {
+        const t = parseToml(text) as Record<string, unknown>;
+        if (pick(t) && (!best || mtime > best.mtime)) best = { mtime, t, file: n };
+      } catch { /* not toml */ }
     }
   }
   if (best) return { table: pick(best.t), platform: platformOf(best.t), source: "deployed", file: best.file };
@@ -235,13 +242,13 @@ function readDeployed(pkg: BalPackage, dir: string, configDirs: string[]): Deplo
     try {
       const t = parseToml(readFileSync(join(dir, n), "utf8")) as Record<string, unknown>;
       const table = pick(t) ?? (Object.values(t).some((v) => !isObj(v as Plain)) ? (t as Record<string, Plain>) : undefined);
-      if (table) return { table, platform: pick(t) ? platformOf(t) : {}, source, file: n };
+      if (table) return { table, platform: pick(t) ? platformOf(t) : {}, source, file: n, unreadable };
     } catch { /* absent */ }
   }
-  return { platform: {}, source: "defaults" };
+  return { platform: {}, source: "defaults", unreadable };
 }
 
-interface Resolved { values: Map<string, Plain | undefined>; entries: ConfigEntry[]; source: DeployedConfig["source"]; }
+interface Resolved { values: Map<string, Plain | undefined>; entries: ConfigEntry[]; source: DeployedConfig["source"]; unreadable?: string; }
 function resolveConfig(pkg: BalPackage, libs: Libs, dep: DeployedConfig, component?: string): Resolved {
   const values = new Map<string, Plain | undefined>();
   const entries: ConfigEntry[] = [];
@@ -271,7 +278,7 @@ function resolveConfig(pkg: BalPackage, libs: Libs, dep: DeployedConfig, compone
     for (const e of flatten(v, k)) entries.push({ key: e.key, value: showValue(e.key, e.value), source: dep.source === "example" ? "example" : "deployed", secret: isSecretKey(e.key), component });
   }
   for (const e of flatten(dep.platform)) entries.push({ key: e.key, value: showValue(e.key, e.value), source: "platform", secret: isSecretKey(e.key), component });
-  return { values, entries, source: dep.source };
+  return { values, entries, source: dep.source, unreadable: dep.unreadable };
 }
 const configLookup = (r: Resolved) => (path: string): unknown => {
   const parts = path.split(".");
@@ -683,6 +690,9 @@ export function buildApi(entry: SourceEntry, configDirs: string[] = []): ApiMode
     }
   }
   model.mappings.push(...inline);
+  for (const b of builts) {
+    if (b.resolved.unreadable) warnings.push(`The installed settings of this service (${b.resolved.unreadable}) cannot be read by the Factory. Addresses and settings shown here are the defaults in the code, not the installed values.`);
+  }
   model.features = [...features];
   if (!model.operations.length) {
     warnings.push(model.mappings.length

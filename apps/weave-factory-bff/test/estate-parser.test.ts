@@ -3,6 +3,8 @@
 // guard clauses that answer with an error, transforms in modules/core and a 501 stub.
 import { describe, it, expect } from "vitest";
 import { join, dirname } from "node:path";
+import { mkdtempSync, symlinkSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { buildApi, discoverSources } from "../src/estate/model";
 import { parsePackage, makeFile, parseLiteral, resourcePath, maskSource } from "../src/estate/bal";
@@ -216,6 +218,17 @@ describe("connections opened inside a class or a function", () => {
     expect(text).not.toContain("fixture-not-a-real-value");
     expect(text).not.toContain("user:fixture");
     expect(text).not.toContain("fixture-user");
+  });
+
+  it("say so when the installed settings file exists but cannot be opened, instead of showing defaults silently", () => {
+    const d = mkdtempSync(join(tmpdir(), "estate-cfg-"));
+    try {
+      symlinkSync(join(d, "gone"), join(d, "ledger-sys-api.toml"));
+      const m = buildApi(discoverSources(join(I, "services")).find((e) => e.name === "ledger-sys-api")!, [d]);
+      expect(m.warnings.join(" ")).toContain("(ledger-sys-api.toml) cannot be read by the Factory");
+      expect(m.connectors.find((c) => c.name === "database")!.target).toBe("(not configured)");
+      expect(ledger().warnings.join(" ")).not.toContain("cannot be read");
+    } finally { rmSync(d, { recursive: true, force: true }); }
   });
 
   it("name the operation that uses a connection directly, and say so when the use is deeper in the code", () => {

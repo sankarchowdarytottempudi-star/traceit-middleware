@@ -15,7 +15,7 @@ set -uo pipefail
 NS=apim
 ROOT=${APIM_BG_ROOT:-/root/apim-bluegreen}
 HERE=$(cd "$(dirname "$0")" && pwd)
-CONSOLES=${WEAVE_CONSOLES:-"weave.traceit-tottech.com factory.traceit-tottech.com"}
+CONSOLES=${WEAVE_CONSOLES:-"weave.traceit-tottech.com weave.traceit-tottech.com/factory"}
 cd "$HERE"
 log() { echo "$(date -u +%FT%TZ) $*" >> "$ROOT/actions.log"; }
 refuse() { echo "NOT SWITCHED: $*" >&2; printf 'blue-live: %s\n' "$*" > "$ROOT/STATUS"; exit "${RC:-1}"; }

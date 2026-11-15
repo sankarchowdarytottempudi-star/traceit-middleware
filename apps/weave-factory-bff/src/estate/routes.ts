@@ -1,6 +1,7 @@
 // /api/factory/estate/* : the migrated services as the contract describes them
 // (packages/weave-flow/CONTRACT.md, "Estate"). Read-only except clone, which creates a new
 // editable flow in the Weave runtime and never touches the deployed service.
+import { sidOf } from "../auth.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Connection } from "@traceit/weave-flow";
 import type { Config } from "../config.js";
@@ -51,7 +52,7 @@ export function registerEstate(app: FastifyInstance, cfg: Config, creds?: Client
   const runtime = { runtimeUrl: cfg.RUNTIME_URL, internalKey: cfg.RUNTIME_INTERNAL_KEY || "" };
 
   async function need(req: FastifyRequest): Promise<string> {
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
+    const sid = sidOf(req);
     const t = await app.tokenFor(sid || "");
     if (!t) throw Object.assign(new Error("Not signed in"), { statusCode: 401 });
     return t;

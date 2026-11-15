@@ -1,3 +1,4 @@
+import { sidOf } from "./auth.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
 import { mtRequest, type MtClient } from "./mt.js";
@@ -9,7 +10,7 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
   const inferrer = createInferrer(process.env.MODEL_URL || undefined);
 
   async function need(req: FastifyRequest): Promise<void> {
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
+    const sid = sidOf(req);
     const t = await app.tokenFor(sid || "");
     if (!t) throw Object.assign(new Error("Not signed in"), { statusCode: 401 });
   }

@@ -1,6 +1,7 @@
 // Everything the migration screens need beyond the plain pass-through routes in ../routes.ts:
 // starting a migration (the file is streamed to the migration tool, not buffered here),
 // documents, environments, workspaces. The engine stays in the migration tool.
+import { sidOf } from "../auth.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "../config.js";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
@@ -11,7 +12,7 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const limitMb = cfg.MT_UPLOAD_LIMIT_MB ?? 500;
 
   async function need(req: FastifyRequest): Promise<void> {
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
+    const sid = sidOf(req);
     const t = await app.tokenFor(sid || "");
     if (!t) throw Object.assign(new Error("Not signed in"), { statusCode: 401 });
   }

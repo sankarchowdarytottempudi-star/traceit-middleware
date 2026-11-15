@@ -1,10 +1,11 @@
 // Browser-side client of the Factory BFF. Every call goes to this server only.
+import { at } from "./lib/base.ts";
 export interface ApiError extends Error { status?: number; body?: Record<string, unknown>; }
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
   // Only a request that carries a body states a content type: the server refuses a DELETE that
   // announces JSON and then sends nothing.
-  const r = await fetch(path, { credentials: "include", ...(init?.body != null ? { headers: { "Content-Type": "application/json" } } : {}), ...init });
+  const r = await fetch(at(path), { credentials: "include", ...(init?.body != null ? { headers: { "Content-Type": "application/json" } } : {}), ...init });
   if (r.status === 401) throw Object.assign(new Error("unauthorized"), { status: 401 });
   if (!r.ok) {
     let detail = r.statusText; let body: Record<string, unknown> | undefined;
@@ -14,7 +15,7 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
   return (await r.json()) as T;
 }
 async function text(path: string): Promise<string> {
-  const r = await fetch(path, { credentials: "include" });
+  const r = await fetch(at(path), { credentials: "include" });
   if (!r.ok) {
     let detail = r.statusText;
     try { const p = await r.json(); detail = p.error ?? p.title ?? detail; } catch { /* ignore */ }
@@ -133,7 +134,7 @@ export interface UploadInput { name: string; workspace: string; file: File; sour
 export function uploadMigration(input: UploadInput, onProgress?: (fraction: number) => void): { promise: Promise<Migration>; abort: () => void } {
   const xhr = new XMLHttpRequest();
   const promise = new Promise<Migration>((resolve, reject) => {
-    xhr.open("POST", `/api/factory/migrations${qs({ name: input.name, workspace: input.workspace, filename: input.file.name, sourceType: input.sourceType, target: input.target })}`);
+    xhr.open("POST", at(`/api/factory/migrations${qs({ name: input.name, workspace: input.workspace, filename: input.file.name, sourceType: input.sourceType, target: input.target })}`));
     xhr.withCredentials = true;
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };

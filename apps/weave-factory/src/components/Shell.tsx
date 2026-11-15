@@ -1,3 +1,4 @@
+import { at } from "../lib/base.ts";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -36,7 +37,7 @@ export function Shell() {
   const [open, setOpen] = useState(false);          // off-canvas drawer (small screens)
   const [rail, setRail] = useState(readCollapsed);  // icon-only rail (large screens)
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, retry: false });
-  const health = useQuery({ queryKey: ["healthz"], queryFn: async () => (await fetch("/healthz")).ok, retry: false, refetchInterval: 30000 });
+  const health = useQuery({ queryKey: ["healthz"], queryFn: async () => (await fetch(at("/healthz"))).ok, retry: false, refetchInterval: 30000 });
   const live = health.data === true;
   const bleed = isBleed(loc.pathname);
 

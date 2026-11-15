@@ -1,6 +1,7 @@
 // Typed client for the Weave runtime, reached through the Factory BFF at /api/studio/*
 // (1:1 with the runtime's /v1 routes, see packages/weave-flow/src/api.ts), plus the estate
 // endpoints served by the BFF itself. Nothing here talks to any other host.
+import { at } from "../lib/base.ts";
 import type {
   CatalogResponse, CompileInstructionRequest, CompileInstructionResponse, Connection, ConnectorDef, CreateFlowRequest,
   Execution, ExecutionSummary, Flow, FlowDeployment, FlowSummary, FlowVersion, HttpRequestSample, InvokeRequest,
@@ -41,7 +42,7 @@ export function isUnavailable(e: unknown): boolean {
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, credentials: "include", headers: { accept: "application/json" } };
   if (body !== undefined) { (init.headers as Record<string, string>)["content-type"] = "application/json"; init.body = JSON.stringify(body); }
-  const r = await fetch(url, init);
+  const r = await fetch(at(url), init);
   const text = await r.text();
   let data: unknown = undefined;
   if (text) { try { data = JSON.parse(text); } catch { data = undefined; } }

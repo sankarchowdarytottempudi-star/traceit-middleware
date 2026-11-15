@@ -4,7 +4,18 @@ import type { Config } from "./config.js";
 import type { SessionStore } from "./sessionStore.js";
 import { authorizeUrl, exchangeCode, pkce, refreshToken, type TokenSet } from "./wso2.js";
 
-export interface ClientCreds { clientId: string; clientSecret: string; }
+export interface ClientCreds { clientId: string; clientSecret: string; callbackUrl?: string; }
+
+/** The path this app is served under, taken from its public address: "" or e.g. "/factory". */
+export function basePath(publicBaseUrl: string): string {
+  try { return new URL(publicBaseUrl).pathname.replace(/\/+$/, ""); } catch { return ""; }
+}
+// Its own name: under a shared address the Gateway keeps a cookie called "sid" for the whole host.
+export const SID_COOKIE = "weave_factory_sid";
+/** The session id a request carries, or "". */
+export function sidOf(req: { cookies: Record<string, string | undefined>; unsignCookie(v: string): { value: string | null } }): string {
+  return req.unsignCookie(req.cookies[SID_COOKIE] ?? "").value || "";
+}
 interface Session { tokens: TokenSet; expiresAt: number; user: string; }
 
 const SESSION_TTL = 86400;   // 1 day; refresh token kept server-side in the store
@@ -13,7 +24,8 @@ const SCOPE = "openid apim:admin apim:api_view apim:api_manage apim:tier_view ap
   "apim:environment_read apim:keymanagers_manage apim:workflow_approve apim:api_governance_view apim:api_governance_manage";
 
 export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCreds, store: SessionStore) {
-  const redirectUri = `${cfg.PUBLIC_BASE_URL}/api/auth/callback`;
+  const redirectUri = `${cfg.PUBLIC_BASE_URL.replace(/\/+$/, "")}/api/auth/callback`;
+  const base = basePath(cfg.PUBLIC_BASE_URL);
   const w = { baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem }; // server-side (localhost; cert CN matches)
   const publicBase = cfg.APIM_PUBLIC_URL; // browser-facing only
 
@@ -34,7 +46,7 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
   /** Signed-in user name for a request, or null. Use this to guard every /api route. */
   app.decorate("userFor", async (req: import("fastify").FastifyRequest): Promise<string | null> => {
     if (devUser) return devUser;
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
+    const sid = sidOf(req);
     if (!sid) return null;
     if (!(await tokenFor(sid))) return null;
     const s = await store.get<Session>(`sess:${sid}`);
@@ -58,20 +70,20 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
     let user = "wso2-user";
     try { const [, body] = t.access_token.split("."); if (body) user = JSON.parse(Buffer.from(body, "base64url").toString()).sub ?? user; } catch { /* opaque token */ }
     await store.set(`sess:${sid}`, { tokens: t, expiresAt: Date.now() + t.expires_in * 1000, user }, SESSION_TTL);
-    reply.setCookie("sid", sid, { httpOnly: true, secure: true, sameSite: "lax", path: "/", signed: true });
-    reply.redirect("/");
+    reply.setCookie(SID_COOKIE, sid, { httpOnly: true, secure: true, sameSite: "lax", path: base || "/", signed: true });
+    reply.redirect(`${base}/`);
   });
 
   app.post("/api/auth/logout", async (req, reply) => {
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
+    const sid = sidOf(req);
     if (sid) await store.del(`sess:${sid}`);
-    reply.clearCookie("sid", { path: "/" });
+    reply.clearCookie(SID_COOKIE, { path: base || "/" });
     reply.send({ ok: true });
   });
 
   app.get("/api/auth/me", async (req, reply) => {
     if (devUser) return { user: devUser, role: "admin" };
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
+    const sid = sidOf(req);
     const s = sid ? await store.get<Session>(`sess:${sid}`) : null;
     if (!s) return reply.code(401).send({ type: "about:blank", title: "Not signed in", status: 401 });
     return { user: s.user, role: "admin" };

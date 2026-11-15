@@ -7,6 +7,7 @@ import "./styles.css";
 import { ThemeProvider } from "./theme.tsx";
 import { App } from "./App.tsx";
 import { PRODUCT_NAME } from "./brand.tsx";
+import { BASE } from "./lib/base.ts";
 
 document.title = PRODUCT_NAME;
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
@@ -37,7 +38,7 @@ createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
       <QueryClientProvider client={qc}>
         <ThemeProvider>
-          <BrowserRouter>
+          <BrowserRouter basename={BASE || undefined}>
             <App />
           </BrowserRouter>
         </ThemeProvider>

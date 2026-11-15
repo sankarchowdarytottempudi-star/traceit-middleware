@@ -211,7 +211,7 @@ export function failureView(m: MigrationState): FailureView | null {
 // ---- "Finish this migration": words and checks for one open item
 export interface OpenItemLike { id: string; kind: string; title: string; starts?: string; params?: string[]; suggest?: { backend?: string; method?: string; path?: string } | null;
   placeholder?: { file?: string; function?: string; each?: string; started?: boolean } | null;
-  source?: { steps?: number; parts?: number; transforms?: number; calls?: { method?: string; path?: string; backend?: string }[] } | null }
+  source?: { steps?: number; parts?: number; transforms?: number; calls?: { method?: string; path?: string; backend?: string }[]; loses?: unknown } | null }
 export function itemKindWord(item: { kind: string; starts?: string }): string {
   if (item.kind === "backend") return "Backend without an address";
   if (item.kind === "entry") return txt(item.starts) ? `Starts by itself: ${txt(item.starts)}` : "Starts by itself";
@@ -227,12 +227,12 @@ export function forwardStart(item: OpenItemLike, backends: string[]): { backend:
   const plain = (p: string) => (/^\/[A-Za-z0-9_\-./{}~%:]*$/.test(p) ? p : "");
   return { backend, method: txt(call?.method).toUpperCase() || own, path: plain(txt(call?.path)) || "/" };
 }
-export type DecisionLike = { action: string; backend?: string; method?: string; path?: string; reason?: string; url?: string; from?: string; note?: string };
+export type DecisionLike = { action: string; newBackend?: { name?: string; url?: string }; backend?: string; method?: string; path?: string; reason?: string; url?: string; from?: string; note?: string };
 /** Why a decision cannot be saved yet, in the words shown under the field; "" when it can. */
 export function decisionProblem(d: DecisionLike, item: { params?: string[]; kind?: string }): string {
   if (d.action === "forward") {
     const path = txt(d.path);
-    if (!txt(d.backend)) return "Choose the API the call is passed on to.";
+    if (!txt(d.backend) && !d.newBackend) return "Choose the API the call is passed on to.";
     if (!path.startsWith("/")) return "The path starts with /.";
     if (!/^\/[A-Za-z0-9_\-./{}~%:]*$/.test(path)) return "Use letters, digits, - _ . / and {name} for a value from the caller's address.";
     const used = [...path.matchAll(/\{(\w*)\}/g)].map((x) => x[1]);
@@ -246,6 +246,27 @@ export function decisionProblem(d: DecisionLike, item: { params?: string[]; kind
   if (d.action === "address") return /^https?:\/\/[^\s"]+$/i.test(txt(d.url)) ? (/localhost/i.test(txt(d.url)) ? "localhost cannot be reached from the installed service. Use the backend's real address." : "") : "The address starts with http:// or https:// and has no spaces.";
   if (d.action === "note") return txt(d.note).length < 3 ? "Write the note first." : "";
   return "Choose what to do with this item.";
+}
+/** The choice in "Which API receives the call?" that stands for an API the service does not know yet. */
+export const NEW_API = "+new";
+/** What is wrong with the name and the address of an API added while a call is passed on; "" where it is fine. */
+export function newApiProblem(name: string, url: string, known: string[]): { name: string; url: string } {
+  const n = txt(name).trim().replace(/\s+/g, " "), u = txt(url).trim();
+  // the tool keeps it under the words joined together, the first one in small letters
+  const kept = n.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w, i) => (i ? w[0].toUpperCase() : w[0].toLowerCase()) + w.slice(1)).join("");
+  return {
+    name: !n ? "Give the new API a name, for example loyalty engine."
+      : !/^[A-Za-z][A-Za-z0-9 _-]{1,39}$/.test(n) ? "Use letters, digits and spaces, and start with a letter."
+      : known.includes(kept) ? `This service already knows ${kept}. Choose it in the list, or give the new API another name.` : "",
+    url: !u ? "Enter the address of the new API."
+      : !/^https?:\/\/[^\s"]+$/i.test(u) ? "The address starts with http:// or https:// and has no spaces."
+      : /\/\/(localhost|127\.0\.0\.1|\[::1\])(?=[:/]|$)/i.test(u) ? "localhost cannot be reached from the installed service. Use the API's real address." : "",
+  };
+}
+/** What a pass-on would leave undone, as the tool read it from the old code (empty: the old code made one plain call). */
+export function passOnLoses(item: { source?: { loses?: unknown } | null }): string[] {
+  const l = item.source?.loses;
+  return Array.isArray(l) ? l.map((x) => txt(x).trim()).filter(Boolean).slice(0, 12) : [];
 }
 /** Under the path of "pass it on": what is sent to that API each time. */
 export function passOnHint(item: { kind: string; placeholder?: { each?: string } | null }): string {

@@ -77,7 +77,8 @@ export function withoutSecrets<T>(value: T): T {
 
 /** One decision about one open item of a migration ("Finish this migration"). Only these fields travel on. */
 export type Decision =
-  | { id: string; action: "forward"; backend: string; method: string; path: string }
+  | { id: string; action: "forward"; backend: string; method: string; path: string; confirm?: true }
+  | { id: string; action: "forward"; newBackend: { name: string; url: string }; method: string; path: string; confirm?: true }
   | { id: string; action: "not_needed"; reason: string }
   | { id: string; action: "address"; url: string }
   | { id: string; action: "address"; from: string }
@@ -91,10 +92,20 @@ export function decisionOf(body: unknown): { ok: true; decision: Decision } | { 
   if (!/^(op|entry|backend|code):.+/.test(id)) return { ok: false, error: "Choose an item first." };
   if (action === "forward") {
     const backend = s("backend", 80), method = s("method", 10).toUpperCase(), path = s("path", 400);
-    if (!/^[A-Za-z_]\w*$/.test(backend)) return { ok: false, error: "Choose the API the call is passed on to." };
+    // "the API I pass this on to does the rest of the old work": only a plain true counts
+    const sure = b.confirm === true ? { confirm: true as const } : {};
+    // an API the service does not know yet: its name and its address go to the tool, which keeps
+    // the address in the service's settings; it never comes back
+    const nb = b.newBackend && typeof b.newBackend === "object" && !Array.isArray(b.newBackend) ? (b.newBackend as Record<string, unknown>) : null;
+    const name = nb && typeof nb.name === "string" ? nb.name.trim().replace(/\s+/g, " ").slice(0, 60) : "";
+    const url = nb && typeof nb.url === "string" ? nb.url.trim().slice(0, 500) : "";
+    if (nb) {
+      if (!/^[A-Za-z][A-Za-z0-9 _-]{1,39}$/.test(name)) return { ok: false, error: "Give the new API a short name of letters and digits that starts with a letter." };
+      if (!/^https?:\/\/[^\s"]+$/i.test(url)) return { ok: false, error: "The address of the new API must start with http:// or https:// and have no spaces." };
+    } else if (!/^[A-Za-z_]\w*$/.test(backend)) return { ok: false, error: "Choose the API the call is passed on to." };
     if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method)) return { ok: false, error: "Choose the method of the call." };
     if (!FORWARD_PATH.test(path)) return { ok: false, error: "The path must start with / and use letters, digits, - _ . / and {name} for a value from the address." };
-    return { ok: true, decision: { id, action, backend, method, path } };
+    return nb ? { ok: true, decision: { id, action, newBackend: { name, url }, method, path, ...sure } } : { ok: true, decision: { id, action, backend, method, path, ...sure } };
   }
   if (action === "not_needed") {
     const reason = s("reason", 300);

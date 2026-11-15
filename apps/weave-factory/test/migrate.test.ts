@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAND_MIN_WIDTH, ago, baseName, compact, distinct, fileSize, filterMigrations, healthLabel, healthTone, isSpec, layerKey, layoutLandscape,
-  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, passOnHint, placeholderLine, sourceEnvs, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
+  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, NEW_API, newApiProblem, passOnLoses, passOnHint, placeholderLine, sourceEnvs, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
 } from "../src/lib/migrate.ts";
 
 describe("labels and tones", () => {
@@ -273,6 +273,28 @@ describe("finish this migration", () => {
     expect(forwardStart({ ...op, title: "POST /pay", source: { calls: [{ method: "PUT", path: "#[vars.url]", backend: "gone" }] } }, ["stock"])).toEqual({ backend: "stock", method: "POST", path: "/" });
     expect(forwardStart({ ...op, source: { calls: [{ method: "GET", path: "#[vars.url]", backend: "stock" }] } }, ["stock"])).toEqual({ backend: "stock", method: "GET", path: "/" });
     expect(forwardStart({ ...op, source: null }, [])).toEqual({ backend: "", method: "GET", path: "/" });
+  });
+  it("checks an API that is added while a call is passed on", () => {
+    expect(NEW_API).not.toMatch(/^[A-Za-z_]\w*$/);            // can never be the name of a real backend
+    expect(newApiProblem("loyalty engine", "https://loyalty.internal/api", ["catalogue"])).toEqual({ name: "", url: "" });
+    expect(newApiProblem("", "", []).name).toMatch(/Give the new API a name/);
+    expect(newApiProblem("", "", []).url).toMatch(/Enter the address/);
+    expect(newApiProblem("2nd engine", "https://x.internal", []).name).toMatch(/start with a letter/);
+    expect(newApiProblem("loyalty/engine", "https://x.internal", []).name).toMatch(/letters, digits and spaces/);
+    expect(newApiProblem("Loyalty  Engine", "https://x.internal", ["loyaltyEngine"]).name).toMatch(/already knows loyaltyEngine/);
+    expect(newApiProblem("a", "loyalty.internal", []).url).toMatch(/http:\/\/ or https:\/\//);
+    expect(newApiProblem("a", "http://localhost:9090/x", []).url).toMatch(/localhost cannot be reached/);
+    expect(newApiProblem("a", "http://127.0.0.1", []).url).toMatch(/localhost cannot be reached/);
+    expect(newApiProblem("ab", "http://localhost.example.internal/x", []).url).toBe("");
+    // the form's path check does not ask for a known backend when a new one is being added
+    expect(decisionProblem({ action: "forward", newBackend: { name: "loyalty", url: "https://x.internal" }, method: "GET", path: "/items/{itemId}" }, op)).toBe("");
+    expect(decisionProblem({ action: "forward", newBackend: { name: "loyalty", url: "https://x.internal" }, method: "GET", path: "items" }, op)).toMatch(/starts with/);
+  });
+  it("lists what a pass-on would leave undone", () => {
+    expect(passOnLoses({ source: { loses: ["It calls other systems 2 times. A pass-on makes one call.", " ", 7] } })).toEqual(["It calls other systems 2 times. A pass-on makes one call.", "7"]);
+    expect(passOnLoses({ source: { loses: "x" } })).toEqual([]);
+    expect(passOnLoses({ source: null })).toEqual([]);
+    expect(passOnLoses({})).toEqual([]);
   });
   it("says why a decision cannot be saved yet", () => {
     const f = (path: string, backend = "catalogue") => decisionProblem({ action: "forward", backend, method: "GET", path }, op);

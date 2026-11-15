@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Ban, Link2, Play, StickyNote, Undo2 } from "lucide-react";
 import { api, type ApiError, type Decision, type Migration, type OpenItem, type OpenItems, type ResolveResult } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
-import { ago, decisionProblem, forwardStart, itemKindWord, sourceSummary, type NextAction, noteLimit, nothingOpen, passOnHint, placeholderLine, sourceEnvs } from "../lib/migrate.ts";
+import { NEW_API, ago, decisionProblem, forwardStart, itemKindWord, newApiProblem, sourceSummary, type NextAction, noteLimit, nothingOpen, passOnHint, passOnLoses, placeholderLine, sourceEnvs } from "../lib/migrate.ts";
 import { Btn, Failed, Field, Loading, Method, Notice, Panel, Pill, errText } from "./ui.tsx";
 
 type Mode = "forward" | "not_needed" | "address" | "note";
@@ -37,12 +37,16 @@ function OldCode({ item }: { item: OpenItem }) {
   );
 }
 
-function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
-  item: OpenItem; backends: string[]; disabled: boolean; saving: boolean; error: string; onDecide: (d: Decision, done: () => void) => void;
+function ItemCard({ item, backends, canAdd, disabled, saving, error, onDecide }: {
+  item: OpenItem; backends: string[]; canAdd: boolean; disabled: boolean; saving: boolean; error: string; onDecide: (d: Decision, done: () => void) => void;
 }) {
   const first = forwardStart(item, backends);
   const [mode, setMode] = useState<Mode | null>(null);
-  const [backend, setBackend] = useState(first.backend);
+  const [backend, setBackend] = useState(first.backend || (canAdd ? NEW_API : ""));
+  // an API this service does not know yet, and "the API I pass this on to does the rest"
+  const [newName, setNewName] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+  const [sure, setSure] = useState(false);
   const [method, setMethod] = useState(first.method);
   const [path, setPath] = useState(first.path);
   const [text, setText] = useState("");
@@ -50,14 +54,20 @@ function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
   const [from, setFrom] = useState("");
   const envs = sourceEnvs(item);
   const can = (a: Mode) => (item.can ?? []).includes(a);
-  const open = (m: Mode) => { setMode(mode === m ? null : m); setText(""); };
-  const decision: Decision | null = mode === "forward" ? { id: item.id, action: "forward", backend, method, path: path.trim() }
+  const open = (m: Mode) => { setMode(mode === m ? null : m); setText(""); setSure(false); };
+  const adding = backend === NEW_API;
+  const added = adding ? newApiProblem(newName, newUrl, backends) : { name: "", url: "" };
+  const loses = passOnLoses(item);
+  const yes = sure ? { confirm: true as const } : {};
+  const decision: Decision | null = mode === "forward" ? (adding ? { id: item.id, action: "forward", newBackend: { name: newName.trim(), url: newUrl.trim() }, method, path: path.trim(), ...yes } : { id: item.id, action: "forward", backend, method, path: path.trim(), ...yes })
     : mode === "not_needed" ? { id: item.id, action: "not_needed", reason: text.trim() }
     : mode === "address" ? (from ? { id: item.id, action: "address", from } : { id: item.id, action: "address", url: url.trim() })
     : mode === "note" ? { id: item.id, action: "note", note: text.trim() } : null;
   const problem = decision ? decisionProblem(decision, item) : "";
   const touched = mode === "forward" ? true : mode === "address" ? from !== "" || url.trim() !== "" : text.trim() !== "";
-  const save = () => { if (decision && !problem) onDecide(decision, () => { setMode(null); setText(""); setUrl(""); setFrom(""); }); };
+  // a pass-on waits for the new API's name and address, and for the tick when the old code did more than one call
+  const waits = mode === "forward" && (!!added.name || !!added.url || (loses.length > 0 && !sure));
+  const save = () => { if (decision && !problem && !waits) onDecide(decision, () => { setMode(null); setText(""); setUrl(""); setFrom(""); setNewName(""); setNewUrl(""); setSure(false); }); };
   const reshapes = num(item.source?.transforms);
   const notes = item.notes ?? [];
 
@@ -85,14 +95,39 @@ function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
       {mode === "forward" && (
         <div className="mf-mg-stack" style={{ gap: 10 }} data-testid="finish-form">
           <div style={GRID}>
-            <Field label="Which API receives the call?" hint="The backends this service already knows."><select className="mf-mg-input" value={backend} onChange={(e) => setBackend(e.target.value)}>{backends.map((b) => <option key={b} value={b}>{b}</option>)}</select></Field>
+            <Field label="Which API receives the call?" hint={canAdd ? (backends.length ? "The backends this service already knows, or a new one." : "This service knows no other API yet. Add the one that receives the call.") : "The backends this service already knows."}>
+              <select className="mf-mg-input" data-testid="finish-backend" value={backend} onChange={(e) => setBackend(e.target.value)}>{backends.map((b) => <option key={b} value={b}>{b}</option>)}{canAdd && <option value={NEW_API}>A new API…</option>}</select>
+            </Field>
             <Field label="Method"><select className="mf-mg-input" value={method} onChange={(e) => setMethod(e.target.value)}>{METHODS.map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
           </div>
+          {adding && (
+            <div style={GRID} data-testid="finish-new-api">
+              <Field label="Name of the new API" error={newName.trim() ? added.name || undefined : undefined} hint="A short name, for example loyalty engine. The service knows the API under this name from now on.">
+                <input className="mf-mg-input" data-testid="finish-new-name" value={newName} maxLength={40} aria-invalid={!!newName.trim() && !!added.name} onChange={(e) => setNewName(e.target.value)} spellCheck={false} autoComplete="off" />
+              </Field>
+              <Field label="Address of that API" error={newUrl.trim() ? added.url || undefined : undefined} hint="Kept in this service's settings on this server. It is not shown again after saving.">
+                <input className="mf-mg-input mf-mono" data-testid="finish-new-url" value={newUrl} maxLength={500} aria-invalid={!!newUrl.trim() && !!added.url} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://" spellCheck={false} autoComplete="off" />
+              </Field>
+            </div>
+          )}
           <Field label="Path on that API" error={problem || undefined} hint={(item.params ?? []).length ? <>Values from the caller's address you can use: {(item.params ?? []).map((p) => <span key={p} className="mf-mono">{`{${p}}`} </span>)}</> : passOnHint(item)}>
-            <input className="mf-mg-input mf-mono" value={path} aria-invalid={!!problem} onChange={(e) => setPath(e.target.value)} placeholder="/path/on/the/api" spellCheck={false} />
+            <input className="mf-mg-input mf-mono" data-testid="finish-path" value={path} aria-invalid={!!problem} onChange={(e) => setPath(e.target.value)} placeholder="/path/on/the/api" spellCheck={false} />
           </Field>
-          {reshapes > 0 && item.kind === "entry" && <Notice tone="warn">The old code also reshaped the data here ({reshapes} {reshapes === 1 ? "place" : "places"}). Passing it on makes one plain call and sends nothing in the old shape. If that API needs the old shape, or more than one call was made, choose "Say what it does" so the logic is written instead.</Notice>}
-          {reshapes > 0 && item.kind !== "entry" && <Notice tone="warn">The old code also reshaped the data here ({reshapes} {reshapes === 1 ? "place" : "places"}). Passing the call on returns that API's answer as it is. If callers need the old shape, choose "Say what it does" so the logic is written instead.</Notice>}
+          {loses.length > 0 && (
+            <Notice tone="warn">
+              <div data-testid="finish-loses">
+                <strong>The old application did more here than one call.</strong>
+                <ul className="mf-mg-wrap" style={{ margin: "4px 0 6px", paddingLeft: 18, lineHeight: 1.5 }}>{loses.map((l, i) => <li key={i}>{l}</li>)}</ul>
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
+                  <input type="checkbox" data-testid="finish-confirm" checked={sure} onChange={(e) => setSure(e.target.checked)} style={{ marginTop: 3 }} />
+                  <span>The API I pass this on to does all of this.</span>
+                </label>
+                <span className="mf-mg-hint" style={{ display: "block", marginTop: 4 }}>The decision can be saved once this is ticked. If that API does not do it, choose "Say what it does" so the logic is written instead; otherwise callers get an answer while part of the old work is silently left out.</span>
+              </div>
+            </Notice>
+          )}
+          {loses.length === 0 && reshapes > 0 && item.kind === "entry" && <Notice tone="warn">The old code also reshaped the data here ({reshapes} {reshapes === 1 ? "place" : "places"}). Passing it on makes one plain call and sends nothing in the old shape. If that API needs the old shape, or more than one call was made, choose "Say what it does" so the logic is written instead.</Notice>}
+          {loses.length === 0 && reshapes > 0 && item.kind !== "entry" && <Notice tone="warn">The old code also reshaped the data here ({reshapes} {reshapes === 1 ? "place" : "places"}). Passing the call on returns that API's answer as it is. If callers need the old shape, choose "Say what it does" so the logic is written instead.</Notice>}
         </div>
       )}
       {mode === "address" && (
@@ -118,7 +153,7 @@ function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
       )}
       {mode && (
         <div className="mf-mg-actions">
-          <Btn kind="primary" small busy={saving} disabled={disabled || !!problem} onClick={save}>{mode === "note" ? "Save the note" : "Save this decision"}</Btn>
+          <Btn kind="primary" small busy={saving} disabled={disabled || !!problem || waits} onClick={save}>{mode === "note" ? "Save the note" : "Save this decision"}</Btn>
           <Btn small disabled={saving} onClick={() => setMode(null)}>Cancel</Btn>
         </div>
       )}
@@ -163,7 +198,7 @@ export function Finish({ m, onRun }: { m: Migration; onRun: (a: NextAction["id"]
         {!items.length && !none.done && <Notice tone="warn"><span data-testid="finish-not-ready">{none.text}</span></Notice>}
         {said && <Notice tone="ok">{said}</Notice>}
         {items.map((it) => (
-          <ItemCard key={it.id} item={it} backends={d.backends ?? []} disabled={locked} saving={decide.isPending && !back && decide.variables?.id === it.id}
+          <ItemCard key={it.id} item={it} backends={d.backends ?? []} canAdd={!!d.canAddBackend} disabled={locked} saving={decide.isPending && !back && decide.variables?.id === it.id}
             error={decide.isError && !back && decide.variables?.id === it.id ? errText(decide.error) : ""} onDecide={(dec, done) => { setSaid(""); decide.mutate(dec, { onSuccess: done }); }} />
         ))}
         {changed && (

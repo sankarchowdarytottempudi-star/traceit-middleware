@@ -53,7 +53,9 @@ export interface Migration {
 }
 /** "Finish this migration": what is left of a generated service and what the old application did there. */
 export interface SourceCall { method: string; path: string; config: string; backend?: string }
-export interface SourceView { flow: string; file?: string; steps: number; parts: number; does: string[]; more?: number; calls: SourceCall[]; transforms: number; simple?: boolean }
+export interface SourceView { flow: string; file?: string; steps: number; parts: number; does: string[]; more?: number; calls: SourceCall[]; transforms: number; simple?: boolean;
+  /** What a pass-on would leave undone here, in plain words (empty when the old code made one plain call). */
+  loses?: string[] }
 export interface OpenItem {
   id: string; kind: "operation" | "entry" | "backend" | "code"; title: string; starts?: string; sourceName?: string; fromSource?: string[]; source?: SourceView | null;
   can: string[]; suggest?: { backend: string; method: string; path: string } | null; params?: string[]; notes?: { t?: string; text?: string }[];
@@ -61,9 +63,12 @@ export interface OpenItem {
   placeholder?: { file?: string; function?: string; each?: string; started?: boolean } | null;
 }
 export interface ClosedItem { id: string; kind?: string; title: string; how: string; detail?: string; t?: string; canReopen?: boolean }
-export interface OpenItems { api: string; exists: boolean; ready: boolean; summary?: string; items: OpenItem[]; closed: ClosedItem[]; backends: string[]; needsBuild?: boolean; pending?: string[]; busy?: boolean; installed?: boolean }
+export interface OpenItems { api: string; exists: boolean; ready: boolean; summary?: string; items: OpenItem[]; closed: ClosedItem[]; backends: string[]; needsBuild?: boolean; pending?: string[]; busy?: boolean; installed?: boolean;
+  /** The tool can add an API this service does not know yet while a call is passed on. */
+  canAddBackend?: boolean }
 export type Decision =
-  | { id: string; action: "forward"; backend: string; method: string; path: string }
+  | { id: string; action: "forward"; backend: string; method: string; path: string; confirm?: true }
+  | { id: string; action: "forward"; newBackend: { name: string; url: string }; method: string; path: string; confirm?: true }
   | { id: string; action: "not_needed"; reason: string }
   | { id: string; action: "address"; url: string }
   | { id: string; action: "address"; from: string }

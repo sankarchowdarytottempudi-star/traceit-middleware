@@ -215,6 +215,18 @@ describe("finish this migration", () => {
       .toEqual({ ok: true, decision: { id: "backend:catalogue", action: "address", from: "shore/uat" } });
     expect(decisionOf({ id: "op:ANY /db", action: "reopen", reason: "x", note: "y" })).toEqual({ ok: true, decision: { id: "op:ANY /db", action: "reopen" } });
   });
+  it("passes a call on to an API the service does not know yet, and a confirmation only when it is a plain true", () => {
+    expect(decisionOf({ id: "op:POST /points", action: "forward", newBackend: { name: " loyalty   engine ", url: " https://loyalty.internal/api ", token: "x" }, backend: "ignored", method: "post", path: "/points", confirm: true }))
+      .toEqual({ ok: true, decision: { id: "op:POST /points", action: "forward", newBackend: { name: "loyalty engine", url: "https://loyalty.internal/api" }, method: "POST", path: "/points", confirm: true } });
+    expect(decisionOf({ id: "op:GET /a", action: "forward", backend: "a", method: "GET", path: "/a", confirm: "yes" }))
+      .toEqual({ ok: true, decision: { id: "op:GET /a", action: "forward", backend: "a", method: "GET", path: "/a" } });
+    const bad = (b: unknown) => { const r = decisionOf(b); return r.ok ? "" : r.error; };
+    expect(bad({ id: "op:GET /a", action: "forward", newBackend: { name: "1st", url: "https://x.internal" }, method: "GET", path: "/a" })).toMatch(/short name/);
+    expect(bad({ id: "op:GET /a", action: "forward", newBackend: { name: "loyalty", url: "loyalty.internal" }, method: "GET", path: "/a" })).toMatch(/address of the new API/);
+    expect(bad({ id: "op:GET /a", action: "forward", newBackend: { name: "loyalty", url: "https://x.internal/\"x" }, method: "GET", path: "/a" })).toMatch(/address of the new API/);
+    expect(bad({ id: "op:GET /a", action: "forward", newBackend: { name: "loyalty", url: "https://x.internal" }, method: "GET", path: "a" })).toMatch(/path/);
+    expect(bad({ id: "op:GET /a", action: "forward", newBackend: [], method: "GET", path: "/a" })).toMatch(/Choose the API/);
+  });
   it("says what is wrong with a decision", () => {
     const bad = (b: unknown) => { const r = decisionOf(b); return r.ok ? "" : r.error; };
     expect(bad(null)).toMatch(/item/);

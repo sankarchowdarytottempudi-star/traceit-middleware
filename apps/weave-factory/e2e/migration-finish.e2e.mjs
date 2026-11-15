@@ -27,7 +27,29 @@ try {
       if (o?.exists && (o.items ?? []).length) { id = m.id; open = o; break; }
     }
   }
-  if (!id || !open?.exists || !(open.items ?? []).length) { s.warn("there is no migration with open items to look at"); }
+  if (!id || !open?.exists || !(open.items ?? []).length) {
+    // Nothing is open on this server (every migration is finished, or the named one is). The screen is then
+    // checked against a stand-in list shown for a migration that exists; no service is read or changed.
+    const all = (await get(api))?.migrations ?? [];
+    const host = (id && all.find((m) => m?.id === id && m?.serviceDir)) || all.find((m) => m?.serviceDir && !m.busy);
+    if (host) {
+      id = host.id;
+      open = { api: host.apiName ?? "stand-in-api", exists: true, ready: false, summary: "2 operations and 1 backend wait for a decision.",
+        backends: ["catalogueApi"], canAddBackend: true, closed: [], needsBuild: false, pending: [], busy: false, installed: false,
+        items: [
+          { id: "op:GET /items/{id}", kind: "operation", title: "GET /items/{id}", can: ["forward", "not_needed", "note"], params: ["id"], notes: [],
+            suggest: { backend: "catalogueApi", method: "GET", path: "" },
+            source: { flow: "get-item", steps: 2, parts: 1, does: ["Calls another system: GET /catalogue/items"], calls: [{ config: "Catalogue_API", method: "GET", path: "/catalogue/items" }], transforms: 0, simple: true, loses: [] } },
+          { id: "op:POST /items", kind: "operation", title: "POST /items", can: ["forward", "not_needed", "note"], params: [], notes: [], suggest: null,
+            source: { flow: "post-item", steps: 5, parts: 1, does: ["Reshapes the data", "Calls another system: POST /catalogue/items"], calls: [], transforms: 1, simple: false,
+              loses: ["It reshapes the data 1 time(s). A pass-on sends the request and returns the answer unchanged."] } },
+          { id: "backend:stockApi", kind: "backend", title: "stockApi", sourceName: "Stock_API", fromSource: [], source: null, can: ["address"], notes: [] },
+        ] };
+      await s.context.route(`**/api/factory/migrations/${id}/open-items`, (r) => r.fulfill({ json: open }));
+      console.log("  (nothing is open on this server: the screen is checked against a stand-in list)");
+    }
+  }
+  if (!id || !open?.exists || !(open.items ?? []).length) { s.fail("there is no migration to show the Finish screen for, so nothing was checked"); }
   else {
     const items = open.items;
     const panel = page.locator('[data-testid="finish"]');
@@ -73,8 +95,9 @@ try {
       const form = c.locator('[data-testid="finish-form"]');
       await form.waitFor();
       const choices = await form.locator("select").first().locator("option").allInnerTexts();
-      s.check(choices.length === (open.backends ?? []).length && choices.every((x) => open.backends.includes(x)), "the APIs offered are the backends this service knows", `${choices.length} offered`);
-      const path = form.locator("input");
+      const offered = [...(open.backends ?? []), ...(open.canAddBackend ? ["A new API…"] : [])];
+      s.check(choices.length === offered.length && choices.every((x) => offered.includes(x)), open.canAddBackend ? "the APIs offered are the backends this service knows, and a new one" : "the APIs offered are the backends this service knows", `${choices.length} offered`);
+      const path = form.locator('[data-testid="finish-path"]');
       if (op.kind === "entry") {
         const each = op.placeholder?.each === "message" ? /Every message is sent to this address as the body/ : /Every run makes this one call, with no body/;
         s.check(each.test(await form.innerText()), "for a part that starts by itself it says what is sent at each start");
@@ -85,6 +108,16 @@ try {
       await path.fill("/x/{notThere}");
       s.check(/in its address/.test(await form.innerText()) && await c.getByRole("button", { name: "Save this decision" }).isDisabled(), "a value the operation does not have is refused");
       await path.fill("/x");
+      if (await form.locator('[data-testid="finish-new-api"]').count()) {
+        s.check(await c.getByRole("button", { name: "Save this decision" }).isDisabled(), "a new API needs a name and an address first");
+        await form.locator('[data-testid="finish-new-name"]').fill("checked api");
+        await form.locator('[data-testid="finish-new-url"]').fill("https://checked.example.internal/api");
+      }
+      const tick = form.locator('[data-testid="finish-confirm"]');
+      if (await tick.count()) {
+        s.check(await c.getByRole("button", { name: "Save this decision" }).isDisabled(), "a part that did more than one call waits for \"the other API does all of this\"");
+        await tick.check();
+      }
       s.check(await c.getByRole("button", { name: "Save this decision" }).isEnabled(), "a plain path can be saved");
       await s.shot("finish-forward");
       await c.getByRole("button", { name: "Cancel" }).click();
@@ -118,13 +151,20 @@ try {
     const c = card(first);
     await c.getByRole("button", { name: LABEL[action], exact: true }).click();
     const form = c.locator('[data-testid="finish-form"]');
-    if (action === "forward") await form.locator("input").fill("/checked/path");
+    if (action === "forward") {
+      await form.locator('[data-testid="finish-path"]').fill("/checked/path");
+      if (await form.locator('[data-testid="finish-new-api"]').count()) {
+        await form.locator('[data-testid="finish-new-name"]').fill("checked api");
+        await form.locator('[data-testid="finish-new-url"]').fill("https://checked.example.internal/api");
+      }
+      if (await form.locator('[data-testid="finish-confirm"]').count()) await form.locator('[data-testid="finish-confirm"]').check();
+    }
     else if (action === "address") await form.locator("input").fill("https://backend.example.internal/api");
     else await form.locator("textarea").fill("Checked by the acceptance run.");
     await c.getByRole("button", { name: action === "note" ? "Save the note" : "Save this decision" }).click();
     await panel.getByText("Saved for this check.").waitFor();
     s.check(sent?.id === first.id && sent?.action === action, "the decision sent is the one that was made", JSON.stringify({ id: sent?.id, action: sent?.action }));
-    s.check(Object.keys(sent ?? {}).every((k) => ["id", "action", "backend", "method", "path", "reason", "url", "note"].includes(k)), "nothing else is sent with it");
+    s.check(Object.keys(sent ?? {}).every((k) => ["id", "action", "backend", "newBackend", "confirm", "method", "path", "reason", "url", "note"].includes(k)), "nothing else is sent with it");
     if (action !== "note") {
       s.check((await panel.locator('[data-testid="finish-item"]').count()) === items.length - 1, "the decided item leaves the list");
       s.check(/Build and check it, then deploy/.test(await panel.innerText()), "it says the service has to be built and deployed for the decision to count");
@@ -220,6 +260,63 @@ try {
     await uc.getByRole("button", { name: LABEL.address, exact: true }).click();
     s.check((await uc.locator('[data-testid="finish-from"]').count()) === 0 && (await uc.locator("input").count()) === 1, "a backend the old settings do not cover only asks for the address");
     s.check((await s.overflow()) === 0, "nothing runs off the side of the page");
+    await page.unroute(`**/api/factory/migrations/${id}/resolve`);
+    await page.unroute(`**/api/factory/migrations/${id}/open-items`);
+
+    // ------------------------------------------------------------ 7. a new API, and a part that did more than one call
+    s.step("7. Passing a call on to a new API, with eyes open about what the old code did (stand-in answers)");
+    const LOSES = ["It calls other systems 2 times. A pass-on makes one call.", "It reshapes the data 2 times. A pass-on sends the request and returns the answer unchanged."];
+    const big = { id: "op:POST /points", kind: "operation", title: "POST /points", can: ["forward", "not_needed", "note"], params: [], notes: [],
+      source: { flow: "post-points", steps: 6, parts: 1, does: ["Calls another system: POST /earn", "Reshapes the data"], calls: [], transforms: 2, loses: LOSES } };
+    const fresh = { ...open, ready: false, backends: [], canAddBackend: true, items: [big], closed: [], pending: [] };
+    await page.route(`**/api/factory/migrations/${id}/open-items`, (r) => r.fulfill({ json: fresh }));
+    await s.goto(`/migrations/${id}`);
+    await panel.waitFor();
+    const bc = card(big);
+    await bc.getByRole("button", { name: LABEL.forward, exact: true }).click();
+    const bf = bc.locator('[data-testid="finish-form"]');
+    const saveBig = bc.getByRole("button", { name: "Save this decision" });
+    s.check((await bf.locator('[data-testid="finish-backend"] option').allInnerTexts()).join("|") === "A new API…", "a service that knows no other API offers to add one");
+    s.check((await bf.locator('[data-testid="finish-new-api"]').count()) === 1 && await saveBig.isDisabled(), "it asks for the new API's name and address before anything can be saved");
+    await bf.locator('[data-testid="finish-new-name"]').fill("loyalty engine");
+    await bf.locator('[data-testid="finish-new-url"]').fill("loyalty.example.internal");
+    s.check(/http:\/\/ or https:\/\//.test(await bf.innerText()) && await saveBig.isDisabled(), "an address without http is refused");
+    await bf.locator('[data-testid="finish-new-url"]').fill("http://localhost:9090/api");
+    s.check(/localhost cannot be reached/.test(await bf.innerText()) && await saveBig.isDisabled(), "localhost is refused");
+    await bf.locator('[data-testid="finish-new-url"]').fill("https://loyalty.example.internal/api");
+    await bf.locator('[data-testid="finish-path"]').fill("/points");
+    const said7 = await bf.locator('[data-testid="finish-loses"]').innerText();
+    s.check(LOSES.every((l) => said7.includes(l)), "it lists what the old code did that a pass-on does not do");
+    s.check(await saveBig.isDisabled(), "the decision waits until \"the API I pass this on to does all of this\" is ticked");
+    await s.shot("finish-new-api");
+    await bf.locator('[data-testid="finish-confirm"]').check();
+    s.check(await saveBig.isEnabled(), "after the tick it can be saved");
+    let sentNew = null;
+    const afterNew = { ...fresh, backends: ["loyaltyEngine"], items: [], needsBuild: true, pending: ["POST /points is passed on to loyaltyEngine"],
+      closed: [{ id: big.id, kind: "operation", title: "POST /points", how: "passed on", detail: "POST /points on loyaltyEngine (confirmed: that API does the rest of the old work)", t: new Date().toISOString(), canReopen: false }] };
+    await page.route(`**/api/factory/migrations/${id}/resolve`, (r) => { sentNew = r.request().postDataJSON(); return r.fulfill({ json: { ok: true, changed: true, message: "POST /points is passed on to loyaltyEngine. loyaltyEngine was added to this service as a new API; its address is in the service's settings.", openItems: afterNew } }); });
+    await saveBig.click();
+    await panel.getByText(/was added to this service as a new API/).waitFor();
+    s.check(sentNew?.id === big.id && sentNew?.action === "forward" && sentNew?.method === "POST" && sentNew?.path === "/points" && sentNew?.confirm === true
+      && sentNew?.newBackend?.name === "loyalty engine" && sentNew?.newBackend?.url === "https://loyalty.example.internal/api" && sentNew?.backend === undefined, "the new API, the call and the confirmation are what is sent");
+    s.check(!(await panel.innerText()).includes("loyalty.example.internal"), "the address is not shown after saving");
+    s.check(/confirmed: that API does the rest of the old work/.test(await panel.locator('[data-testid="finish-closed"]').innerText()), "the decision is kept with the confirmation");
+    s.check((await s.overflow()) === 0, "nothing runs off the side of the page");
+    // the tool refuses a pass-on that was not confirmed: its words are shown, nothing is lost
+    await page.unroute(`**/api/factory/migrations/${id}/open-items`);
+    const plain = { ...big, id: "op:POST /earn", title: "POST /earn", source: { ...big.source, loses: [] } };
+    await page.route(`**/api/factory/migrations/${id}/open-items`, (r) => r.fulfill({ json: { ...fresh, backends: ["loyaltyEngine"], items: [plain] } }));
+    await page.unroute(`**/api/factory/migrations/${id}/resolve`);
+    await page.route(`**/api/factory/migrations/${id}/resolve`, (r) => r.fulfill({ status: 409, json: { error: "The old application did more here than one call: It calls other systems 2 times. A pass-on makes one call. Confirm that it does, or leave a note for the person who writes its logic.", needsConfirm: true, loses: [LOSES[0]] } }));
+    await s.goto(`/migrations/${id}`);
+    await panel.waitFor();
+    const pc = card(plain);
+    await pc.getByRole("button", { name: LABEL.forward, exact: true }).click();
+    await pc.locator('[data-testid="finish-path"]').fill("/earn");
+    await pc.getByRole("button", { name: "Save this decision" }).click();
+    await pc.getByText(/did more here than one call/).waitFor();
+    s.check((await pc.locator('[data-testid="finish-form"]').count()) === 1, "a refusal by the tool is shown on the item and the form stays open");
+    s.consoleErrors = s.consoleErrors.filter((e) => !(/409 \(Conflict\)/.test(e) && e.includes(`/migrations/${id}/resolve`)));
     await page.unroute(`**/api/factory/migrations/${id}/resolve`);
     await page.unroute(`**/api/factory/migrations/${id}/open-items`);
   }

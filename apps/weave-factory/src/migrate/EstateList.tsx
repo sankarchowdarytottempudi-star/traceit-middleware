@@ -157,7 +157,7 @@ export function EstateList() {
                             <LayerPill layer={a.layer} />
                           </div>
                         </td>
-                        <td data-label="Health"><HealthPill health={a.health} /></td>
+                        <td data-label="Health"><span className="mf-mg-row" style={{ gap: 6 }}><HealthPill health={a.health} />{num(a.notMigrated) > 0 && <Pill tone="warn" title="Callers of these operations get the answer: not migrated yet">{num(a.notMigrated)} not migrated</Pill>}</span></td>
                         <td data-label="Replicas"><span className="mf-mono">{num(a.readyReplicas)} / {num(a.replicas)}</span></td>
                         <td data-label="Reachable">{a.gateway?.published ? <Pill tone="accent" title={txt(a.gateway.url)}>Gateway {txt(a.gateway.context)}</Pill> : <Pill title="Only other services on the cluster can call it">Internal</Pill>}</td>
                         <td data-label="Requests, 1 h" className="mf-mg-num">{a.metricsAvailable ? compact(a.requestsLastHour) : <span className="mf-mg-faint" title="This API does not report traffic figures">Not measured</span>}</td>

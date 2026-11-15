@@ -2,10 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CircleDashed, Download, Eye, Loader2, Play, Trash2, TriangleAlert, X } from "lucide-react";
+import { Check, CircleDashed, Download, Eye, Loader2, Play, RotateCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { api, type ApiError, type Environment, type Migration, type OptimizeResult, type ParityResult, type Phase, type VerifyResult } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
-import { ago, baseName, clock, dateTime, isSpec, ms, nextActions, outcomeTone, statusLabel, statusTone, type NextAction } from "../lib/migrate.ts";
+import { ago, baseName, clock, dateTime, failureView, isSpec, ms, nextActions, outcomeTone, statusLabel, statusTone, type FailureView, type NextAction } from "../lib/migrate.ts";
 import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, KV, LinkBtn, Loading, Notice, Panel, Pill, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
 import { Markdown } from "./markdown.tsx";
 
@@ -43,7 +43,7 @@ function Timeline({ m, onAdvance, advancing }: { m: Migration; onAdvance: (phase
                   <li key={s.key} className="mf-mg-step">
                     <StepIcon status={txt(s.status)} />
                     <span className="mf-mg-grow"><span>{txt(s.title)}</span>{s.detail ? <span className="mf-mg-step-detail"> · {txt(s.detail)}</span> : null}</span>
-                    {s.status === "action_required" && <Btn small busy={advancing === `${ph.key}/${s.key}`} disabled={!!m.busy} onClick={() => onAdvance(ph.key, s.key)}>Mark as done</Btn>}
+                    {s.status === "action_required" && ph.mode === "manual" && <Btn small busy={advancing === `${ph.key}/${s.key}`} disabled={!!m.busy} onClick={() => onAdvance(ph.key, s.key)}>Mark as done</Btn>}
                   </li>
                 ))}
               </ul>
@@ -52,6 +52,28 @@ function Timeline({ m, onAdvance, advancing }: { m: Migration; onAdvance: (phase
         );
       })}
     </div>
+  );
+}
+
+// A failed or blocked step: what happened, why, what to do, the step again, and the tool's own output.
+function WhatNow({ v, disabled, busy, onRetry }: { v: FailureView; disabled: boolean; busy: boolean; onRetry: (id: NextAction["id"]) => void }) {
+  return (
+    <Panel title={v.title}>
+      <div className="mf-mg-stack" style={{ gap: 12 }} data-testid="what-now">
+        <Notice tone={v.blocked ? "warn" : "bad"}><strong>{v.what}</strong>{v.why ? <span style={{ display: "block", marginTop: 2 }}>{v.why}</span> : null}</Notice>
+        <div className="mf-mg-sec" style={{ marginTop: 0 }}>
+          <h3>What you can do</h3>
+          <ol style={{ margin: "6px 0 0", paddingLeft: 20, display: "grid", gap: 6, fontSize: 13.5, lineHeight: 1.5 }}>{v.todo.map((t, i) => <li key={i} className="mf-mg-wrap">{t}</li>)}</ol>
+        </div>
+        {v.retry && <div className="mf-mg-actions"><Btn kind="primary" icon={<RotateCw size={14} aria-hidden="true" />} disabled={disabled} busy={busy} onClick={() => onRetry(v.retry!.id)}>{v.retry.label}</Btn></div>}
+        {v.output && (
+          <details>
+            <summary className="mf-mg-small" style={{ cursor: "pointer", fontWeight: 600 }}>Tool output</summary>
+            <pre className="mf-mono mf-mg-pre" style={{ maxHeight: 280, marginTop: 8 }} tabIndex={0}>{v.output}</pre>
+          </details>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -295,6 +317,7 @@ export function MigrationDetail() {
   useEffect(() => { if (wasBusy.current && m && !m.busy) qc.invalidateQueries({ queryKey: ["migration-docs", id] }); wasBusy.current = !!m?.busy; }, [m, id, qc]);
 
   const actions = useMemo(() => (m ? nextActions(m) : []), [m]);
+  const failure = useMemo(() => (m ? failureView(m) : null), [m]);
   const notFound = mq.isError && (mq.error as ApiError).status === 404;
   if (mq.isLoading) return <><Head area="Migrations" areaTo="/migrations" back={{ to: "/migrations", label: "All migrations" }} title="Migration" /><Loading rows={3} h={110} /></>;
   if (notFound) return <><Head area="Migrations" areaTo="/migrations" back={{ to: "/migrations", label: "All migrations" }} title="Migration" /><div className="mf-mg-tablewrap"><Empty title="This migration does not exist" hint="It may have been deleted." action={<LinkBtn small to="/migrations">See all migrations</LinkBtn>} /></div></>;
@@ -344,6 +367,7 @@ export function MigrationDetail() {
       <TabBar tabs={tabs} value={tab} onChange={setTab} label="Sections of this migration" />
       {tab === "progress" && (
         <div className="mf-mg-stack">
+          {failure && !m.busy && <WhatNow v={failure} disabled={!!m.busy} busy={run.isPending && run.variables?.phase === failure.retry?.id} onRetry={(a) => start(a)} />}
           <Panel title="What you can do next">
             {m.busy ? <Notice><span className="mf-mg-row" style={{ gap: 8 }}><Loader2 size={14} className="mf-spin" aria-hidden="true" />A step is running. This screen updates by itself; the activity below shows what is happening.</span></Notice> : null}
             <div className="mf-mg-stack" style={{ gap: 10 }}>
@@ -357,7 +381,7 @@ export function MigrationDetail() {
             </div>
             {note && <Notice>{note}</Notice>}
             {run.isError && !run.error.body?.needsConfirm && <Notice tone="bad">{run.error.status === 409 ? "Another step is still running. Wait for it to finish, then try again." : errText(run.error)}</Notice>}
-            {advance.isError && <Notice tone="bad">{errText(advance.error)}</Notice>}
+            {advance.isError && <Notice tone={advance.error.status === 409 ? "warn" : "bad"}>{errText(advance.error)}</Notice>}
           </Panel>
           <div className="mf-mg-grid-2">
             <Panel title="Phases and steps"><Timeline m={m} advancing={advance.isPending ? `${advance.variables?.phase}/${advance.variables?.step}` : ""} onAdvance={(phase, step) => advance.mutate({ phase, step })} /></Panel>

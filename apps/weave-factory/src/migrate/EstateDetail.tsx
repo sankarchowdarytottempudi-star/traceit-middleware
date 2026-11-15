@@ -140,7 +140,7 @@ function Operations({ d, onTab }: { d: EstateApiDetail; onTab: (t: Tab) => void 
         <div className="mf-mg-list">
           {shown.map((o: EstateOperation) => (
             <Expander key={o.id} open={open.has(o.id)} onToggle={() => toggle(o.id)}
-              head={<><Method method={o.method} /><span className="mf-mono mf-mg-item-title">{txt(o.path)}</span>{o.implemented === false && <Pill tone="warn">Not implemented</Pill>}{(o.calls ?? []).length > 0 && <Pill>{o.calls!.length} call{o.calls!.length === 1 ? "" : "s"}</Pill>}</>}>
+              head={<><Method method={o.method} /><span className="mf-mono mf-mg-item-title">{txt(o.path)}</span>{o.implemented === false && <Pill tone="warn" title="Callers get the answer: not migrated yet">Not migrated yet</Pill>}{(o.calls ?? []).length > 0 && <Pill>{o.calls!.length} call{o.calls!.length === 1 ? "" : "s"}</Pill>}</>}>
               {o.summary && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55 }}>{txt(o.summary)}</p>}
               {(o.calls ?? []).length > 0 && (
                 <Sec title="What it calls, in order">
@@ -491,7 +491,7 @@ export function EstateDetail() {
   return (
     <>
       <Head area="Estate" areaTo="/estate" back={{ to: "/estate", label: "All running APIs" }} mono title={name}
-        subtitle={d ? <span className="mf-mg-row" style={{ gap: 8 }}><HealthPill health={d.health} /><LayerPill layer={d.layer} />{d.gateway?.published ? <Pill tone="accent">Published on the gateway</Pill> : <Pill>Internal only</Pill>}</span> : undefined}
+        subtitle={d ? <span className="mf-mg-row" style={{ gap: 8 }}><HealthPill health={d.health} /><LayerPill layer={d.layer} />{d.gateway?.published ? <Pill tone="accent">Published on the gateway</Pill> : <Pill>Internal only</Pill>}{num(d.notMigrated) > 0 && <Pill tone="warn" title="Callers of these operations get the answer: not migrated yet">{num(d.notMigrated)} operation{num(d.notMigrated) === 1 ? "" : "s"} not migrated</Pill>}</span> : undefined}
         actions={d ? <>
           <LinkBtn to={`/studio/estate/${encodeURIComponent(name)}`} icon={<Workflow size={15} aria-hidden="true" />}>Open as flow</LinkBtn>
           <Btn kind="primary" icon={<CopyPlus size={15} aria-hidden="true" />} onClick={() => setCloning(true)}>Clone to edit</Btn>

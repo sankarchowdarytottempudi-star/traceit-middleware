@@ -35,10 +35,13 @@ const post = (body?: unknown): RequestInit => ({ method: "POST", body: JSON.stri
 export interface Me { user: string; role: string; }
 
 // ---- migrations (the migration tool, through the BFF)
-export interface PhaseStep { key: string; title: string; status: string; detail?: string; }
+/** Plain-words explanation of a failed or blocked step, written by the migration tool. */
+export interface StepHelp { kind?: string; what?: string; why?: string; todo?: string[]; retry?: boolean; operations?: string[]; backends?: string[]; }
+export interface StepFailure { phase?: string; phaseKey?: string; step?: string; stepKey?: string; status?: string; detail?: string; help?: StepHelp | null; output?: string; }
+export interface PhaseStep { key: string; title: string; status: string; detail?: string; help?: StepHelp | null; }
 export interface Phase { key: string; title: string; mode: string; status: string; percent: number; weight?: number; detail?: string; startedAt?: string | null; finishedAt?: string | null; steps: PhaseStep[]; }
 export interface StepRef { phase?: string; phaseKey?: string; step?: string; stepKey?: string; status?: string; }
-export interface Progress { overallPercent: number; majorPhase: string; majorPhaseKey?: string | null; currentStep?: StepRef | string | null; nextStep?: StepRef | string | null; done: boolean; outcome: string; }
+export interface Progress { overallPercent: number; majorPhase: string; majorPhaseKey?: string | null; currentStep?: StepRef | string | null; nextStep?: StepRef | string | null; done: boolean; outcome: string; failure?: StepFailure | null; }
 export interface LogEntry { t?: string; level?: string; line?: string; }
 export interface Migration {
   id: string; name?: string; apiName?: string | null; workspace?: string; technology?: string; targetTech?: string; sourceType?: string; sourceFile?: string;

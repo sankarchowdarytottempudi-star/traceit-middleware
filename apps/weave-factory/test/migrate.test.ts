@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAND_MIN_WIDTH, ago, baseName, compact, distinct, fileSize, filterMigrations, healthLabel, healthTone, isSpec, layerKey, layoutLandscape,
-  ms, nextActions, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
+  ms, nextActions, failureView, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
 } from "../src/lib/migrate.ts";
 
 describe("labels and tones", () => {
@@ -198,5 +198,43 @@ describe("splitMatch", () => {
   });
   it("returns the text whole without a search", () => {
     expect(splitMatch("plain", "")).toEqual([{ text: "plain", hit: false }]);
+  });
+});
+
+describe("failureView", () => {
+  const phases = (s: Record<string, string>) => ["upload", "document", "mapping", "scaffold", "implement", "test", "deploy"].map((key) => ({ key, status: s[key] ?? "pending" }));
+  const base = { apiName: "guest-identity-proc-api", sourceFile: "x.jar", phases: phases({ upload: "done", document: "done", scaffold: "done", test: "failed" }) };
+  it("is empty while nothing has failed", () => {
+    expect(failureView({ ...base, progress: { outcome: "In progress", failure: null } })).toBeNull();
+    expect(failureView({ ...base })).toBeNull();
+  });
+  it("explains a failed step and offers that step again", () => {
+    const v = failureView({ ...base, progress: { outcome: "Failed", failure: { phase: "Testing", phaseKey: "test", step: "bal build", status: "failed", detail: "ERROR [Ballerina.toml] could not locate the package path",
+      output: "raw output", help: { kind: "workspace-entry", what: "The build stopped before reaching this API.", why: "The shared build list named a folder that no longer exists.", todo: ["Run this step again."], retry: true } } } })!;
+    expect(v.blocked).toBe(false);
+    expect(v.title).toBe("Testing failed: bal build");
+    expect(v.what).toMatch(/build stopped/);
+    expect(v.todo).toEqual(["Run this step again."]);
+    expect(v.output).toBe("raw output");
+    expect(v.retry).toEqual({ id: "test", label: "Run this step again" });
+  });
+  it("still says what to do when the tool gave no explanation", () => {
+    const v = failureView({ ...base, phases: phases({ upload: "done", document: "failed" }), progress: { failure: { phase: "Documentation", phaseKey: "document", step: "Unpack", status: "failed", detail: "boom" } } })!;
+    expect(v.why).toBe("boom");
+    expect(v.todo.length).toBe(1);
+    expect(v.output).toBe("boom");
+    expect(v.retry?.id).toBe("document");
+  });
+  it("a service that is not finished is blocked, not failed, and deployment is not offered", () => {
+    const m = { ...base, phases: phases({ upload: "done", document: "done", scaffold: "done", test: "action_required" }),
+      progress: { outcome: "In progress", failure: { phase: "Testing", phaseKey: "test", step: "Every operation migrated", status: "action_required", detail: "8 operations still answer not migrated",
+        help: { kind: "not-ready", what: "The service is not finished, so it is not offered for deployment.", why: "8 operations still answer not migrated", todo: ["Write the logic of: GET /a.", "Then run the tests again."], retry: false } } } };
+    const v = failureView(m)!;
+    expect(v.blocked).toBe(true);
+    expect(v.title).toBe("Not finished yet");
+    expect(v.retry).toEqual({ id: "test", label: "Check again (build and run the tests)" });
+    expect(v.output).toBe("");
+    expect(nextActions(m).map((a) => a.id)).toEqual(["document", "scaffold", "test"]);
+    expect(nextActions({ ...m, progress: { outcome: "In progress", failure: null } }).map((a) => a.id)).toContain("deploy");
   });
 });

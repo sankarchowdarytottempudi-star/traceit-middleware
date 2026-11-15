@@ -151,7 +151,8 @@ export function validateNewMigration(f: NewMigrationForm, rules: NewMigrationRul
 
 // ---- what can be done next on a migration
 export interface PhaseLite { key: string; status?: string; mode?: string; steps?: { key: string; status?: string }[] }
-export interface MigrationState { busy?: boolean; apiName?: unknown; sourceType?: unknown; sourceFile?: unknown; phases?: PhaseLite[]; progress?: { outcome?: unknown } | null }
+export interface FailureLite { phase?: unknown; phaseKey?: unknown; step?: unknown; status?: unknown; detail?: unknown; output?: unknown; help?: { kind?: unknown; what?: unknown; why?: unknown; todo?: unknown; retry?: unknown } | null }
+export interface MigrationState { busy?: boolean; apiName?: unknown; sourceType?: unknown; sourceFile?: unknown; phases?: PhaseLite[]; progress?: { outcome?: unknown; failure?: FailureLite | null } | null }
 export interface NextAction { id: "autorun" | "document" | "spec" | "scaffold" | "test" | "deploy"; label: string; hint: string; primary?: boolean; writes?: boolean }
 const phaseStatus = (m: MigrationState, key: string) => txt(m.phases?.find((p) => p.key === key)?.status) || "pending";
 export function isSpec(m: MigrationState): boolean {
@@ -168,14 +169,40 @@ export function nextActions(m: MigrationState): NextAction[] {
     out.push({ id: "document", label: doc === "done" ? "Read the source again" : "Read the source and write the documents", hint: "Reads the uploaded source and produces the technical, mapping and functional documents and the estimate." });
     if (doc === "done" && named) out.push({ id: "scaffold", label: sc === "done" ? "Generate the service again" : "Generate the service", hint: "Creates the service code from the documents and the mapping.", writes: true });
   }
+  // A service with operations that are not migrated, or a backend without an address, is not deployed.
+  const notReady = txt(m.progress?.failure?.help?.kind) === "not-ready";
   if (sc === "done" && named) {
-    out.push({ id: "test", label: test === "done" ? "Run the tests again" : "Build and run the tests", hint: "Builds the generated service and runs its unit and end-to-end tests.", writes: true });
-    out.push({ id: "deploy", label: dep === "done" ? "Deploy again" : "Deploy", hint: "Builds the image and installs the service on the cluster.", writes: true });
+    out.push({ id: "test", label: test === "done" ? "Run the tests again" : "Build and run the tests", hint: "Builds the generated service, checks that every operation is migrated and runs its tests.", writes: true });
+    if (!notReady) out.push({ id: "deploy", label: dep === "done" ? "Deploy again" : "Deploy", hint: "Builds the image and installs the service on the cluster.", writes: true });
   }
   let primary: NextAction["id"] | undefined;
   if (isSpec(m)) primary = sc !== "done" ? "spec" : test !== "done" ? "test" : dep !== "done" ? "deploy" : undefined;
   else primary = doc !== "done" ? "document" : sc !== "done" ? "scaffold" : test !== "done" ? "test" : dep !== "done" ? "deploy" : undefined;
   return out.map((a) => ({ ...a, primary: a.id === primary }));
+}
+
+// ---- when a step failed or is blocked: what happened, what to do, and the step to run again
+export interface FailureView { blocked: boolean; title: string; what: string; why: string; todo: string[]; output: string; retry?: { id: NextAction["id"]; label: string } }
+export function failureView(m: MigrationState): FailureView | null {
+  const f = m.progress?.failure;
+  if (!f) return null;
+  const h = f.help ?? {};
+  const blocked = txt(h.kind) === "not-ready" || txt(f.status) === "action_required";
+  const key = txt(f.phaseKey);
+  const id: NextAction["id"] | undefined = txt(h.kind) === "not-ready" ? "test"
+    : key === "document" || key === "upload" ? (isSpec(m) ? "spec" : "document")
+    : key === "scaffold" ? (isSpec(m) ? "spec" : "scaffold") : key === "test" ? "test" : key === "deploy" ? "deploy" : undefined;
+  const offered = id ? nextActions({ ...m, progress: null }).some((a) => a.id === id) : false;
+  const todo = Array.isArray(h.todo) ? h.todo.map((t) => txt(t)).filter(Boolean) : [];
+  return {
+    blocked,
+    title: blocked ? "Not finished yet" : `${txt(f.phase) || "A step"} failed${txt(f.step) ? `: ${txt(f.step)}` : ""}`,
+    what: txt(h.what) || (blocked ? "This step is waiting for you." : "This step did not finish."),
+    why: txt(h.why) || txt(f.detail),
+    todo: todo.length ? todo : ["Run this step again. If it fails the same way, send the tool output through the Feedback tab."],
+    output: txt(f.output) || (blocked ? "" : txt(f.detail)),
+    retry: id && offered ? { id, label: txt(h.kind) === "not-ready" ? "Check again (build and run the tests)" : "Run this step again" } : undefined,
+  };
 }
 
 // ---- the estate landscape (layer columns, left to right)

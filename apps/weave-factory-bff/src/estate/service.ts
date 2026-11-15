@@ -262,6 +262,14 @@ export class Estate {
     return out;
   }
 
+  /** Which running part belongs to which API: where the executions view reads its lines from. */
+  async sources(userToken?: string | null): Promise<{ apis: { name: string; layer: Layer; published: boolean; context?: string }[]; pods: { pod: string; api: string; component?: string }[]; error?: string }> {
+    const s = await this.snapshot(userToken);
+    const pods: { pod: string; api: string; component?: string }[] = [];
+    for (const a of s.apis) for (const p of await this.podsOf(a.name, s)) if (p.phase === "Running") pods.push({ pod: p.name, api: a.name, component: p.component });
+    return { apis: s.apis.map((a) => ({ name: a.name, layer: a.layer, published: !!a.gateway?.published, context: a.gateway?.context })), pods, error: s.cluster.error };
+  }
+
   async flow(name: string, operation: string | undefined, userToken?: string | null): Promise<Flow | null> {
     const s = await this.snapshot(userToken);
     const api = s.apis.find((a) => a.name === name);

@@ -10,6 +10,7 @@ import { runtimeRequest } from "../studio.js";
 import { K8s } from "./k8s.js";
 import { GatewayCatalog } from "./gateway.js";
 import { Estate } from "./service.js";
+import { MigratedExecutions } from "./executions.js";
 import { buildFlow } from "./flow.js";
 import type { ConnectorModel } from "./model.js";
 
@@ -61,6 +62,25 @@ export function registerEstate(app: FastifyInstance, cfg: Config, creds?: Client
     const token = await need(req);
     const q = req.query as { refresh?: string };
     return estate.overview(token, q.refresh === "1" || q.refresh === "true");
+  });
+
+  // Calls that went through the migrated services (their own logs plus the gateway's records).
+  const executions = new MigratedExecutions({ k8s, metricsLog: cfg.APIM_METRICS_LOG || undefined, sources: (t) => estate.sources(t) });
+  const one = (v: string | undefined, allowed: string[]) => (v && allowed.includes(v) ? v : undefined);
+
+  app.get("/api/factory/estate/executions", async (req) => {
+    const token = await need(req);
+    const q = req.query as { api?: string; status?: string; kind?: string; via?: string; q?: string; limit?: string };
+    return executions.list(token, {
+      api: (q.api || "").slice(0, 120) || undefined, status: one(q.status, ["success", "error", "running", "unknown"]), kind: one(q.kind, ["call", "job"]),
+      via: one(q.via, ["gateway", "direct", "internal", "unknown"]), q: (q.q || "").slice(0, 200) || undefined, limit: parseInt(q.limit || "200", 10) || 200,
+    });
+  });
+
+  app.get("/api/factory/estate/executions/:id", async (req, reply) => {
+    const token = await need(req);
+    const x = await executions.get(token, String((req.params as { id: string }).id || ""));
+    return x || problem(reply, 404, "This execution is no longer recorded", "Only what the services' logs and the gateway's records still hold can be shown.");
   });
 
   app.get("/api/factory/estate/:api", async (req, reply) => {

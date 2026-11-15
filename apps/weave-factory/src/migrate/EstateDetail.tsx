@@ -7,10 +7,11 @@ import { api, type ApiError, type EstateApiDetail, type EstateConnector, type Es
 import { num, txt } from "../lib/text.ts";
 import { LAYER_LABEL, ago, clock, compact, dateTime, healthLabel, layerKey, ms, niceMax, rebucket, splitMatch, ticks } from "../lib/migrate.ts";
 import { Btn, Code, Dialog, Empty, Failed, Field, Head, HealthPill, KV, LayerPill, LinkBtn, Loading, Method, Notice, Panel, Pill, SearchBox, Stat, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
+import { MigratedExecutionsList } from "../studio/editor/MigratedExecutions.tsx";
 import { Landscape } from "./EstateList.tsx";
 
-type Tab = "overview" | "operations" | "connectors" | "mappings" | "config" | "logs" | "traffic";
-const TABS: Tab[] = ["overview", "operations", "connectors", "mappings", "config", "logs", "traffic"];
+type Tab = "overview" | "operations" | "connectors" | "mappings" | "config" | "executions" | "logs" | "traffic";
+const TABS: Tab[] = ["overview", "operations", "connectors", "mappings", "config", "executions", "logs", "traffic"];
 
 function CopyBtn({ value, label }: { value: string; label: string }) {
   const [done, setDone] = useState(false);
@@ -482,6 +483,7 @@ export function EstateDetail() {
     { id: "connectors", label: "Connectors", count: d ? num(d.connectors?.length) : undefined },
     { id: "mappings", label: "Mappings", count: d ? num(d.mappings?.length) : undefined },
     { id: "config", label: "Configuration", count: d ? num(d.config?.length) : undefined },
+    { id: "executions", label: "Executions" },
     { id: "logs", label: "Logs" },
     { id: "traffic", label: "Traffic" },
   ];
@@ -505,6 +507,7 @@ export function EstateDetail() {
             {tab === "connectors" && <Connectors d={d} />}
             {tab === "mappings" && <Mappings d={d} />}
             {tab === "config" && <Config d={d} />}
+            {tab === "executions" && <MigratedExecutionsList api={name} openId={sp.get("execution")} onOpen={(id) => { const n = new URLSearchParams(sp); if (id) n.set("execution", id); else n.delete("execution"); setSp(n, { replace: true }); }} />}
             {tab === "logs" && <Logs name={name} />}
             {tab === "traffic" && <Traffic name={name} />}
           </div>

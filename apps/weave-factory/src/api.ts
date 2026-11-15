@@ -104,6 +104,30 @@ export interface EstateLogLine { at?: string; level?: string; text: string; pod?
 export interface EstateLogs { lines: EstateLogLine[]; pods?: EstatePod[]; errors?: string[]; }
 export interface EstateMetrics { total: number; errors: number; p50Ms: number; p95Ms: number; series: { at: string; total: number; errors: number }[]; available?: boolean; reason?: string; }
 
+// ---- calls that went through the migrated services
+export type MigratedStatus = "success" | "error" | "running" | "unknown";
+export type MigratedVia = "gateway" | "direct" | "internal" | "unknown";
+export interface MigratedExecutionSummary {
+  id: string; kind: "call" | "job"; api: string; component?: string; layer?: string; chain: string[];
+  operation?: string; route?: string; startedAt: string; finishedAt?: string; durationMs?: number; serviceMs?: number;
+  status: MigratedStatus; httpStatus?: number; outcome?: string; errors: number; warnings: number;
+  via?: MigratedVia; application?: string; trigger?: string; stepCount: number; source?: "logs" | "gateway" | "both";
+}
+export interface MigratedExecutionStep { at: string; offsetMs: number; api: string; component?: string; level?: string; message: string; fields: Record<string, string | number | boolean>; }
+export interface MigratedGatewayRecord {
+  at: string; method?: string; context?: string; version?: string; resource?: string; status: number; targetStatus?: number;
+  responseLatency?: number; backendLatency?: number; requestMediationLatency?: number; responseMediationLatency?: number;
+  application?: string; keyType?: string; userAgent?: string; platform?: string; userIp?: string; userName?: string; cacheHit?: boolean;
+  responseSize?: number; errorType?: string; errorMessage?: string; matchedBy: "time" | "record";
+}
+export interface MigratedExecution extends MigratedExecutionSummary { correlationId?: string; steps: MigratedExecutionStep[]; hiddenSteps: number; gateway?: MigratedGatewayRecord; }
+export interface MigratedExecutionList {
+  executions: MigratedExecutionSummary[]; total: number; recorded: number; failed: number;
+  apis: { api: string; total: number; errors: number }[]; window: { from?: string; to?: string };
+  sources: { logs: { available: boolean; parts: number; lines: number }; gateway: { configured: boolean; available: boolean; records: number; from?: string; to?: string } };
+  notes: string[]; generatedAt: string;
+}
+
 export interface UploadInput { name: string; workspace: string; file: File; sourceType?: string; target?: string; }
 /** Upload with progress. The file is the request body; everything else travels in the address. */
 export function uploadMigration(input: UploadInput, onProgress?: (fraction: number) => void): { promise: Promise<Migration>; abort: () => void } {
@@ -163,5 +187,7 @@ export const api = {
   estateApi: (name: string) => j<EstateApiDetail>(`${F}/estate/${enc(name)}`),
   estateLogs: (name: string, p: { tail?: number; q?: string; level?: string; pod?: string } = {}) => j<EstateLogs>(`${F}/estate/${enc(name)}/logs${qs(p)}`),
   estateMetrics: (name: string, hours: number) => j<EstateMetrics>(`${F}/estate/${enc(name)}/metrics${qs({ hours })}`),
+  estateExecutions: (p: { api?: string; status?: string; kind?: string; via?: string; q?: string; limit?: number } = {}) => j<MigratedExecutionList>(`${F}/estate/executions${qs(p)}`),
+  estateExecution: (id: string) => j<MigratedExecution>(`${F}/estate/executions/${enc(id)}`),
   estateClone: (name: string, flowName: string) => j<{ flowId: string }>(`${F}/estate/${enc(name)}/clone`, post({ name: flowName })),
 };

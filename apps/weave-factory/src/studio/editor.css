@@ -410,3 +410,27 @@ input.ws-bar-name:focus { outline: none; border-color: var(--accent); background
   .ws-paramline.mf-rowline { flex-wrap: wrap; }
   .ws-canvas .react-flow__panel.ws-zoom, .ws-canvas .react-flow__panel.ws-addpanel { margin: 8px; }
 }
+
+/* A call followed from service to service (migrated APIs) */
+.ws-trace { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; font-size: 12.5px; }
+.ws-tracerow { border-bottom: 1px solid var(--border); }
+.ws-tracerow:last-child { border-bottom: 0; }
+.ws-tracerow-warn { background: color-mix(in srgb, var(--warnSoft) 45%, transparent); }
+.ws-tracerow-error { background: color-mix(in srgb, var(--badSoft) 55%, transparent); }
+.ws-trace-toggle { display: grid; grid-template-columns: 62px minmax(0, 150px) minmax(0, 1fr) 14px; gap: 10px; align-items: baseline; width: 100%; padding: 7px 12px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.mf .ws-trace-toggle { background: none; color: var(--text); }
+.ws-trace-toggle:hover:not(:disabled) { background: var(--surface2); }
+.ws-trace-toggle:disabled { cursor: default; }
+.ws-trace-toggle > svg { align-self: center; color: var(--faint); }
+.ws-trace-at { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--faint); text-align: right; white-space: nowrap; }
+.ws-trace-api { font-weight: 650; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-trace-api-same { color: var(--faint); font-weight: 500; }
+.ws-trace-msg { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.ws-trace-msg small { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--faint); }
+.ws-trace-body { padding: 10px 12px 12px 84px; border-top: 1px dashed var(--border); background: var(--surface2); font-size: 12.5px; }
+@media (max-width: 640px) {
+  .ws-trace-toggle { grid-template-columns: auto minmax(0, 1fr) 14px; gap: 2px 8px; }
+  .ws-trace-at { text-align: left; }
+  .ws-trace-msg { grid-column: 1 / -1; }
+  .ws-trace-body { padding-left: 12px; }
+}

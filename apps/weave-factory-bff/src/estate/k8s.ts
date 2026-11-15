@@ -84,8 +84,10 @@ export class K8s {
     if (!sel.length) return [];
     return (await this.pods()).filter((p) => sel.every(([k, v]) => p.labels[k] === v));
   }
-  async logs(pod: string, tail: number): Promise<LogLine[]> {
-    const r = await this.get(`/api/v1/namespaces/${this.o.namespace}/pods/${encodeURIComponent(pod)}/log?tailLines=${tail}&timestamps=true`, 15000);
+  /** The newest `tail` lines of a pod; with `since` (a time stamp) only the lines written from then on. */
+  async logs(pod: string, tail: number, since?: string): Promise<LogLine[]> {
+    const from = since ? `&sinceTime=${encodeURIComponent(since.replace(/\.\d+Z$/, "Z"))}` : "";
+    const r = await this.get(`/api/v1/namespaces/${this.o.namespace}/pods/${encodeURIComponent(pod)}/log?tailLines=${tail}&timestamps=true${from}`, 20000);
     if (r.status >= 400) throw new Error(`Logs of ${pod} are not available (${r.status})`);
     return parseLogs(r.text, pod);
   }

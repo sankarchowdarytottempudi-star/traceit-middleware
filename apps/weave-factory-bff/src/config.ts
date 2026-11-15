@@ -25,6 +25,7 @@ const schema = z.object({
   K8S_CA_FILE: z.string().optional(),
   K8S_NAMESPACE: z.string().min(1).default("wso2"),
   PROMETHEUS_URL: z.string().optional(),
+  APIM_METRICS_LOG: z.string().optional(),    // the gateway's request records (its analytics log file), readable on this server
   GATEWAY_PUBLIC_URL: z.string().optional(),  // e.g. https://host:8243 ; shown next to a published API
   ESTATE_NODE_HOST: z.string().min(1).default("127.0.0.1"), // how the flow runtime reaches a service's node port
   MT_UPLOAD_LIMIT_MB: z.coerce.number().int().positive().default(500),

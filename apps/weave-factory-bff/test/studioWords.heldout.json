@@ -1,0 +1,412 @@
+[
+[
+"remove after the @ in this filed",
+"email",
+"john.smith"
+],
+[
+"remove before the @ in this field",
+"email",
+"example.com"
+],
+[
+"remove after the @",
+"email",
+"john.smith"
+],
+[
+"after the @ remove",
+"email",
+"john.smith"
+],
+[
+"remove after @ symbol in this field",
+"customer.email",
+"john.smith"
+],
+[
+"customer.email but drop the part following the @",
+"out",
+"john.smith"
+],
+[
+"take customer.email and get rid of anything past the at sign",
+"out",
+"john.smith"
+],
+[
+"customer.email, nothing after the @ please",
+"out",
+"john.smith"
+],
+[
+"customer.email with the @ and the rest removed",
+"out",
+"john.smith"
+],
+[
+"I don't want the part before the @ of customer.email",
+"out",
+"example.com"
+],
+[
+"customer.email excluding everything up to the @",
+"out",
+"example.com"
+],
+[
+"erase what's behind the @ in customer.email",
+"out",
+"john.smith"
+],
+[
+"strip off everything from the @ in customer.email",
+"out",
+"john.smith"
+],
+[
+"customer.email minus the domain",
+"out",
+"john.smith"
+],
+[
+"chop the last 3 letters off code",
+"out",
+"ab-12"
+],
+[
+"code except the first two characters",
+"out",
+"-12-cd"
+],
+[
+"skip the first word of customer.name",
+"out",
+"Michael Smith"
+],
+[
+"customer.name without its last word",
+"out",
+"John Michael"
+],
+[
+"remove the dashes from code",
+"out",
+"ab12cd"
+],
+[
+"take the dashes out of code",
+"out",
+"ab12cd"
+],
+[
+"code with no dashes",
+"out",
+"ab12cd"
+],
+[
+"path up to the last slash",
+"out",
+"a/b"
+],
+[
+"the part of path after the last slash",
+"out",
+"c.txt"
+],
+[
+"remove the extension from path",
+"out",
+"a/b/c"
+],
+[
+"delete all the zeros in front of ref",
+"out",
+"123"
+],
+[
+"ref without leading zeros",
+"out",
+"123"
+],
+[
+"customer.phone digits only",
+"out",
+"15550109999"
+],
+[
+"customer.phone with no spaces",
+"out",
+"+1(555)010-9999"
+],
+[
+"everything in customer.email before @ should be dropped",
+"out",
+"example.com"
+],
+[
+"the text after the first - in code is not needed",
+"out",
+"ab"
+],
+[
+"only keep customer.email up to the @",
+"out",
+"john.smith"
+],
+[
+"keep customer.email after the @, drop the rest",
+"out",
+"example.com"
+],
+[
+"don't keep what is after the @ in customer.email",
+"out",
+"john.smith"
+],
+[
+"customer.email after removing what follows the @",
+"out",
+"john.smith"
+],
+[
+"remove everything but the first word of customer.name",
+"out",
+"John"
+],
+[
+"remove everything in customer.email",
+"out",
+null
+],
+[
+"customer.name except the middle word",
+"out",
+null
+],
+[
+"if amount isn't more than 1000 then \"small\" else \"big\"",
+"out",
+"big"
+],
+[
+"when qty is not below 3 use \"ok\" otherwise \"low\"",
+"out",
+"ok"
+],
+[
+"\"X\" if status is not ACTIVE else \"Y\"",
+"out",
+"Y"
+],
+[
+"if status isn't ACTIVE or PENDING then \"closed\" otherwise \"open\"",
+"out",
+"open"
+],
+[
+"if customer.email doesn't end with \"example.com\" then \"external\" otherwise \"internal\"",
+"out",
+"internal"
+],
+[
+"if customer.nickname is not empty then customer.nickname otherwise customer.name",
+"out",
+"John Michael Smith"
+],
+[
+"if qty is outside 1 and 5 then \"bad\" otherwise \"good\"",
+"out",
+"good"
+],
+[
+"if status is anything but ACTIVE then \"no\" otherwise \"yes\"",
+"out",
+"yes"
+],
+[
+"if amount is at least 1000 and status is not ACTIVE then \"A\" otherwise \"B\"",
+"out",
+"B"
+],
+[
+"if qty is fewer than 5 then \"few\" otherwise \"many\"",
+"out",
+"few"
+],
+[
+"if status is different from \"ACTIVE\" then \"x\" otherwise \"y\"",
+"out",
+"y"
+],
+[
+"gross less discount",
+"out",
+150
+],
+[
+"take discount away from gross",
+"out",
+150
+],
+[
+"gross reduced by discount",
+"out",
+150
+],
+[
+"price times qty",
+"out",
+59.97
+],
+[
+"amount rounded up to 2 decimals",
+"out",
+1234.57
+],
+[
+"amount rounded down",
+"out",
+1234
+],
+[
+"amount without decimals",
+"out",
+1235
+],
+[
+"reduce price by 15 percent",
+"out",
+16.9915
+],
+[
+"add 5% to price",
+"out",
+20.9895
+],
+[
+"price plus 10 percent",
+"out",
+21.988999999999997
+],
+[
+"half of gross",
+"out",
+100
+],
+[
+"gross divided by 4",
+"out",
+50
+],
+[
+"100 minus discount",
+"out",
+50
+],
+[
+"divide 100 by qty",
+"out",
+33.333333333333336
+],
+[
+"discount as a percentage of gross",
+"out",
+25
+],
+[
+"the difference between gross and discount",
+"out",
+150
+],
+[
+"amount negated",
+"out",
+null
+],
+[
+"gross minus 10%",
+"out",
+180
+],
+[
+"customer.name in lower case, not upper",
+"out",
+null
+],
+[
+"customer.name not in upper case",
+"out",
+null
+],
+[
+"swap the - for a / in code",
+"out",
+"ab/12/cd"
+],
+[
+"use a space instead of - in code",
+"out",
+"ab 12 cd"
+],
+[
+"code in capitals without dashes",
+"out",
+"AB12CD"
+],
+[
+"put \"ID-\" in front of ref",
+"out",
+"ID-000123"
+],
+[
+"add \"-X\" at the end of code",
+"out",
+"ab-12-cd-X"
+],
+[
+"reverse customer.name",
+"out",
+null
+],
+[
+"last name first then first name from customer.name",
+"out",
+null
+],
+[
+"first letter of every word of customer.name",
+"out",
+"JMS"
+],
+[
+"the 2nd word of customer.name",
+"out",
+"Michael"
+],
+[
+"replace @ by \" at \" in customer.email",
+"out",
+"john.smith at example.com"
+],
+[
+"customer.email without the @",
+"out",
+"john.smithexample.com"
+],
+[
+"customer.name with the first letter removed",
+"out",
+"ohn Michael Smith"
+],
+[
+"code without the last character",
+"out",
+"ab-12-c"
+],
+[
+"ref with the first 3 digits cut off",
+"out",
+"123"
+]
+]

@@ -10,7 +10,7 @@ import { Estate, layerOf, targetApi, backendLabel, correctBasePaths, unfinishedO
 import { parseLogs, mergeLogs, maskLog, type K8s } from "../src/estate/k8s";
 import { stepFor, apiMetrics, increments } from "../src/estate/prom";
 import { matchGateway, type GatewayEntry } from "../src/estate/gateway";
-import { connectionConfig } from "../src/estate/routes";
+import { connectionConfig, insideUrl } from "../src/estate/routes";
 
 const F = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "estate");
 const model = (name: string, config = true) => buildApi(discoverSources(join(F, "services")).find((e) => e.name === name)!, config ? [join(F, "config")] : []);
@@ -199,6 +199,15 @@ describe("connections of a clone", () => {
     expect(viaNode.config.baseUrl).toBe("http://127.0.0.1:30123");
     expect(viaNode.note).toContain("node port");
     expect(connectionConfig(conn({ target: "" })).note).toContain("not known");
+    // a service without a node port is reached at its address inside the cluster
+    const svc = (name: string, clusterIP: string | undefined, port = 80) => ({ name, type: "ClusterIP", clusterIP, selector: {}, ports: [{ name: "metrics", port: 9797 }, { name: "http", port }] });
+    expect(insideUrl([svc("stock-sys-api", "10.43.0.9")], "stock-sys-api")).toBe("http://10.43.0.9");
+    expect(insideUrl([svc("stock-sys-api", "10.43.0.9", 8080)], "stock-sys-api")).toBe("http://10.43.0.9:8080");
+    expect(insideUrl([svc("stock-sys-api", "None")], "stock-sys-api")).toBeUndefined();
+    expect(insideUrl([svc("stock-sys-api", "10.43.0.9")], "other-api")).toBeUndefined();
+    const inside = connectionConfig({ ...conn({ target: "http://stock-sys-api.shop.svc:80" }), api: "stock-sys-api" }, "http://10.43.0.9", "its address inside the cluster");
+    expect(inside.config.baseUrl).toBe("http://10.43.0.9");
+    expect(inside.note).toContain("its address inside the cluster");
   });
 });
 

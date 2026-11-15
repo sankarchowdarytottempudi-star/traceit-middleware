@@ -9,7 +9,7 @@ export interface K8sDeployment {
   name: string; labels: Record<string, string>; selector: Record<string, string>;
   replicas: number; ready: number; updated: number; images: string[]; createdAt?: string; lastDeployedAt?: string;
 }
-export interface K8sService { name: string; type: string; selector: Record<string, string>; ports: { name?: string; port: number; nodePort?: number; targetPort?: string | number }[]; }
+export interface K8sService { name: string; type: string; clusterIP?: string; selector: Record<string, string>; ports: { name?: string; port: number; nodePort?: number; targetPort?: string | number }[]; }
 export interface K8sPod { name: string; labels: Record<string, string>; phase: string; ready: boolean; restarts: number; startedAt?: string; containers: string[]; }
 export interface LogLine { at?: string; level?: string; text: string; pod?: string; }
 
@@ -65,7 +65,7 @@ export class K8s {
   }
   services(): Promise<K8sService[]> {
     return this.list("services", `/api/v1/namespaces/${this.o.namespace}/services`, (s) => ({
-      name: s.metadata.name, type: s.spec?.type || "ClusterIP", selector: s.spec?.selector || {},
+      name: s.metadata.name, type: s.spec?.type || "ClusterIP", clusterIP: s.spec?.clusterIP, selector: s.spec?.selector || {},
       ports: ((s.spec?.ports || []) as any[]).map((p) => ({ name: p.name, port: p.port, nodePort: p.nodePort, targetPort: p.targetPort })),
     }));
   }

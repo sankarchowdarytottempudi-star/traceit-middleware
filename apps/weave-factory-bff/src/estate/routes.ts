@@ -8,7 +8,7 @@ import type { Config } from "../config.js";
 import type { ClientCreds } from "../auth.js";
 import { mtRequest } from "../mt.js";
 import { runtimeRequest } from "../studio.js";
-import { K8s } from "./k8s.js";
+import { K8s, type K8sService } from "./k8s.js";
 import { GatewayCatalog } from "./gateway.js";
 import { Estate } from "./service.js";
 import { MigratedExecutions } from "./executions.js";
@@ -21,7 +21,7 @@ const problem = (reply: any, status: number, title: string, detail?: string) =>
 const slugOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 
 /** Connection settings for a cloned connector. Never contains a secret. */
-export function connectionConfig(c: ConnectorModel & { api?: string }, nodeUrl?: string): { type: string; config: Record<string, unknown>; note?: string } {
+export function connectionConfig(c: ConnectorModel & { api?: string }, nodeUrl?: string, via = "its node port"): { type: string; config: Record<string, unknown>; note?: string } {
   const m = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/\s]*@)?([^/:\s?#]+)(?::(\d+))?/i.exec(c.target);
   if (c.kind === "redis") return { type: "redis", config: { host: m?.[1] || "", port: Number(m?.[2] || 6379), db: 0, tls: /^rediss:/i.test(c.target), keyPrefix: "" } };
   if (c.kind === "postgres") return { type: "postgres", config: { host: m?.[1] || "", port: Number(m?.[2] || 5432), database: "", user: "", ssl: false } };
@@ -30,8 +30,16 @@ export function connectionConfig(c: ConnectorModel & { api?: string }, nodeUrl?:
   const baseUrl = nodeUrl || origin;
   return {
     type: "http", config: { baseUrl, authType: "none", defaultHeaders: [], timeoutMs: 30000, tlsVerify: true, healthPath: "" },
-    note: nodeUrl && origin && nodeUrl !== origin ? `Reaches ${c.api} through its node port (${nodeUrl}); the deployed service uses ${origin}.` : !baseUrl ? "The address of this connector is not known from the configuration; enter it on the connection." : undefined,
+    note: nodeUrl && origin && nodeUrl !== origin ? `Reaches ${c.api} through ${via} (${nodeUrl}); the deployed service uses ${origin}.` : !baseUrl ? "The address of this connector is not known from the configuration; enter it on the connection." : undefined,
   };
+}
+
+/** `http://<cluster address>[:port]` of a Service that has no node port; undefined when it has no address. */
+export function insideUrl(services: K8sService[], name: string): string | undefined {
+  const s = services.find((x) => x.name === name);
+  if (!s?.clusterIP || s.clusterIP === "None") return undefined;
+  const port = (s.ports.find((p) => p.name === "http") || s.ports[0])?.port;
+  return port ? `http://${s.clusterIP}${port === 80 ? "" : ":" + port}` : undefined;
 }
 
 export function registerEstate(app: FastifyInstance, cfg: Config, creds?: ClientCreds): Estate {
@@ -133,13 +141,17 @@ export function registerEstate(app: FastifyInstance, cfg: Config, creds?: Client
       const listed = await rt("GET", "/v1/connections");
       const existing: Connection[] = listed.status < 300 ? ((JSON.parse(listed.text) as { connections?: Connection[] }).connections || []) : [];
       const used = new Set(input.model.operations.flatMap((o) => o.calls.map((c) => c.connector)));
+      let listedServices: Promise<K8sService[]> | undefined;
+      const clusterServices = () => (listedServices ??= k8s.services().catch(() => []));
       const connections: Record<string, string> = {};
       const report: { connector: string; connection: string; id?: string; created: boolean; needsSecret: boolean; note?: string }[] = [];
       for (const c of input.connectors) {
         if (!used.has(c.name)) continue;
         const target = c.api ? snapshot.apis.find((a) => a.name === c.api) : undefined;
-        const nodeUrl = target?.nodePort ? `http://${cfg.ESTATE_NODE_HOST}:${target.nodePort}` : undefined;
-        const { type, config, note } = connectionConfig(c, nodeUrl);
+        // a service without a node port is reached at its address inside the cluster
+        const inside = target && !target.nodePort ? insideUrl(await clusterServices(), target.name) : undefined;
+        const nodeUrl = target?.nodePort ? `http://${cfg.ESTATE_NODE_HOST}:${target.nodePort}` : inside;
+        const { type, config, note } = connectionConfig(c, nodeUrl, inside ? "its address inside the cluster" : undefined);
         const cname = `${api} ${c.name}`.slice(0, 80);
         const needsSecret = c.secrets.length > 0;
         const found = existing.find((x) => x.name === cname && x.type === type);

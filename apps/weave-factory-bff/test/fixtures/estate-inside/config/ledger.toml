@@ -1,0 +1,18 @@
+[acme.ledger_sys_api]
+basePath = "/ledger-sys-api/v1"
+
+[acme.ledger_sys_api.database]
+host = "ledger-db.shop.svc"
+name = "ledger"
+
+[acme.ledger_sys_api.books]
+username = "fixture-user"
+password = "fixture-not-a-real-value"
+
+[acme.ledger_sys_api.ratesApi]
+url = "https://user:fixture@rates.example.test/v2?token=fixture"
+
+[acme.ledger_sys_api.stateRedis]
+enabled = true
+host = "state.shop.svc"
+password = "fixture-not-a-real-value"

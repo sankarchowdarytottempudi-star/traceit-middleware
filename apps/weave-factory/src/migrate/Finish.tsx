@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Ban, Link2, Play, StickyNote, Undo2 } from "lucide-react";
 import { api, type ApiError, type Decision, type Migration, type OpenItem, type OpenItems, type ResolveResult } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
-import { ago, decisionProblem, forwardStart, itemKindWord, sourceSummary, type NextAction, noteLimit, nothingOpen } from "../lib/migrate.ts";
+import { ago, decisionProblem, forwardStart, itemKindWord, sourceSummary, type NextAction, noteLimit, nothingOpen, sourceEnvs } from "../lib/migrate.ts";
 import { Btn, Failed, Field, Loading, Method, Notice, Panel, Pill, errText } from "./ui.tsx";
 
 type Mode = "forward" | "not_needed" | "address" | "note";
@@ -47,15 +47,17 @@ function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
   const [path, setPath] = useState(first.path);
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
+  const [from, setFrom] = useState("");
+  const envs = sourceEnvs(item);
   const can = (a: Mode) => (item.can ?? []).includes(a);
   const open = (m: Mode) => { setMode(mode === m ? null : m); setText(""); };
   const decision: Decision | null = mode === "forward" ? { id: item.id, action: "forward", backend, method, path: path.trim() }
     : mode === "not_needed" ? { id: item.id, action: "not_needed", reason: text.trim() }
-    : mode === "address" ? { id: item.id, action: "address", url: url.trim() }
+    : mode === "address" ? (from ? { id: item.id, action: "address", from } : { id: item.id, action: "address", url: url.trim() })
     : mode === "note" ? { id: item.id, action: "note", note: text.trim() } : null;
   const problem = decision ? decisionProblem(decision, item) : "";
-  const touched = mode === "forward" ? true : mode === "address" ? url.trim() !== "" : text.trim() !== "";
-  const save = () => { if (decision && !problem) onDecide(decision, () => { setMode(null); setText(""); setUrl(""); }); };
+  const touched = mode === "forward" ? true : mode === "address" ? from !== "" || url.trim() !== "" : text.trim() !== "";
+  const save = () => { if (decision && !problem) onDecide(decision, () => { setMode(null); setText(""); setUrl(""); setFrom(""); }); };
   const reshapes = num(item.source?.transforms);
   const notes = item.notes ?? [];
 
@@ -92,7 +94,19 @@ function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
         </div>
       )}
       {mode === "address" && (
-        <div data-testid="finish-form"><Field label="Address of this backend" error={touched ? problem || undefined : undefined} hint="Kept in this service's settings on this server. It is not shown again after saving."><input className="mf-mg-input mf-mono" value={url} aria-invalid={touched && !!problem} onChange={(e) => setUrl(e.target.value)} placeholder="https://" spellCheck={false} autoComplete="off" /></Field></div>
+        <div className="mf-mg-stack" style={{ gap: 10 }} data-testid="finish-form">
+          {envs.length > 0 && (
+            <Field label="Take it from the old application's settings" hint="The uploaded settings files hold the address the old application used for this backend. If that backend is itself migrated to this server, enter the address of the migrated service instead.">
+              <select className="mf-mg-input" data-testid="finish-from" value={from} onChange={(e) => setFrom(e.target.value)}>
+                <option value="">No, I enter the address</option>
+                {envs.map((e) => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </Field>
+          )}
+          {from === ""
+            ? <Field label="Address of this backend" error={touched ? problem || undefined : undefined} hint="Kept in this service's settings on this server. It is not shown again after saving."><input className="mf-mg-input mf-mono" value={url} aria-invalid={touched && !!problem} onChange={(e) => setUrl(e.target.value)} placeholder="https://" spellCheck={false} autoComplete="off" /></Field>
+            : <span className="mf-mg-hint" data-testid="finish-from-hint">The address is read from <span className="mf-mono">{from}</span> on this server and put into this service's settings. It is not shown here.</span>}
+        </div>
       )}
       {mode === "not_needed" && (
         <div data-testid="finish-form"><Field label="Why is it not needed?" error={touched ? problem || undefined : undefined} hint={item.kind === "entry" ? "The reason is written next to the service's code. This part is then left out of the new service." : "The reason is written in the service's code and the operation is removed. Callers that still use it get \"not found\"."}><textarea className="mf-mg-input" rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder="For example: this export is no longer used" /></Field></div>

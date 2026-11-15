@@ -425,6 +425,87 @@ function resolveTarget(c: BalClient, cfg: (p: string) => unknown, r: Resolved): 
 }
 
 interface Built { pkg: BalPackage; resolved: Resolved; mappings: MappingIndex; clients: Map<string, BalClient>; ctx: WalkContext; prefix: string; }
+// Connections the code opens inside a class or a function have no module-level client to read.
+// Their settings are still declared, so such a connection is described from its settings.
+const ADDRESS_KEYS = ["url", "baseUrl", "endpoint", "uri", "brokerUrl"];
+const SQL_MODULE = /(^|\/)(postgresql|mysql|mssql|oracledb|sql|java\.jdbc)$/;
+const bare = (code: string) => code.replace(/\/\/.*$/gm, "").replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+function derivedConnectors(b: Built, component: string | undefined, taken: Set<string>, ops: OperationModel[]): ConnectorModel[] {
+  const out: ConnectorModel[] = [];
+  const declared = b.pkg.clients.map((c) => `${c.args.join(" ")} ${c.init}`).join("\n");
+  const mods = [...b.pkg.imports.values()];
+  const sql = mods.some((m) => SQL_MODULE.test(m));
+  const uses = (key: string, own: BalFile) => {
+    const re = new RegExp(`\\b${key}\\b`, "g");
+    return b.pkg.files.filter((f) => (f.masked.match(re) || []).length > (f === own ? 1 : 0));
+  };
+  for (const c of b.pkg.configurables) {
+    if (taken.has(c.key) || new RegExp(`\\b${c.key}\\b`).test(declared)) continue;
+    const value = b.resolved.values.get(c.key);
+    const hint = `${c.type} ${c.key}`;
+    let kind = ""; let target = "(not configured)"; let configKey = c.key;
+    const o: Record<string, unknown> = isObj(value) ? value : {};
+    const ak = ADDRESS_KEYS.find((k) => typeof o[k] === "string");
+    if (ak) {
+      const u = o[ak] as string;
+      kind = /redis/i.test(hint) || /^rediss?:/i.test(u) ? "redis" : ak === "brokerUrl" || (u && !/^https?:/i.test(u)) ? "other" : "http";
+      if (u) target = scrubUrl(u);
+      configKey = `${c.key}.${ak}`;
+    } else if (typeof o.host === "string") {
+      if (/redis/i.test(hint)) kind = "redis";
+      else if (sql && /postgres|database|sql|(^|[^a-z])db/i.test(hint)) kind = mods.some((m) => /postgresql$/.test(m)) ? "postgres" : "other";
+      else if (/smtp|mail/i.test(hint)) kind = "other";
+      else continue;
+      const other = mods.map((m) => /(mysql|mssql|oracledb)$/.exec(m)?.[1]).find(Boolean);
+      const scheme = kind === "redis" ? "redis://" : kind === "postgres" ? "postgres://" : sql && other ? `${other}://` : "";
+      const dbName = ["database", "name", "db"].map((k) => o[k]).find((v) => typeof v === "string" && v);
+      if (o.host) target = `${scheme}${o.host}${o.port !== undefined ? ":" + String(o.port) : ""}${dbName && kind !== "redis" ? "/" + String(dbName) : ""}`;
+      configKey = `${c.key}.host`;
+    } else if (/(Downstream|Backend|Endpoint)Settings$/.test(c.type)) {
+      // a required address that has no value yet
+      kind = "http"; configKey = `${c.key}.url`;
+    } else continue;
+    // settings the code does not use yet still name a backend of this API, but only an address counts
+    const where = uses(c.key, c.file);
+    if (!where.length && kind !== "http") continue;
+    const settings: { key: string; value: string }[] = [];
+    const secrets: string[] = [];
+    for (const e of flatten(value, c.key)) {
+      settings.push({ key: e.key, value: showValue(e.key, e.value) });
+      if (isSecretKey(e.key)) secrets.push(e.key);
+    }
+    let auth = "None found in the source";
+    const setSecrets = settings.filter((x) => isSecretKey(x.key) && x.value === "set").map((x) => x.key.split(".").pop());
+    if (setSecrets.length) auth = `Credentials from configuration (${setSecrets.join(", ")}: set)`;
+    else if (secrets.length) auth = "Optional credentials in configuration (not set)";
+    else if (kind === "postgres" || (kind === "other" && sql)) {
+      // accounts kept in their own settings, used in the same file as the database settings
+      const accounts: string[] = [];
+      for (const a of b.pkg.configurables) {
+        const av = b.resolved.values.get(a.key);
+        if (a === c || !isObj(av)) continue;
+        const keys = Object.keys(av);
+        if (!keys.some((k) => /^user(name)?$/i.test(k)) || !keys.some((k) => isSecretKey(`${a.key}.${k}`))) continue;
+        if (keys.some((k) => ADDRESS_KEYS.includes(k) || k === "host")) continue;
+        if (!uses(a.key, a.file).some((f) => where.includes(f))) continue;
+        const filled = keys.filter((k) => isSecretKey(`${a.key}.${k}`)).every((k) => showValue(`${a.key}.${k}`, (av as Record<string, unknown>)[k]) === "set");
+        accounts.push(`${a.key} (${filled ? "set" : "not set"})`);
+        secrets.push(...keys.filter((k) => isSecretKey(`${a.key}.${k}`)).map((k) => `${a.key}.${k}`));
+      }
+      if (accounts.length) auth = `Accounts from configuration: ${accounts.join(", ")}`;
+    }
+    const word = new RegExp(`\\b${c.key}\\b`);
+    const direct = ops.filter((op) => word.test(bare(op.code))).map((op) => op.id);
+    const src = srcOf(c.file, c.start, c.end);
+    out.push({
+      name: c.key, kind, target, configKey, auth,
+      usedBy: direct.length ? direct : [!where.length ? "(not used by the code yet)" : component ? `(${component})` : "(inside the service's code)"],
+      component, file: src.file, line: src.line, code: redact(src.code), paths: [], secrets, settings,
+    });
+  }
+  return out;
+}
+
 function build(pkg: BalPackage, libs: Libs, dir: string, configDirs: string[], component: string | undefined): Built {
   const prefix = component ? `${component}/` : "";
   const resolved = resolveConfig(pkg, libs, readDeployed(pkg, dir, configDirs), component);
@@ -593,6 +674,8 @@ export function buildApi(entry: SourceEntry, configDirs: string[] = []): ApiMode
         file: src.file, line: src.line, code: redact(src.code), paths, secrets, settings,
       });
     }
+    const taken = new Set(model.connectors.map((k) => k.name));
+    model.connectors.push(...derivedConnectors(b, component, taken, b === main ? model.operations : []));
     for (const e of b.resolved.entries) model.config.push(e);
     for (const m of b.mappings.list) {
       const used = [...(mappingUse.get(m.id) || [])];

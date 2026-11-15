@@ -80,6 +80,7 @@ export type Decision =
   | { id: string; action: "forward"; backend: string; method: string; path: string }
   | { id: string; action: "not_needed"; reason: string }
   | { id: string; action: "address"; url: string }
+  | { id: string; action: "address"; from: string }
   | { id: string; action: "note"; note: string }
   | { id: string; action: "reopen" };
 export const FORWARD_PATH = /^\/[A-Za-z0-9_\-./{}~%:]*$/;
@@ -100,6 +101,9 @@ export function decisionOf(body: unknown): { ok: true; decision: Decision } | { 
     return reason.length < 3 ? { ok: false, error: "Say in a few words why it is not needed." } : { ok: true, decision: { id, action, reason } };
   }
   if (action === "address") {
+    // the name of a settings file of the upload: the tool reads the address there, on its own server
+    const from = s("from", 80);
+    if (from) return /^\w[\w.\- /]*$/.test(from) && !from.includes("..") ? { ok: true, decision: { id, action, from } } : { ok: false, error: "Choose one of the listed environments." };
     const url = s("url", 500);
     return /^https?:\/\/[^\s"]+$/i.test(url) ? { ok: true, decision: { id, action, url } } : { ok: false, error: "The address must start with http:// or https:// and have no spaces." };
   }

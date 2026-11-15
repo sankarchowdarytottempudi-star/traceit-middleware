@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAND_MIN_WIDTH, ago, baseName, compact, distinct, fileSize, filterMigrations, healthLabel, healthTone, isSpec, layerKey, layoutLandscape,
-  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
+  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, sourceEnvs, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
 } from "../src/lib/migrate.ts";
 
 describe("labels and tones", () => {
@@ -273,9 +273,16 @@ describe("finish this migration", () => {
     expect(decisionProblem({ action: "address", url: "catalogue.internal" }, op)).toMatch(/http/);
     expect(decisionProblem({ action: "address", url: "http://localhost:8080" }, op)).toMatch(/localhost/);
     expect(decisionProblem({ action: "address", url: "https://catalogue.internal/api" }, op)).toBe("");
+    expect(decisionProblem({ action: "address", from: "shore/uat" }, op)).toBe("");
     expect(decisionProblem({ action: "note", note: "" }, op)).toMatch(/note/);
     expect(decisionProblem({ action: "note", note: "Returns the guest's bookings." }, op)).toBe("");
     expect(decisionProblem({ action: "" }, op)).toMatch(/Choose/);
+  });
+  it("lists the settings files a backend address can be taken from", () => {
+    expect(sourceEnvs({ fromSource: ["shore/prod", "shore/uat"] })).toEqual(["shore/prod", "shore/uat"]);
+    expect(sourceEnvs({ fromSource: ["uat", "", 7, null] })).toEqual(["uat"]);
+    expect(sourceEnvs({})).toEqual([]);
+    expect(sourceEnvs({ fromSource: "uat" })).toEqual([]);
   });
   it("says that a note does not finish an item, and what does", () => {
     expect(noteLimit(["forward", "not_needed", "note"])).toBe("A note does not finish this part. The tool does not write logic from a description, so it stays open until its code is written, or until it is passed on to an API or it is marked as not needed.");

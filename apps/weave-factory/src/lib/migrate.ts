@@ -225,7 +225,7 @@ export function forwardStart(item: OpenItemLike, backends: string[]): { backend:
   const plain = (p: string) => (/^\/[A-Za-z0-9_\-./{}~%:]*$/.test(p) ? p : "");
   return { backend, method: txt(call?.method).toUpperCase() || own, path: plain(txt(call?.path)) || "/" };
 }
-export type DecisionLike = { action: string; backend?: string; method?: string; path?: string; reason?: string; url?: string; note?: string };
+export type DecisionLike = { action: string; backend?: string; method?: string; path?: string; reason?: string; url?: string; from?: string; note?: string };
 /** Why a decision cannot be saved yet, in the words shown under the field; "" when it can. */
 export function decisionProblem(d: DecisionLike, item: { params?: string[] }): string {
   if (d.action === "forward") {
@@ -240,9 +240,14 @@ export function decisionProblem(d: DecisionLike, item: { params?: string[] }): s
     return "";
   }
   if (d.action === "not_needed") return txt(d.reason).length < 3 ? "Say in a few words why it is not needed." : "";
+  if (d.action === "address" && txt(d.from)) return "";
   if (d.action === "address") return /^https?:\/\/[^\s"]+$/i.test(txt(d.url)) ? (/localhost/i.test(txt(d.url)) ? "localhost cannot be reached from the installed service. Use the backend's real address." : "") : "The address starts with http:// or https:// and has no spaces.";
   if (d.action === "note") return txt(d.note).length < 3 ? "Write the note first." : "";
   return "Choose what to do with this item.";
+}
+/** The settings files of the upload that hold the old application's address of a backend (their names only). */
+export function sourceEnvs(item: { fromSource?: unknown }): string[] {
+  return Array.isArray(item.fromSource) ? item.fromSource.filter((x): x is string => typeof x === "string" && x.trim() !== "").slice(0, 40) : [];
 }
 /** What keeps an item with notes open, in the words shown under its notes. */
 export function noteLimit(can: string[] | undefined): string {

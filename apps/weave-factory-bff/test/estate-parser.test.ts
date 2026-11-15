@@ -184,3 +184,46 @@ describe("configuration files and masking", () => {
     expect(flatten({ a: { b: 1, c: { d: "x" } }, e: [1] })).toEqual([{ key: "a.b", value: 1 }, { key: "a.c.d", value: "x" }, { key: "e", value: [1] }]);
   });
 });
+
+describe("connections opened inside a class or a function", () => {
+  const I = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "estate-inside");
+  const ledger = () => buildApi(discoverSources(join(I, "services")).find((e) => e.name === "ledger-sys-api")!, [join(I, "config")]);
+
+  it("are listed from their settings, with kind and target", () => {
+    const m = ledger();
+    const by = Object.fromEntries(m.connectors.map((c) => [c.name, c]));
+    expect(Object.keys(by).sort()).toEqual(["database", "queue", "ratesApi", "stateRedis", "unusedApi"]);
+    expect(by.database).toMatchObject({ kind: "postgres", target: "postgres://ledger-db.shop.svc:5432/ledger", configKey: "database.host" });
+    expect(by.ratesApi).toMatchObject({ kind: "http", target: "https://rates.example.test/v2?token=***", configKey: "ratesApi.url" });
+    expect(by.stateRedis).toMatchObject({ kind: "redis", target: "redis://state.shop.svc:6379" });
+    expect(by.queue).toMatchObject({ kind: "other", target: "(not configured)", configKey: "queue.brokerUrl" });
+  });
+
+  it("leave out settings that are not a connection, and say when a backend's address is not used by the code yet", () => {
+    const m = ledger();
+    const names = m.connectors.map((c) => c.name);
+    expect(m.connectors.find((c) => c.name === "unusedApi")).toMatchObject({ kind: "http", target: "(not configured)", usedBy: ["(not used by the code yet)"] });
+    for (const n of ["page", "books", "audit", "portalLogin", "httpPort"]) expect(names, n).not.toContain(n);
+  });
+
+  it("say which accounts a database uses and whether each is set, never a value", () => {
+    const m = ledger();
+    const db = m.connectors.find((c) => c.name === "database")!;
+    expect(db.auth).toBe("Accounts from configuration: books (set), audit (not set)");
+    expect(db.secrets).toEqual(["books.password", "audit.password"]);
+    expect(m.connectors.find((c) => c.name === "stateRedis")!.auth).toBe("Credentials from configuration (password: set)");
+    const text = JSON.stringify(m.connectors);
+    expect(text).not.toContain("fixture-not-a-real-value");
+    expect(text).not.toContain("user:fixture");
+    expect(text).not.toContain("fixture-user");
+  });
+
+  it("name the operation that uses a connection directly, and say so when the use is deeper in the code", () => {
+    const m = ledger();
+    const ids = m.operations.map((o) => o.id);
+    expect(ids).toHaveLength(2);
+    const used = Object.fromEntries(m.connectors.map((c) => [c.name, c.usedBy]));
+    expect(used.queue).toEqual([ids[1]]);
+    for (const n of ["database", "ratesApi", "stateRedis"]) expect(used[n], n).toEqual(["(inside the service's code)"]);
+  });
+});

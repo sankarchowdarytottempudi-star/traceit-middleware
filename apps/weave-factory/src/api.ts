@@ -55,7 +55,7 @@ export interface Migration {
 export interface SourceCall { method: string; path: string; config: string; backend?: string }
 export interface SourceView { flow: string; file?: string; steps: number; parts: number; does: string[]; more?: number; calls: SourceCall[]; transforms: number; simple?: boolean }
 export interface OpenItem {
-  id: string; kind: "operation" | "entry" | "backend" | "code"; title: string; starts?: string; sourceName?: string; source?: SourceView | null;
+  id: string; kind: "operation" | "entry" | "backend" | "code"; title: string; starts?: string; sourceName?: string; fromSource?: string[]; source?: SourceView | null;
   can: string[]; suggest?: { backend: string; method: string; path: string } | null; params?: string[]; notes?: { t?: string; text?: string }[];
 }
 export interface ClosedItem { id: string; kind?: string; title: string; how: string; detail?: string; t?: string; canReopen?: boolean }
@@ -64,6 +64,7 @@ export type Decision =
   | { id: string; action: "forward"; backend: string; method: string; path: string }
   | { id: string; action: "not_needed"; reason: string }
   | { id: string; action: "address"; url: string }
+  | { id: string; action: "address"; from: string }
   | { id: string; action: "note"; note: string }
   | { id: string; action: "reopen" };
 export interface ResolveResult { ok: boolean; message: string; changed: boolean; openItems: OpenItems }

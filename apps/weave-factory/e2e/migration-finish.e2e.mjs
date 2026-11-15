@@ -51,7 +51,10 @@ try {
     s.check(buttonsOk, "each item offers exactly what can be done with it");
     s.check(wordsOk, "each item names itself and says what the old application did there");
     const page1 = await page.locator("body").innerText();
-    s.check(!/https?:\/\/(?!weave\.)[a-z0-9.-]+\.[a-z]{2,}/i.test(await panel.innerText()), "no backend address is shown");
+    // a note is a person's own words and is shown as written; nothing else on the panel may carry an address
+    const ADDR = /https?:\/\/(?!weave\.)[a-z0-9.-]+\.[a-z]{2,}/ig;
+    const inNotes = new Set(items.flatMap((x) => (x.notes ?? []).flatMap((n) => String(n.text ?? "").match(ADDR) ?? [])));
+    s.check(((await panel.innerText()).match(ADDR) ?? []).filter((a) => !inNotes.has(a)).length === 0, "no backend address is shown");
     s.check(page1.includes("Finish this migration"), "the section is on the Progress tab");
     s.check((await s.overflow()) === 0, "nothing runs off the side of the page");
     await s.shot("finish-open");
@@ -180,6 +183,35 @@ try {
     }
     s.check((await s.overflow()) === 0, "nothing runs off the side of the page");
     await s.shot("finish-taken-back");
+    await page.unroute(`**/api/factory/migrations/${id}/resolve`);
+    await page.unroute(`**/api/factory/migrations/${id}/open-items`);
+
+    // ------------------------------------------------------------ 6. a backend address from the old settings
+    s.step("6. A backend address can be taken from the old application's settings files (stand-in answers)");
+    const known = { id: "backend:stockApi", kind: "backend", title: "stockApi", sourceName: "Stock_API", fromSource: ["shore/prod", "shore/uat"], source: null, can: ["address"], notes: [] };
+    const unknown = { id: "backend:otherApi", kind: "backend", title: "otherApi", sourceName: "", fromSource: [], source: null, can: ["address"], notes: [] };
+    const withBackends = { ...open, ready: false, items: [known, unknown] };
+    await page.route(`**/api/factory/migrations/${id}/open-items`, (r) => r.fulfill({ json: withBackends }));
+    await s.goto(`/migrations/${id}`);
+    await panel.waitFor();
+    const kc = card(known), uc = card(unknown);
+    await kc.getByRole("button", { name: LABEL.address, exact: true }).click();
+    const pick = kc.locator('[data-testid="finish-from"]');
+    s.check((await pick.locator("option").allInnerTexts()).join("|") === "No, I enter the address|shore/prod|shore/uat", "the settings files that hold an address are offered by name");
+    s.check((await kc.locator("input").count()) === 1, "the address can still be typed");
+    await pick.selectOption("shore/uat");
+    s.check((await kc.locator("input").count()) === 0 && /read from\s+shore\/uat\s+on this server/.test(await kc.locator('[data-testid="finish-from-hint"]').innerText()), "after choosing one, no address is asked for and it says where it is read");
+    s.check(!(await kc.getByRole("button", { name: "Save this decision" }).isDisabled()), "the decision can be saved");
+    await s.shot("finish-address-from-settings");
+    let sentFrom = null;
+    const afterFrom = { ...withBackends, items: [unknown], closed: [{ id: known.id, kind: "backend", title: "stockApi", how: "address set", detail: "taken from the old application's settings (shore/uat), saved in deploy/vm/config/x.toml", t: now, canReopen: false }] };
+    await page.route(`**/api/factory/migrations/${id}/resolve`, (r) => { sentFrom = r.request().postDataJSON(); return r.fulfill({ json: { ok: true, changed: true, message: "Address of stockApi taken from the old application's settings (shore/uat). Deploy again to use it.", openItems: afterFrom } }); });
+    await kc.getByRole("button", { name: "Save this decision" }).click();
+    await panel.getByText(/taken from the old application's settings \(shore\/uat\)\. Deploy/).waitFor();
+    s.check(JSON.stringify(sentFrom) === JSON.stringify({ id: "backend:stockApi", action: "address", from: "shore/uat" }), "only the name of the settings file is sentFrom, no address", JSON.stringify(sentFrom));
+    await uc.getByRole("button", { name: LABEL.address, exact: true }).click();
+    s.check((await uc.locator('[data-testid="finish-from"]').count()) === 0 && (await uc.locator("input").count()) === 1, "a backend the old settings do not cover only asks for the address");
+    s.check((await s.overflow()) === 0, "nothing runs off the side of the page");
     await page.unroute(`**/api/factory/migrations/${id}/resolve`);
     await page.unroute(`**/api/factory/migrations/${id}/open-items`);
   }

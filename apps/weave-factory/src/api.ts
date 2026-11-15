@@ -57,6 +57,8 @@ export interface SourceView { flow: string; file?: string; steps: number; parts:
 export interface OpenItem {
   id: string; kind: "operation" | "entry" | "backend" | "code"; title: string; starts?: string; sourceName?: string; fromSource?: string[]; source?: SourceView | null;
   can: string[]; suggest?: { backend: string; method: string; path: string } | null; params?: string[]; notes?: { t?: string; text?: string }[];
+  /** A part that starts by itself and has a generated, switched-off placeholder in the service. */
+  placeholder?: { file?: string; function?: string; each?: string; started?: boolean } | null;
 }
 export interface ClosedItem { id: string; kind?: string; title: string; how: string; detail?: string; t?: string; canReopen?: boolean }
 export interface OpenItems { api: string; exists: boolean; ready: boolean; summary?: string; items: OpenItem[]; closed: ClosedItem[]; backends: string[]; needsBuild?: boolean; pending?: string[]; busy?: boolean; installed?: boolean }

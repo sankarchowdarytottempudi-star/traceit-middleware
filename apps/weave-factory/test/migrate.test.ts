@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAND_MIN_WIDTH, ago, baseName, compact, distinct, fileSize, filterMigrations, healthLabel, healthTone, isSpec, layerKey, layoutLandscape,
-  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, sourceEnvs, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
+  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, passOnHint, placeholderLine, sourceEnvs, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
 } from "../src/lib/migrate.ts";
 
 describe("labels and tones", () => {
@@ -243,6 +243,22 @@ describe("failureView", () => {
 describe("finish this migration", () => {
   const op = { id: "op:GET /items/{itemId}", kind: "operation", title: "GET /items/{itemId}", params: ["itemId"], suggest: null,
     source: { steps: 4, parts: 1, transforms: 0, calls: [{ method: "get", path: "/items/{itemId}", backend: "catalogue" }] } };
+  it("passes a part that starts by itself on to an API", () => {
+    const timer = { id: "entry:nightly", kind: "entry", title: "nightly", starts: "runs on a timer", params: [], suggest: null,
+      placeholder: { file: "starts.bal", function: "runNightly", each: "run", started: true } };
+    const topic = { ...timer, id: "entry:rates", title: "rates", placeholder: { file: "starts.bal", function: "onRates", each: "message", started: true } };
+    expect(forwardStart(timer, ["ledger"])).toEqual({ backend: "ledger", method: "POST", path: "/" });
+    expect(forwardStart({ ...timer, suggest: { backend: "ledger", method: "PUT", path: "/close" } }, ["ledger"])).toEqual({ backend: "ledger", method: "PUT", path: "/close" });
+    expect(decisionProblem({ action: "forward", backend: "ledger", method: "POST", path: "/close" }, timer)).toBe("");
+    expect(decisionProblem({ action: "forward", backend: "ledger", method: "POST", path: "/close/{id}" }, timer)).toMatch(/starts by itself has no values/);
+    expect(passOnHint(timer)).toMatch(/Every run makes this one call, with no body/);
+    expect(passOnHint(topic)).toMatch(/Every message is sent to this address as the body/);
+    expect(passOnHint({ kind: "operation" })).toMatch(/caller's body, query and headers/);
+    expect(placeholderLine(timer)).toMatch(/switched-off placeholder for it \(starts\.bal, function runNightly\).*enabled = true/);
+    expect(placeholderLine({ ...timer, placeholder: { file: "starts.bal", function: "onQueue", started: false } })).toMatch(/does not start this kind of listener itself/);
+    expect(placeholderLine({ kind: "entry" })).toBe("");
+    expect(placeholderLine({ kind: "operation", placeholder: { file: "x" } })).toBe("");
+  });
   it("names each kind of open item", () => {
     expect(itemKindWord(op)).toBe("Operation not migrated");
     expect(itemKindWord({ kind: "code" })).toBe("Operation being written");

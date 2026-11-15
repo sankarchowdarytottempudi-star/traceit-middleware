@@ -47,6 +47,9 @@ try {
       const text = await c.innerText();
       if (!text.includes(it.title)) wordsOk = false;
       if (it.source?.does?.length && !text.includes(String(it.source.does[0]).slice(0, 30))) wordsOk = false;
+      // a part that starts by itself and has a generated placeholder says so, and that it stays switched off
+      if (it.kind === "entry" && it.placeholder && !/placeholder for it/.test(text)) wordsOk = false;
+      if (it.kind === "entry" && it.placeholder?.started && !/stays off until "enabled = true"/.test(text)) wordsOk = false;
     }
     s.check(buttonsOk, "each item offers exactly what can be done with it");
     s.check(wordsOk, "each item names itself and says what the old application did there");
@@ -72,6 +75,11 @@ try {
       const choices = await form.locator("select").first().locator("option").allInnerTexts();
       s.check(choices.length === (open.backends ?? []).length && choices.every((x) => open.backends.includes(x)), "the APIs offered are the backends this service knows", `${choices.length} offered`);
       const path = form.locator("input");
+      if (op.kind === "entry") {
+        const each = op.placeholder?.each === "message" ? /Every message is sent to this address as the body/ : /Every run makes this one call, with no body/;
+        s.check(each.test(await form.innerText()), "for a part that starts by itself it says what is sent at each start");
+        if (!op.suggest?.method) s.check((await form.locator("select").nth(1).inputValue()) === "POST", "its call starts as POST");
+      }
       await path.fill("no-slash");
       s.check(/starts with \//.test(await form.innerText()) && await c.getByRole("button", { name: "Save this decision" }).isDisabled(), "a path without / is refused");
       await path.fill("/x/{notThere}");

@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Ban, Link2, Play, StickyNote, Undo2 } from "lucide-react";
 import { api, type ApiError, type Decision, type Migration, type OpenItem, type OpenItems, type ResolveResult } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
-import { ago, decisionProblem, forwardStart, itemKindWord, sourceSummary, type NextAction, noteLimit, nothingOpen, sourceEnvs } from "../lib/migrate.ts";
+import { ago, decisionProblem, forwardStart, itemKindWord, sourceSummary, type NextAction, noteLimit, nothingOpen, passOnHint, placeholderLine, sourceEnvs } from "../lib/migrate.ts";
 import { Btn, Failed, Field, Loading, Method, Notice, Panel, Pill, errText } from "./ui.tsx";
 
 type Mode = "forward" | "not_needed" | "address" | "note";
@@ -68,6 +68,7 @@ function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
         <span className="mf-mono mf-mg-wrap" style={{ fontWeight: 600, fontSize: 13.5 }}>{txt(item.title)}</span>
       </div>
       <OldCode item={item} />
+      {placeholderLine(item) && <span className="mf-mg-hint mf-mg-wrap" data-testid="finish-placeholder">{placeholderLine(item)}</span>}
       {notes.length > 0 && (
         <div className="mf-mg-sec"><h3>Notes</h3>
           <ul className="mf-mg-small mf-mg-wrap" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>{notes.map((n, i) => <li key={i}>{txt(n.text)}{n.t ? <span className="mf-mg-muted"> · {ago(n.t)}</span> : null}</li>)}</ul>
@@ -87,10 +88,11 @@ function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
             <Field label="Which API receives the call?" hint="The backends this service already knows."><select className="mf-mg-input" value={backend} onChange={(e) => setBackend(e.target.value)}>{backends.map((b) => <option key={b} value={b}>{b}</option>)}</select></Field>
             <Field label="Method"><select className="mf-mg-input" value={method} onChange={(e) => setMethod(e.target.value)}>{METHODS.map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
           </div>
-          <Field label="Path on that API" error={problem || undefined} hint={(item.params ?? []).length ? <>Values from the caller's address you can use: {(item.params ?? []).map((p) => <span key={p} className="mf-mono">{`{${p}}`} </span>)}</> : "The caller's body, query and headers are passed on as they are."}>
+          <Field label="Path on that API" error={problem || undefined} hint={(item.params ?? []).length ? <>Values from the caller's address you can use: {(item.params ?? []).map((p) => <span key={p} className="mf-mono">{`{${p}}`} </span>)}</> : passOnHint(item)}>
             <input className="mf-mg-input mf-mono" value={path} aria-invalid={!!problem} onChange={(e) => setPath(e.target.value)} placeholder="/path/on/the/api" spellCheck={false} />
           </Field>
-          {reshapes > 0 && <Notice tone="warn">The old code also reshaped the data here ({reshapes} {reshapes === 1 ? "place" : "places"}). Passing the call on returns that API's answer as it is. If callers need the old shape, choose "Say what it does" so the logic is written instead.</Notice>}
+          {reshapes > 0 && item.kind === "entry" && <Notice tone="warn">The old code also reshaped the data here ({reshapes} {reshapes === 1 ? "place" : "places"}). Passing it on makes one plain call and sends nothing in the old shape. If that API needs the old shape, or more than one call was made, choose "Say what it does" so the logic is written instead.</Notice>}
+          {reshapes > 0 && item.kind !== "entry" && <Notice tone="warn">The old code also reshaped the data here ({reshapes} {reshapes === 1 ? "place" : "places"}). Passing the call on returns that API's answer as it is. If callers need the old shape, choose "Say what it does" so the logic is written instead.</Notice>}
         </div>
       )}
       {mode === "address" && (

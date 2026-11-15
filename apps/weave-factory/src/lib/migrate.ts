@@ -210,6 +210,7 @@ export function failureView(m: MigrationState): FailureView | null {
 
 // ---- "Finish this migration": words and checks for one open item
 export interface OpenItemLike { id: string; kind: string; title: string; starts?: string; params?: string[]; suggest?: { backend?: string; method?: string; path?: string } | null;
+  placeholder?: { file?: string; function?: string; each?: string; started?: boolean } | null;
   source?: { steps?: number; parts?: number; transforms?: number; calls?: { method?: string; path?: string; backend?: string }[] } | null }
 export function itemKindWord(item: { kind: string; starts?: string }): string {
   if (item.kind === "backend") return "Backend without an address";
@@ -219,7 +220,8 @@ export function itemKindWord(item: { kind: string; starts?: string }): string {
 /** What the "pass it on" form starts with: the old code's own call when it is plain, else the operation's own method. */
 export function forwardStart(item: OpenItemLike, backends: string[]): { backend: string; method: string; path: string } {
   const verb = txt(item.title).split(" ")[0].toUpperCase();
-  const own = ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(verb) ? verb : "GET";
+  // a timer run or a topic message hands work over, so its call starts as POST
+  const own = item.kind === "entry" ? "POST" : ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(verb) ? verb : "GET";
   const call = item.suggest ?? (item.source?.calls ?? []).find((c) => txt(c.backend) && backends.includes(txt(c.backend)));
   const backend = call && backends.includes(txt(call.backend)) ? txt(call.backend) : backends[0] ?? "";
   const plain = (p: string) => (/^\/[A-Za-z0-9_\-./{}~%:]*$/.test(p) ? p : "");
@@ -227,7 +229,7 @@ export function forwardStart(item: OpenItemLike, backends: string[]): { backend:
 }
 export type DecisionLike = { action: string; backend?: string; method?: string; path?: string; reason?: string; url?: string; from?: string; note?: string };
 /** Why a decision cannot be saved yet, in the words shown under the field; "" when it can. */
-export function decisionProblem(d: DecisionLike, item: { params?: string[] }): string {
+export function decisionProblem(d: DecisionLike, item: { params?: string[]; kind?: string }): string {
   if (d.action === "forward") {
     const path = txt(d.path);
     if (!txt(d.backend)) return "Choose the API the call is passed on to.";
@@ -236,7 +238,7 @@ export function decisionProblem(d: DecisionLike, item: { params?: string[] }): s
     const used = [...path.matchAll(/\{(\w*)\}/g)].map((x) => x[1]);
     const have = item.params ?? [];
     const bad = used.find((u) => !have.includes(u));
-    if (bad !== undefined || (path.match(/[{}]/g) ?? []).length !== used.length * 2) return have.length ? `This operation only has ${have.map((p) => `{${p}}`).join(", ")} in its address.` : "This operation has no values in its address, so { } cannot be used.";
+    if (bad !== undefined || (path.match(/[{}]/g) ?? []).length !== used.length * 2) return have.length ? `This operation only has ${have.map((p) => `{${p}}`).join(", ")} in its address.` : item.kind === "entry" ? "A part that starts by itself has no values in its address, so { } cannot be used." : "This operation has no values in its address, so { } cannot be used.";
     return "";
   }
   if (d.action === "not_needed") return txt(d.reason).length < 3 ? "Say in a few words why it is not needed." : "";
@@ -244,6 +246,22 @@ export function decisionProblem(d: DecisionLike, item: { params?: string[] }): s
   if (d.action === "address") return /^https?:\/\/[^\s"]+$/i.test(txt(d.url)) ? (/localhost/i.test(txt(d.url)) ? "localhost cannot be reached from the installed service. Use the backend's real address." : "") : "The address starts with http:// or https:// and has no spaces.";
   if (d.action === "note") return txt(d.note).length < 3 ? "Write the note first." : "";
   return "Choose what to do with this item.";
+}
+/** Under the path of "pass it on": what is sent to that API each time. */
+export function passOnHint(item: { kind: string; placeholder?: { each?: string } | null }): string {
+  if (item.kind !== "entry") return "The caller's body, query and headers are passed on as they are.";
+  return txt(item.placeholder?.each) === "message"
+    ? "Every message is sent to this address as the body, exactly as it arrived. An answer of 400 or above is logged as a failed message."
+    : "Every run makes this one call, with no body. An answer of 400 or above is logged as a failed run.";
+}
+/** What the tool already wrote for a part that starts by itself, in one line; "" when it wrote nothing. */
+export function placeholderLine(item: { kind: string; placeholder?: { file?: string; function?: string; started?: boolean } | null }): string {
+  const p = item.placeholder;
+  if (item.kind !== "entry" || !p) return "";
+  const where = `${txt(p.file) || "starts.bal"}${txt(p.function) ? `, function ${txt(p.function)}` : ""}`;
+  return p.started === false
+    ? `The service has a placeholder for it (${where}), but the tool does not start this kind of listener itself. It is finished in the code.`
+    : `The service has a switched-off placeholder for it (${where}). Whatever is decided here, it stays off until "enabled = true" is set for it in the service's settings. Switch it on when the old application stops doing this work, otherwise the work is done twice.`;
 }
 /** The settings files of the upload that hold the old application's address of a backend (their names only). */
 export function sourceEnvs(item: { fromSource?: unknown }): string[] {

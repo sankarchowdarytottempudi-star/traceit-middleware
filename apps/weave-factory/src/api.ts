@@ -58,13 +58,14 @@ export interface OpenItem {
   id: string; kind: "operation" | "entry" | "backend" | "code"; title: string; starts?: string; sourceName?: string; source?: SourceView | null;
   can: string[]; suggest?: { backend: string; method: string; path: string } | null; params?: string[]; notes?: { t?: string; text?: string }[];
 }
-export interface ClosedItem { id: string; kind?: string; title: string; how: string; detail?: string; t?: string }
+export interface ClosedItem { id: string; kind?: string; title: string; how: string; detail?: string; t?: string; canReopen?: boolean }
 export interface OpenItems { api: string; exists: boolean; ready: boolean; summary?: string; items: OpenItem[]; closed: ClosedItem[]; backends: string[]; needsBuild?: boolean; pending?: string[]; busy?: boolean; installed?: boolean }
 export type Decision =
   | { id: string; action: "forward"; backend: string; method: string; path: string }
   | { id: string; action: "not_needed"; reason: string }
   | { id: string; action: "address"; url: string }
-  | { id: string; action: "note"; note: string };
+  | { id: string; action: "note"; note: string }
+  | { id: string; action: "reopen" };
 export interface ResolveResult { ok: boolean; message: string; changed: boolean; openItems: OpenItems }
 export interface PhaseDef { key: string; title: string; weight: number; mode: string; steps: { key: string; title: string }[]; }
 export interface Lesson { id: string; scope: string; technology?: string | null; summary: string; mistakes?: string[]; apiName?: string; workspace?: string; status?: string; createdAt?: string; phase?: string; docType?: string; migrationId?: string; rating?: number | null; appliedIn?: string[]; }

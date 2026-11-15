@@ -143,6 +143,45 @@ try {
       // the browser reports the refused call in its console; that one is the point of this step
       s.consoleErrors = s.consoleErrors.filter((e) => !(/409 \(Conflict\)/.test(e) && e.includes(`/migrations/${id}/resolve`)));
     }
+
+    // ------------------------------------------------------------ 5. taking a decision back; what a note does
+    s.step("5. A \"not needed\" decision can be taken back, and a note does not finish an item (stand-in answers)");
+    const now = new Date().toISOString();
+    const noted = items.find((x) => (x.can ?? []).includes("note")) ?? items[0];
+    const emptied = { ...open, ready: false, items: [], needsBuild: true, pending: ["ANY /db is removed from the new service"],
+      summary: "every operation of this service was marked as not needed, so there is nothing to deploy. Take a decision back under \"Decisions made\", or remove the migration",
+      closed: [{ id: "op:GET /kept", kind: "operation", title: "GET /kept", how: "passed on to catalogue", t: now, canReopen: false },
+        { id: "op:ANY /db", kind: "operation", title: "ANY /db", how: "not needed", detail: "do it later", t: now, canReopen: true }] };
+    const again = { ...open, items: items.map((x) => (x.id === noted.id ? { ...x, notes: [{ text: "Update the database with the outcome of the call", t: now }] } : x)) };
+    await page.route(`**/api/factory/migrations/${id}/open-items`, (r) => r.fulfill({ json: emptied }));
+    await s.goto(`/migrations/${id}`);
+    await panel.waitFor();
+    const lead = await panel.innerText();
+    s.check(/nothing to deploy/.test(await panel.locator('[data-testid="finish-not-ready"]').innerText()), "with nothing open and nothing to deploy, it says why the service is not finished");
+    s.check(!/Every item of this service has been decided/.test(lead), "it does not call the service decided");
+    const made = panel.locator('[data-testid="finish-closed"]');
+    s.check(await made.evaluate((el) => el.open), "\"Decisions made\" is already open");
+    s.check((await made.getByRole("button", { name: "Take it back" }).count()) === 1, "only the \"not needed\" decision can be taken back");
+    await s.shot("finish-emptied");
+    let undo = null;
+    await page.unroute(`**/api/factory/migrations/${id}/open-items`);
+    await page.route(`**/api/factory/migrations/${id}/open-items`, (r) => r.fulfill({ json: again }));
+    await page.route(`**/api/factory/migrations/${id}/resolve`, (r) => { undo = r.request().postDataJSON(); return r.fulfill({ json: { ok: true, changed: true, message: "ANY /db is open again: the \"not needed\" decision was taken back.", openItems: again } }); });
+    await made.getByRole("button", { name: "Take it back" }).click();
+    await panel.getByText(/is open again/).waitFor();
+    s.check(JSON.stringify(undo) === JSON.stringify({ id: "op:ANY /db", action: "reopen" }), "taking it back sends the item and nothing else", JSON.stringify(undo));
+    s.check((await panel.locator('[data-testid="finish-item"]').count()) === items.length, "the items are on the list again");
+    const nc = card(noted);
+    s.check(/A note does not finish this part/.test(await nc.locator('[data-testid="finish-note-limit"]').innerText()), "under its notes, an item says that a note does not finish it");
+    if ((noted.can ?? []).includes("note")) {
+      await nc.getByRole("button", { name: LABEL.note, exact: true }).click();
+      s.check(/does not finish this item/.test(await nc.locator('[data-testid="finish-form"]').innerText()), "the note form says so before the note is saved");
+      await nc.getByRole("button", { name: "Cancel" }).click();
+    }
+    s.check((await s.overflow()) === 0, "nothing runs off the side of the page");
+    await s.shot("finish-taken-back");
+    await page.unroute(`**/api/factory/migrations/${id}/resolve`);
+    await page.unroute(`**/api/factory/migrations/${id}/open-items`);
   }
 } catch (e) {
   s.fail(`the check stopped: ${e?.message ?? e}`);

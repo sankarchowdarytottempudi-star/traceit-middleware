@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAND_MIN_WIDTH, ago, baseName, compact, distinct, fileSize, filterMigrations, healthLabel, healthTone, isSpec, layerKey, layoutLandscape,
-  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
+  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
 } from "../src/lib/migrate.ts";
 
 describe("labels and tones", () => {
@@ -276,6 +276,19 @@ describe("finish this migration", () => {
     expect(decisionProblem({ action: "note", note: "" }, op)).toMatch(/note/);
     expect(decisionProblem({ action: "note", note: "Returns the guest's bookings." }, op)).toBe("");
     expect(decisionProblem({ action: "" }, op)).toMatch(/Choose/);
+  });
+  it("says that a note does not finish an item, and what does", () => {
+    expect(noteLimit(["forward", "not_needed", "note"])).toBe("A note does not finish this part. The tool does not write logic from a description, so it stays open until its code is written, or until it is passed on to an API or it is marked as not needed.");
+    expect(noteLimit(["not_needed", "note"])).toMatch(/code is written, or until it is marked as not needed\.$/);
+    expect(noteLimit(["note"])).toMatch(/until its code is written\.$/);
+    expect(noteLimit(undefined)).toMatch(/does not finish/);
+  });
+  it("does not call a service finished when nothing is open but it is not ready", () => {
+    expect(nothingOpen({ ready: true, summary: "x" })).toEqual({ done: true, text: "Every item of this service has been decided." });
+    expect(nothingOpen({ ready: false, summary: "every operation of this service was marked as not needed, so there is nothing to deploy" }))
+      .toEqual({ done: false, text: "Not finished: every operation of this service was marked as not needed, so there is nothing to deploy." });
+    expect(nothingOpen({ ready: false }).done).toBe(false);
+    expect(nothingOpen({ ready: false }).text).toMatch(/not finished yet/);
   });
   it("sums up the old code in one line", () => {
     expect(sourceSummary({ steps: 1, parts: 1, transforms: 0 })).toBe("1 step in the old code; none of them reshapes the data.");

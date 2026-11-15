@@ -80,7 +80,8 @@ export type Decision =
   | { id: string; action: "forward"; backend: string; method: string; path: string }
   | { id: string; action: "not_needed"; reason: string }
   | { id: string; action: "address"; url: string }
-  | { id: string; action: "note"; note: string };
+  | { id: string; action: "note"; note: string }
+  | { id: string; action: "reopen" };
 export const FORWARD_PATH = /^\/[A-Za-z0-9_\-./{}~%:]*$/;
 export function decisionOf(body: unknown): { ok: true; decision: Decision } | { ok: false; error: string } {
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
@@ -106,6 +107,8 @@ export function decisionOf(body: unknown): { ok: true; decision: Decision } | { 
     const note = s("note", 4000);
     return note.length < 3 ? { ok: false, error: "Write the note first." } : { ok: true, decision: { id, action, note } };
   }
+  // takes a "not needed" decision back; the tool decides whether that is still possible
+  if (action === "reopen") return { ok: true, decision: { id, action } };
   return { ok: false, error: "This cannot be done for this item." };
 }
 

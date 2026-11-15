@@ -244,6 +244,18 @@ export function decisionProblem(d: DecisionLike, item: { params?: string[] }): s
   if (d.action === "note") return txt(d.note).length < 3 ? "Write the note first." : "";
   return "Choose what to do with this item.";
 }
+/** What keeps an item with notes open, in the words shown under its notes. */
+export function noteLimit(can: string[] | undefined): string {
+  const c = can ?? [];
+  const ways = [c.includes("forward") ? "it is passed on to an API" : "", c.includes("not_needed") ? "it is marked as not needed" : ""].filter(Boolean);
+  return `A note does not finish this part. The tool does not write logic from a description, so it stays open until its code is written${ways.length ? `, or until ${ways.join(" or ")}` : ""}.`;
+}
+/** The line above the list when nothing is open: finished, or why it still is not. */
+export function nothingOpen(d: { ready?: boolean; summary?: string }): { done: boolean; text: string } {
+  if (d.ready) return { done: true, text: "Every item of this service has been decided." };
+  const why = txt(d.summary).trim();
+  return { done: false, text: why ? `Not finished: ${why}${/[.!?]$/.test(why) ? "" : "."}` : "Nothing is open here, but the service is not finished yet. Build and check it to see what is missing." };
+}
 export function sourceSummary(src: { steps?: number; parts?: number; transforms?: number }): string {
   const steps = num(src.steps), parts = num(src.parts), tr = num(src.transforms);
   const size = `${steps} ${steps === 1 ? "step" : "steps"}${parts > 1 ? ` in ${parts} parts of the old code` : " in the old code"}`;

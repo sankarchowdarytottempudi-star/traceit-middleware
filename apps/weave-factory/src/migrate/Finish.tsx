@@ -5,10 +5,10 @@
 // whoever writes the logic. Everything stays on this server.
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Ban, Link2, Play, StickyNote } from "lucide-react";
+import { ArrowRight, Ban, Link2, Play, StickyNote, Undo2 } from "lucide-react";
 import { api, type ApiError, type Decision, type Migration, type OpenItem, type OpenItems, type ResolveResult } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
-import { ago, decisionProblem, forwardStart, itemKindWord, sourceSummary, type NextAction } from "../lib/migrate.ts";
+import { ago, decisionProblem, forwardStart, itemKindWord, sourceSummary, type NextAction, noteLimit, nothingOpen } from "../lib/migrate.ts";
 import { Btn, Failed, Field, Loading, Method, Notice, Panel, Pill, errText } from "./ui.tsx";
 
 type Mode = "forward" | "not_needed" | "address" | "note";
@@ -69,6 +69,7 @@ function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
       {notes.length > 0 && (
         <div className="mf-mg-sec"><h3>Notes</h3>
           <ul className="mf-mg-small mf-mg-wrap" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>{notes.map((n, i) => <li key={i}>{txt(n.text)}{n.t ? <span className="mf-mg-muted"> · {ago(n.t)}</span> : null}</li>)}</ul>
+          <span className="mf-mg-hint" data-testid="finish-note-limit">{noteLimit(item.can)}</span>
         </div>
       )}
       <div className="mf-mg-actions">
@@ -97,7 +98,7 @@ function ItemCard({ item, backends, disabled, saving, error, onDecide }: {
         <div data-testid="finish-form"><Field label="Why is it not needed?" error={touched ? problem || undefined : undefined} hint={item.kind === "entry" ? "The reason is written next to the service's code. This part is then left out of the new service." : "The reason is written in the service's code and the operation is removed. Callers that still use it get \"not found\"."}><textarea className="mf-mg-input" rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder="For example: this export is no longer used" /></Field></div>
       )}
       {mode === "note" && (
-        <div data-testid="finish-form"><Field label="What does it do, and which API has to be called?" error={touched ? problem || undefined : undefined} hint="Kept with the service for the person who writes its logic. The item stays open until that is done."><textarea className="mf-mg-input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="For example: looks up the guest's bookings. Call GET /bookings on the reservation API and return its list." /></Field></div>
+        <div data-testid="finish-form"><Field label="What does it do, and which API has to be called?" error={touched ? problem || undefined : undefined} hint="Kept with the service for the person who writes its logic. Saving a note does not finish this item: it stays open until that code is written."><textarea className="mf-mg-input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="For example: looks up the guest's bookings. Call GET /bookings on the reservation API and return its list." /></Field></div>
       )}
       {mode && (
         <div className="mf-mg-actions">
@@ -131,35 +132,47 @@ export function Finish({ m, onRun }: { m: Migration; onRun: (a: NextAction["id"]
   const items = d.items ?? [], closed = d.closed ?? [], pending = d.pending ?? [];
   if (items.length === 0 && closed.length === 0 && pending.length === 0) return null;
   const changed = pending.length > 0 || (!!d.needsBuild && closed.length > 0);
+  const built = !d.needsBuild && !!d.ready;          // built with the decisions, only the install is missing
+  const many = pending.length === 1 ? "decision is" : "decisions are";
   const locked = !!m.busy || !!d.busy;
+  const none = nothingOpen(d);
+  const back = decide.variables?.action === "reopen";
 
   return (
-    <Panel title="Finish this migration" actions={items.length ? <Pill tone="warn">{items.length} open</Pill> : <Pill tone="ok">Nothing open</Pill>}>
+    <Panel title="Finish this migration" actions={items.length ? <Pill tone="warn">{items.length} open</Pill> : none.done ? <Pill tone="ok">Nothing open</Pill> : <Pill tone="warn">Not finished</Pill>}>
       <div className="mf-mg-stack" style={{ gap: 12 }} data-testid="finish">
         <p className="mf-mg-sub mf-mg-wrap" style={{ fontSize: 13.5, margin: 0 }}>
-          {items.length ? "The tool wrote the frame of this service from the old code. It does not make up what an operation should do, so these items wait for someone who knows the old application. For each one, say what it is. Nothing you enter here leaves this server." : "Every item of this service has been decided."}
+          {items.length ? "The tool wrote the frame of this service from the old code. It does not make up what an operation should do, so these items wait for someone who knows the old application. For each one, say what it is. Nothing you enter here leaves this server." : none.done ? none.text : "No item is open, but this service is not finished."}
         </p>
+        {!items.length && !none.done && <Notice tone="warn"><span data-testid="finish-not-ready">{none.text}</span></Notice>}
         {said && <Notice tone="ok">{said}</Notice>}
         {items.map((it) => (
-          <ItemCard key={it.id} item={it} backends={d.backends ?? []} disabled={locked} saving={decide.isPending && decide.variables?.id === it.id}
-            error={decide.isError && decide.variables?.id === it.id ? errText(decide.error) : ""} onDecide={(dec, done) => { setSaid(""); decide.mutate(dec, { onSuccess: done }); }} />
+          <ItemCard key={it.id} item={it} backends={d.backends ?? []} disabled={locked} saving={decide.isPending && !back && decide.variables?.id === it.id}
+            error={decide.isError && !back && decide.variables?.id === it.id ? errText(decide.error) : ""} onDecide={(dec, done) => { setSaid(""); decide.mutate(dec, { onSuccess: done }); }} />
         ))}
         {changed && (
           <Notice tone="warn">
-            <strong>{pending.length ? `${pending.length} ${pending.length === 1 ? "decision is" : "decisions are"} saved in the service, but ${d.installed ? "the installed service is still the earlier version" : "the service has not been built with them yet"}.` : "The service changed after it was last built."}</strong>
-            <span style={{ display: "block", marginTop: 2 }}>Build and check it, then deploy. Until then callers get the earlier answers.</span>
+            <strong>{!pending.length ? "The service changed after it was last built."
+              : built ? `${pending.length} ${many} saved and the service is built with them. ${d.installed ? "The installed service is still the earlier version." : "It is not installed yet."}`
+              : `${pending.length} ${many} saved in the service, but ${d.installed ? "the installed service is still the earlier version" : "the service has not been built with them yet"}.`}</strong>
+            <span style={{ display: "block", marginTop: 2 }}>{built ? "Deploy it to put them in use." : "Build and check it, then deploy. Until then callers get the earlier answers."}</span>
             <span className="mf-mg-actions" style={{ marginTop: 8 }}>
-              <Btn small kind="primary" icon={<Play size={14} aria-hidden="true" />} disabled={locked} onClick={() => onRun("test")}>Build and check</Btn>
-              {d.ready && !d.needsBuild && <Btn small icon={<Play size={14} aria-hidden="true" />} disabled={locked} onClick={() => onRun("deploy")}>Deploy</Btn>}
+              {built ? <Btn small kind="primary" icon={<Play size={14} aria-hidden="true" />} disabled={locked} onClick={() => onRun("deploy")}>Deploy</Btn>
+                : <Btn small kind="primary" icon={<Play size={14} aria-hidden="true" />} disabled={locked} onClick={() => onRun("test")}>Build and check</Btn>}
+              {built && <Btn small disabled={locked} onClick={() => onRun("test")}>Build and check again</Btn>}
             </span>
           </Notice>
         )}
         {closed.length > 0 && (
-          <details data-testid="finish-closed">
+          <details data-testid="finish-closed" open={!items.length && !none.done ? true : undefined}>
             <summary className="mf-mg-small" style={{ cursor: "pointer", fontWeight: 600 }}>Decisions made ({closed.length})</summary>
             <ul className="mf-mg-small mf-mg-wrap" style={{ margin: "8px 0 0", paddingLeft: 18, lineHeight: 1.6 }}>
-              {closed.slice().reverse().map((c, i) => <li key={i}><span className="mf-mono">{txt(c.title)}</span>: {txt(c.how)}{c.detail ? <span className="mf-mg-muted"> ({txt(c.detail)})</span> : null}{c.t ? <span className="mf-mg-muted"> · {ago(c.t)}</span> : null}</li>)}
+              {closed.slice().reverse().map((c, i) => <li key={i}><span className="mf-mono">{txt(c.title)}</span>: {txt(c.how)}{c.detail ? <span className="mf-mg-muted"> ({txt(c.detail)})</span> : null}{c.t ? <span className="mf-mg-muted"> · {ago(c.t)}</span> : null}
+                {c.canReopen ? <span style={{ display: "inline-block", marginLeft: 8, verticalAlign: "middle" }}><Btn small icon={<Undo2 size={14} aria-hidden="true" />} disabled={locked} busy={decide.isPending && back && decide.variables?.id === c.id}
+                  onClick={() => { setSaid(""); decide.mutate({ id: c.id, action: "reopen" }); }}>Take it back</Btn></span> : null}</li>)}
             </ul>
+            {closed.some((c) => c.canReopen) && <span className="mf-mg-hint" style={{ display: "block", marginTop: 6 }}>Taking a "not needed" decision back puts the item on the list again, as it was before.</span>}
+            {decide.isError && back && <Notice tone="bad">{errText(decide.error)}</Notice>}
           </details>
         )}
       </div>

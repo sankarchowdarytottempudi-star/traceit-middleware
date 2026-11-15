@@ -210,6 +210,7 @@ describe("finish this migration", () => {
       .toEqual({ ok: true, decision: { id: "entry:nightlyFlow", action: "not_needed", reason: "no longer used" } });
     expect(decisionOf({ id: "backend:catalogue", action: "address", url: "https://catalogue.internal:8443/api" })).toMatchObject({ ok: true });
     expect(decisionOf({ id: "op:POST /pay", action: "note", note: "Calls the payment API and returns its receipt." })).toMatchObject({ ok: true });
+    expect(decisionOf({ id: "op:ANY /db", action: "reopen", reason: "x", note: "y" })).toEqual({ ok: true, decision: { id: "op:ANY /db", action: "reopen" } });
   });
   it("says what is wrong with a decision", () => {
     const bad = (b: unknown) => { const r = decisionOf(b); return r.ok ? "" : r.error; };

@@ -94,15 +94,15 @@ export function mergeWorkspaces(groups: any[], configs: any[], envs: any[], migr
   const byName = new Map<string, any>();
   const at = (name: string) => {
     const key = name.toLowerCase();
-    if (!byName.has(key)) byName.set(key, { name, total: 0, deployed: 0, failed: 0, inProgress: 0, migrations: [], environments: [], config: null });
+    if (!byName.has(key)) byName.set(key, { name, total: 0, deployed: 0, unfinished: 0, failed: 0, inProgress: 0, migrations: [], environments: [], config: null });
     return byName.get(key);
   };
-  for (const g of groups || []) Object.assign(at(String(g.name || "Unassigned")), { total: g.total || 0, deployed: g.deployed || 0, failed: g.failed || 0 });
+  for (const g of groups || []) Object.assign(at(String(g.name || "Unassigned")), { total: g.total || 0, deployed: g.deployed || 0, unfinished: g.unfinished || 0, failed: g.failed || 0 });
   for (const m of migrations || []) {
     const w = at(String(m.workspace || "Unassigned"));
     w.migrations.push({ id: m.id, name: m.name, apiName: m.apiName, technology: m.technology, layer: m.layer, outcome: m.progress?.outcome, percent: m.progress?.overallPercent, busy: !!m.busy });
   }
-  for (const w of byName.values()) { if (!w.total) w.total = w.migrations.length; w.inProgress = Math.max(0, w.total - w.deployed - w.failed); }
+  for (const w of byName.values()) { if (!w.total) w.total = w.migrations.length; w.inProgress = Math.max(0, w.total - w.deployed - w.unfinished - w.failed); }
   for (const c of configs || []) at(String(c.name || "Unnamed")).config = withoutSecrets(c);
   for (const e of envs || []) at(String(e.workspace || "Unassigned")).environments.push(withoutSecrets(e));
   return [...byName.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));

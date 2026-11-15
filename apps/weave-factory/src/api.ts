@@ -65,7 +65,7 @@ export interface Environment { id: string; name: string; workspace?: string | nu
 export interface TargetServer { host?: string; port?: number; username?: string; hasPassword?: boolean; passwordSet?: boolean; provisioned?: boolean; }
 export interface WorkspaceConfig { id: string; name: string; createdAt?: string; servers?: Record<string, TargetServer | undefined>; }
 export interface WorkspaceMigration { id: string; name?: string; apiName?: string | null; technology?: string; layer?: string | null; outcome?: string; percent?: number; busy?: boolean; }
-export interface Workspace { name: string; total: number; deployed: number; failed: number; inProgress: number; migrations: WorkspaceMigration[]; environments: Environment[]; config: WorkspaceConfig | null; }
+export interface Workspace { name: string; total: number; deployed: number; unfinished?: number; failed: number; inProgress: number; migrations: WorkspaceMigration[]; environments: Environment[]; config: WorkspaceConfig | null; }
 /** Kept for older imports. */
 export type WorkspaceCfg = Workspace;
 

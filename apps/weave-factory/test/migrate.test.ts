@@ -16,6 +16,7 @@ describe("labels and tones", () => {
   it("gives each outcome and status a tone", () => {
     expect(outcomeTone("Deployed")).toBe("ok");
     expect(outcomeTone("Failed")).toBe("bad");
+    expect(outcomeTone("Deployed, not finished")).toBe("warn");
     expect(outcomeTone("In progress")).toBe("accent");
     expect(outcomeTone(undefined)).toBe("muted");
     expect(statusTone("done")).toBe("ok");

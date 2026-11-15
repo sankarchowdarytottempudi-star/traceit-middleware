@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calledBy, chainText, migratedStatusLabel, offsetLabel, stepHints, stepTone } from "../src/studio/migrated.ts";
+import { calledBy, chainText, estateTotals, migratedStatusLabel, offsetLabel, stepHints, stepTone } from "../src/studio/migrated.ts";
 
 describe("wording for calls of the migrated services", () => {
   it("names the caller and how the call arrived", () => {
@@ -37,5 +37,20 @@ describe("wording for calls of the migrated services", () => {
     expect(stepTone("ERROR")).toBe("error");
     expect(stepTone("warning")).toBe("warn");
     expect(stepTone(undefined)).toBe("info");
+  });
+});
+
+describe("what the Flows page adds up", () => {
+  const why = { summary: "2 operations still answer \"not migrated\"", operations: [], entries: [], backends: [] };
+  it("counts flows built here together with the migrated services, and says how many are not finished", () => {
+    const t = estateTotals(7, [{ name: "a" }, { name: "b", unfinished: why }, { name: "c", unfinished: why }], { services: 3, finished: 1, unfinished: 2, migrations: 5, migratedApis: 4 });
+    expect(t.total).toBe(10);
+    expect(t.text).toBe("7 flows built here and 3 migrated services running (1 finished, 2 not finished)");
+    expect(t.migrations).toContain("5 migrations for 4 APIs");
+  });
+  it("stays quiet about what does not apply", () => {
+    expect(estateTotals(1, [{ name: "a" }]).text).toBe("1 flow built here and 1 migrated service running (1 finished)");
+    expect(estateTotals(0, []).text).toBe("0 flows built here and 0 migrated services running");
+    expect(estateTotals(2, [], undefined).migrations).toBe("");
   });
 });

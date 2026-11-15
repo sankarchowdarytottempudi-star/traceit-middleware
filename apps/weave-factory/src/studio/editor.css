@@ -434,3 +434,7 @@ input.ws-bar-name:focus { outline: none; border-color: var(--accent); background
   .ws-trace-msg { grid-column: 1 / -1; }
   .ws-trace-body { padding-left: 12px; }
 }
+
+.ws-unfinished { flex: 0 0 auto; padding: 10px 12px 0; }
+.ws-unfinished .mf-callout { max-height: 34vh; overflow: auto; }
+.ws-totals a { font-weight: 600; }

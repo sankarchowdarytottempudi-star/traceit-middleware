@@ -14,6 +14,29 @@ export interface EstateOptions {
   k8s: K8s; prometheusUrl?: string; gateway?: GatewayCatalog; gatewayPublicUrl?: string;
   /** Migrations known to the migration tool: [{ id, apiName, layer }] */
   migrations: () => Promise<{ id: string; apiName?: string; name?: string; layer?: string }[]>;
+  /** The migration tool's check of every service: is anything of the old application still unwritten? */
+  readiness?: () => Promise<ReadinessReport[]>;
+}
+export interface ReadinessReport {
+  api: string; ready: boolean; exists?: boolean; summary?: string;
+  placeholders?: { operation: string }[]; missingBackends?: string[]; missingEntries?: { name: string; starts: string }[];
+}
+/** Why a running service is not finished, in the words shown to the user. */
+export interface Unfinished { summary: string; operations: string[]; entries: string[]; backends: string[]; }
+export function unfinishedOf(report: ReadinessReport | undefined, notMigratedInCode: number): Unfinished | undefined {
+  if (report && report.exists !== false) {
+    if (report.ready) return undefined;
+    return {
+      summary: report.summary || "Part of the old application has not been written yet.",
+      operations: (report.placeholders || []).map((p) => String(p.operation)),
+      entries: (report.missingEntries || []).map((e) => `${e.name} (${e.starts})`),
+      backends: (report.missingBackends || []).map(String),
+    };
+  }
+  // no report for this service (the tool is unreachable, or the service is not one of its own): the code still tells
+  return notMigratedInCode > 0
+    ? { summary: `${notMigratedInCode} operation${notMigratedInCode === 1 ? " still answers" : "s still answer"} "not migrated"`, operations: [], entries: [], backends: [] }
+    : undefined;
 }
 
 export type Via = "http" | "graphql" | "redis" | "postgres" | "other";
@@ -28,6 +51,8 @@ export interface EstateApi {
   readyReplicas: number; health: "healthy" | "degraded" | "down" | "unknown"; deployed: boolean; sourceAvailable: boolean;
   internalUrl?: string; lastDeployedAt?: string; image?: string; notMigrated: number; features: string[];
   requestsLastHour?: number; errorsLastHour?: number; metricsAvailable: boolean; components: EstateComponent[];
+  /** Set when the service is installed but does not yet do everything the old application did. */
+  unfinished?: Unfinished;
 }
 
 const LAYERS: Record<string, Layer> = { experience: "exp", exp: "exp", process: "proc", proc: "proc", system: "sys", sys: "sys" };
@@ -102,7 +127,8 @@ export function correctBasePaths(models: ApiModel[]): void {
 }
 
 interface Cluster { deployments: K8sDeployment[]; services: K8sService[]; pods: K8sPod[]; error?: string; }
-interface Snapshot { at: number; apis: EstateApi[]; links: EstateLink[]; cluster: Cluster; companions: Map<string, K8sDeployment[]>; gateway: { known: boolean; error?: string }; notes: string[]; }
+export interface EstateCounts { services: number; finished: number; unfinished: number; migrations: number; migratedApis: number; }
+interface Snapshot { at: number; counts: EstateCounts; apis: EstateApi[]; links: EstateLink[]; cluster: Cluster; companions: Map<string, K8sDeployment[]>; gateway: { known: boolean; error?: string }; notes: string[]; }
 
 export class Estate {
   private modelCache?: { at: number; models: Map<string, ApiModel>; error?: string };
@@ -140,9 +166,10 @@ export class Estate {
 
   private async assemble(userToken: string | null | undefined, refresh: boolean): Promise<Snapshot> {
     const models = this.models(refresh);
-    const [cluster, migrations, gw, totals] = await Promise.all([
+    const [cluster, migrations, readiness, gw, totals] = await Promise.all([
       this.cluster(),
       this.o.migrations().catch(() => []),
+      this.o.readiness ? this.o.readiness().catch(() => [] as ReadinessReport[]) : Promise.resolve([] as ReadinessReport[]),
       this.o.gateway ? this.o.gateway.entries(userToken) : Promise.resolve({ entries: [] as GatewayEntry[], known: false, error: "No gateway is configured" }),
       hourTotals(this.o.prometheusUrl),
     ]);
@@ -175,6 +202,7 @@ export class Estate {
       const mig = migrations.find((m) => m.apiName === name) || migrations.find((m) => m.name === name);
       const g = gw.known ? matchGateway(gw.entries, name, port?.nodePort, model?.basePath) : undefined;
       const t = totals.get(name);
+      const notMigrated = model ? model.operations.filter((o) => !o.implemented).length : 0;
       const ready = dep?.ready ?? 0, want = dep?.replicas ?? 0;
       const parts: EstateComponent[] = (companions.get(name) || []).map((c) => ({ name: c.name, role: c.name.replace(name.replace(/-api$/, ""), "").replace(/^-+/, "") || "worker", status: c.ready > 0 ? "running" : "down", replicas: c.replicas, readyReplicas: c.ready }));
       const publicBase = (this.o.gatewayPublicUrl || "").replace(/\/+$/, "");
@@ -188,7 +216,8 @@ export class Estate {
         readyReplicas: ready, deployed: !!dep, sourceAvailable: !!model,
         health: cluster.error ? "unknown" : !dep || ready === 0 ? "down" : ready < want ? "degraded" : "healthy",
         internalUrl: svc && port ? `http://${svc.name}.${this.o.namespace}.svc:${port.port}` : undefined,
-        lastDeployedAt: dep?.lastDeployedAt, image: dep?.images[0], notMigrated: model ? model.operations.filter((o) => !o.implemented).length : 0,
+        lastDeployedAt: dep?.lastDeployedAt, image: dep?.images[0], notMigrated,
+        unfinished: unfinishedOf(readiness.find((r) => r.api === name), notMigrated),
         features: model?.features || [], requestsLastHour: t?.scraped || t?.total ? t.total : undefined, errorsLastHour: t?.scraped || t?.total ? t.errors : undefined,
         metricsAvailable: !!t?.scraped, components: parts,
       };
@@ -213,13 +242,17 @@ export class Estate {
     if (cluster.error) notes.push(`Live status is not available: ${cluster.error}.`);
     if (!models.size) notes.push("The service source code is not readable on this server, so operations, connectors and mappings cannot be shown.");
     if (!gw.known) notes.push(`Gateway status is not available${gw.error ? `: ${gw.error}` : ""}.`);
-    this.snap = { at: Date.now(), apis, links, cluster, companions, gateway: { known: gw.known, error: gw.error }, notes };
+    const counts: EstateCounts = {
+      services: apis.length, unfinished: apis.filter((a) => a.unfinished).length, finished: apis.filter((a) => !a.unfinished).length,
+      migrations: migrations.length, migratedApis: new Set(migrations.map((m) => m.apiName || m.name || m.id)).size,
+    };
+    this.snap = { at: Date.now(), counts, apis, links, cluster, companions, gateway: { known: gw.known, error: gw.error }, notes };
     return this.snap;
   }
 
   async overview(userToken?: string | null, refresh = false) {
     const s = await this.snapshot(userToken, refresh);
-    return { apis: s.apis, links: s.links, notes: s.notes, generatedAt: new Date(s.at).toISOString() };
+    return { apis: s.apis, counts: s.counts, links: s.links, notes: s.notes, generatedAt: new Date(s.at).toISOString() };
   }
 
   async detail(name: string, userToken?: string | null) {

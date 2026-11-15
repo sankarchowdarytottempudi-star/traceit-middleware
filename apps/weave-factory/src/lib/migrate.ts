@@ -14,9 +14,12 @@ export function layerKey(layer: unknown): LayerKey {
 }
 export const LAYER_LABEL: Record<LayerKey, string> = { exp: "Experience", proc: "Process", sys: "System", other: "Other" };
 
+/** Installed on the cluster, but part of the old application is not written yet. */
+export const NOT_FINISHED = "Deployed, not finished";
 export function outcomeTone(outcome: unknown): Tone {
   switch (txt(outcome)) {
     case "Failed": return "bad";
+    case NOT_FINISHED: return "warn";
     case "Verified": case "Deployed": case "Complete": return "ok";
     case "Not started": case "": return "muted";
     default: return "accent";

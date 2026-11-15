@@ -146,6 +146,7 @@ function EstateInner({ api, flow, detail, catalog, store, ops, current, tab, onT
           <h1 className="ws-bar-name ws-bar-name-ro">{txt(flow.name) || api}</h1>
           <span className="ws-bar-state">
             <Badge tone="info" icon={Lock}>{bp === "phone" ? "Read-only" : "Migrated service, read-only"}</Badge>
+            {detail?.unfinished && <Badge tone="warn">Not finished</Badge>}
             {detail?.status && <Badge tone={/run|ready|up/i.test(String(detail.status)) ? "ok" : "warn"}>{txt(detail.status)}</Badge>}
             {detail?.technology && <span className="ws-bar-dirty">{txt(detail.technology)}</span>}
           </span>
@@ -156,6 +157,17 @@ function EstateInner({ api, flow, detail, catalog, store, ops, current, tab, onT
         </div>
       </header>
       <Tabs tabs={tabs} value={tab} onChange={onTab} label="Service sections" className="ws-editor-tabs" />
+      {detail?.unfinished && (
+        <div className="ws-unfinished" data-testid="estate-unfinished">
+          <Callout tone="warn" title="This service is installed, but it is not finished"
+            actions={detail.migrationId ? <Link className="mf-btn" to={`/migrations/${encodeURIComponent(detail.migrationId)}`}>Open its migration to see what to do</Link> : undefined}>
+            <p style={{ margin: 0 }}>{detail.unfinished.operations.length + detail.unfinished.entries.length + detail.unfinished.backends.length > 0 ? "Part of the old application has not been written yet" : txt(detail.unfinished.summary)}. Until it is, a call to that part is answered with "Not migrated yet" (or with "not found" where nothing was generated) instead of real data.</p>
+            {detail.unfinished.operations.length > 0 && <p style={{ margin: "4px 0 0" }}><strong>Operations still to write:</strong> {detail.unfinished.operations.slice(0, 8).map((o) => txt(o)).join(", ")}{detail.unfinished.operations.length > 8 ? ` and ${detail.unfinished.operations.length - 8} more` : ""}</p>}
+            {detail.unfinished.entries.length > 0 && <p style={{ margin: "4px 0 0" }}><strong>Parts of the old application with no code yet:</strong> {detail.unfinished.entries.map((o) => txt(o)).join(", ")}</p>}
+            {detail.unfinished.backends.length > 0 && <p style={{ margin: "4px 0 0" }}><strong>Addresses not set:</strong> {detail.unfinished.backends.map((o) => txt(o)).join(", ")}</p>}
+          </Callout>
+        </div>
+      )}
 
       {tab === "flow" && (
         <div className={cx("ws-body", desktop && ops.length > 1 && "ws-body-palette", desktop && panelNode && "ws-body-panel")}>
@@ -170,7 +182,9 @@ function EstateInner({ api, flow, detail, catalog, store, ops, current, tab, onT
             )}
             <div className="ws-canvaswrap">
               <FlowCanvas key={current ?? "all"} apiRef={canvasApi} defFor={defFor} compact={!desktop} onOpenNode={(id) => { if (desktop) setClosedFor(null); else setOpenNode(id); }}
-                emptyHint={<Empty icon={Workflow} title="Nothing to show for this service" hint="No operations were found in its code. Open the service details to see what was deployed." />} />
+                emptyHint={detail?.unfinished
+                  ? <Empty icon={Workflow} title="Nothing has been written for this service yet" hint="It was installed as an empty frame: the old application had no list of operations to generate from. The note above says which parts still have to be written." />
+                  : <Empty icon={Workflow} title="Nothing to show for this service" hint="No operations were found in its code. Open the service details to see what was deployed." />} />
             </div>
           </div>
           {desktop && panelNode && <aside className="ws-side ws-side-right" aria-label="Step details">{panel}</aside>}

@@ -80,6 +80,10 @@ describe("secrets and workspaces", () => {
     expect(out[1]).toMatchObject({ total: 1 });
     expect(JSON.stringify(out)).not.toContain("\"tk\"");
   });
+  it("does not count a service that is installed but not finished as deployed or as in progress", () => {
+    const out = mergeWorkspaces([{ name: "Shop", total: 5, deployed: 2, unfinished: 2, failed: 0 }], [], [], []);
+    expect(out[0]).toMatchObject({ total: 5, deployed: 2, unfinished: 2, inProgress: 1 });
+  });
 });
 
 describe("migration routes", () => {

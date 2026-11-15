@@ -78,7 +78,11 @@ export type ConnectorDraft = Omit<ConnectorDef, "id" | "createdAt" | "updatedAt"
 export interface EstateApi {
   name: string; layer?: string; technology?: string; status?: string; replicas?: number; nodePort?: number; basePath?: string;
   gateway?: { published: boolean; context?: string }; operations?: number; connectors?: number; migrationId?: string;
+  /** Present when the service is installed but does not do everything the old application did. */
+  unfinished?: EstateUnfinished;
 }
+export interface EstateUnfinished { summary: string; operations: string[]; entries: string[]; backends: string[]; }
+export interface EstateCounts { services: number; finished: number; unfinished: number; migrations: number; migratedApis: number; }
 export interface EstateApiDetail extends Omit<EstateApi, "operations" | "connectors"> {
   operations?: { id: string; method: string; path: string; summary?: string; implemented?: boolean; file?: string; line?: number }[];
   connectors?: { name: string; kind: string; target: string; usedBy?: string[]; auth?: string }[];
@@ -137,7 +141,7 @@ export const studioApi = {
   compileInstruction: (req: CompileInstructionRequest) => call<CompileInstructionResponse>("POST", `${S}/mapping/compile-instruction`, req),
   evalExpr: (expr: string, context: ExprContext, template?: boolean) => call<ExprEvalResponse>("POST", `${S}/expr/eval`, { expr, context, template }),
 
-  estate: () => call<{ apis: EstateApi[]; links?: unknown[] }>("GET", `${F}/estate`),
+  estate: () => call<{ apis: EstateApi[]; counts?: EstateCounts; links?: unknown[] }>("GET", `${F}/estate`),
   estateApi: (api: string) => call<EstateApiDetail>("GET", `${F}/estate/${enc(api)}`),
   estateFlow: (api: string, operation?: string) => call<Flow>("GET", `${F}/estate/${enc(api)}/flow${qs({ operation })}`),
   estateLogs: (api: string, p: { tail?: number; q?: string } = {}) => call<{ lines: EstateLogLine[] }>("GET", `${F}/estate/${enc(api)}/logs${qs(p)}`),

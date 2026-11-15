@@ -5,10 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { api, type Migration } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
-import { ago, distinct, filterMigrations, outcomeTone, statusLabel } from "../lib/migrate.ts";
+import { ago, distinct, filterMigrations, NOT_FINISHED, outcomeTone, statusLabel } from "../lib/migrate.ts";
 import { Bar, Btn, Empty, Failed, Head, LayerPill, LinkBtn, Loading, Pill, SearchBox, Stat, useTitle } from "../migrate/ui.tsx";
 
-const OUTCOMES = ["Deployed", "Verified", "Complete", "In progress", "Not started", "Failed"];
+const OUTCOMES = ["Deployed", NOT_FINISHED, "Verified", "Complete", "In progress", "Not started", "Failed"];
 
 function MigrationCard({ m }: { m: Migration }) {
   const p = m.progress;
@@ -76,8 +76,8 @@ export function Migrations() {
         <>
           <div className="mf-mg-stats">
             <Stat label="Migrations" value={all.length} note={`${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"}`} />
-            <Stat label="Deployed" value={count("Deployed")} note={`${count("Verified") + count("Complete")} verified or complete`} />
-            <Stat label="In progress" value={all.filter((m) => !["Deployed", "Verified", "Complete", "Failed"].includes(txt(m.progress?.outcome))).length} note={`${all.filter((m) => m.busy).length} running a step now`} />
+            <Stat label="Deployed and finished" value={count("Deployed") + count("Verified")} note={count(NOT_FINISHED) ? `${count(NOT_FINISHED)} more installed, but not finished` : `${count("Verified")} verified`} />
+            <Stat label="In progress" value={all.filter((m) => !["Deployed", NOT_FINISHED, "Verified", "Complete", "Failed"].includes(txt(m.progress?.outcome))).length} note={`${all.filter((m) => m.busy).length} running a step now`} />
             <Stat label="Failed" value={count("Failed")} note={count("Failed") ? "Open one to see why" : "Nothing needs attention"} />
           </div>
           <div className="mf-mg-toolbar">

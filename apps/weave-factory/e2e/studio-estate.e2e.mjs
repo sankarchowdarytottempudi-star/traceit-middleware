@@ -64,6 +64,24 @@ try {
   await section.waitFor({ timeout: 20_000 });
   const card = section.locator(`[data-estate-card="${api}"]`);
   s.check(await card.isVisible(), `the service "${api}" is listed`);
+  // every running service is listed and counted, and one that is not finished says so
+  if (mode !== "fixture") {
+    const want = list.apis.length, open = list.apis.filter((a) => a.unfinished);
+    s.check(Number(await section.getAttribute("data-estate-count")) === want, `the heading counts all ${want} migrated services`);
+    s.check((await section.locator("[data-estate-card]").count()) === want, "and every one of them has a card");
+    const totals = page.locator('[data-testid="flows-totals"]');
+    const built = await page.locator('[data-testid="flows"] h2').first().innerText().then((t) => Number((t.match(/\((\d+)\)/) || [])[1])).catch(() => NaN);
+    s.check(Number(await totals.getAttribute("data-total").catch(() => NaN)) === built + want, `the first line adds up: ${built} built here + ${want} migrated`);
+    s.check((await section.locator('[data-estate-finished="no"]').count()) === open.length, `${open.length} service(s) are marked "Not finished"`);
+    if (open.length) {
+      const first = section.locator(`[data-estate-card="${open[0].name}"]`);
+      s.check(await first.getByText("Not finished", { exact: true }).isVisible(), `"${open[0].name}" carries the mark`);
+      s.check(((await first.locator("[data-estate-why]").innerText().catch(() => "")).length) > 10, "and says what is missing");
+      await section.locator('[data-estate-filter="unfinished"]').click();
+      s.check((await section.locator("[data-estate-card]").count()) === open.length, "the list can be narrowed to the unfinished ones");
+      await section.locator('[data-estate-filter="all"]').click();
+    }
+  }
   s.check((await s.overflow()) === 0, "no sideways scrolling in the list");
   await s.shot("estate-list");
   await card.getByRole("link", { name: "Open", exact: true }).click();
@@ -202,6 +220,19 @@ try {
       cloneId = null;
       s.ok("the copy was deleted again");
     }
+  }
+
+  // ------------------------------------------------------------ a service that is installed but not finished
+  const open = mode === "fixture" ? [] : list.apis.filter((a) => a.unfinished);
+  if (open.length) {
+    s.step("A service that is installed but not finished");
+    await s.goto(`/studio/estate/${encodeURIComponent(open[0].name)}`);
+    const note = page.locator('[data-testid="estate-unfinished"]');
+    await note.waitFor({ timeout: 30_000 }).catch(() => {});
+    s.check(await note.isVisible().catch(() => false), `"${open[0].name}" opens with a notice that it is not finished`);
+    s.check(/not finished/i.test(await note.innerText().catch(() => "")), "in plain words");
+    s.check((await s.overflow()) === 0, "no sideways scrolling");
+    await s.shot("estate-unfinished");
   }
 } catch (e) {
   s.fail(`stopped: ${String(e && e.message ? e.message : e).split("\n")[0]}`);

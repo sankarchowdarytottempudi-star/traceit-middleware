@@ -1,3 +1,4 @@
+import type { EstateApi, EstateCounts } from "./api.ts";
 // Wording for calls that went through the migrated services (no React here, so it can be tested alone).
 import type { MigratedExecutionSummary, MigratedExecutionStep } from "../api.ts";
 
@@ -52,3 +53,17 @@ export const stepTone = (level: unknown): "error" | "warn" | "info" => {
   const l = String(level ?? "").toLowerCase();
   return l.startsWith("err") || l === "fatal" ? "error" : l.startsWith("warn") ? "warn" : "info";
 };
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** One line that says what is on this page and how it adds up, so no number has to be guessed. */
+export function estateTotals(flows: number, apis: EstateApi[], counts?: EstateCounts): { total: number; text: string; migrations: string } {
+  const unfinished = apis.filter((a) => a.unfinished).length;
+  const finished = apis.length - unfinished;
+  const text = `${plural(flows, "flow")} built here and ${plural(apis.length, "migrated service")} running`
+    + (apis.length ? ` (${finished} finished${unfinished ? `, ${unfinished} not finished` : ""})` : "");
+  const migrations = counts && counts.migrations
+    ? `Migrate lists ${plural(counts.migrations, "migration")} for ${plural(counts.migratedApis, "API")}: an API that was migrated more than once is one service here, and a migration appears here once its service is installed.`
+    : "";
+  return { total: flows + apis.length, text, migrations };
+}

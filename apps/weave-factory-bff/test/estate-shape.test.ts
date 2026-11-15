@@ -6,7 +6,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApi, discoverSources, type ConnectorModel } from "../src/estate/model";
 import { buildFlow, triggerPath, mappingRules } from "../src/estate/flow";
-import { Estate, layerOf, targetApi, backendLabel, correctBasePaths } from "../src/estate/service";
+import { Estate, layerOf, targetApi, backendLabel, correctBasePaths, unfinishedOf } from "../src/estate/service";
 import { parseLogs, mergeLogs, maskLog, type K8s } from "../src/estate/k8s";
 import { stepFor, apiMetrics, increments } from "../src/estate/prom";
 import { matchGateway, type GatewayEntry } from "../src/estate/gateway";
@@ -236,5 +236,24 @@ describe("assembled estate", () => {
     const f = (await e.flow("orders-proc-api", undefined))!;
     expect(f.readOnly).toBe(true);
     expect(f.nodes.some((n) => n.type === "flow.call" && (n.config as any).flow === "estate:stock-sys-api")).toBe(true);
+  });
+});
+
+describe("a running service that is not finished", () => {
+  it("is finished when the check says so, whatever else", () => {
+    expect(unfinishedOf({ api: "a", ready: true }, 0)).toBeUndefined();
+  });
+  it("says what is missing: operations, parts with no code, addresses", () => {
+    const u = unfinishedOf({ api: "a", ready: false, summary: "1 starting point of the old application has no code yet",
+      placeholders: [{ operation: "GET /x" }], missingEntries: [{ name: "nightly", starts: "runs on a timer" }], missingBackends: ["db"] }, 0)!;
+    expect(u.summary).toContain("starting point");
+    expect(u.operations).toEqual(["GET /x"]);
+    expect(u.entries).toEqual(["nightly (runs on a timer)"]);
+    expect(u.backends).toEqual(["db"]);
+  });
+  it("falls back to the code when there is no check for the service", () => {
+    expect(unfinishedOf(undefined, 0)).toBeUndefined();
+    expect(unfinishedOf(undefined, 1)!.summary).toBe('1 operation still answers "not migrated"');
+    expect(unfinishedOf({ api: "a", ready: false, exists: false }, 3)!.summary).toBe('3 operations still answer "not migrated"');
   });
 });

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Download, FileUp, LayoutGrid, List, MoreHorizontal, Plus, Search, Server, Trash2, Workflow } from "lucide-react";
 import type { Flow, FlowSummary } from "@traceit/weave-flow";
 import { errorText, isUnavailable, studioApi, type EstateApi } from "../api.ts";
+import { estateTotals } from "../migrated.ts";
 import { useCatalog } from "../catalog.ts";
 import { ago, Badge, Button, Callout, confirmDialog, CopyButton, cx, downloadJson, Empty, Field, fmtTime, IconButton, Menu, Modal, Spinner, StudioHeader, TableWrap, toast, useDocumentTitle, type MenuItem } from "../ui.tsx";
 import { txt } from "../../lib/text.ts";
@@ -131,6 +132,9 @@ function FlowCard({ f, menu }: { f: FlowSummary; menu: MenuItem[] }) {
 function MigratedApis() {
   const q = useQuery({ queryKey: ["studio", "estate"], queryFn: studioApi.estate, retry: 0, staleTime: 60_000 });
   const apis: EstateApi[] = q.data?.apis ?? [];
+  const [only, setOnly] = useState<"all" | "finished" | "unfinished">("all");
+  const unfinishedCount = apis.filter((a) => a.unfinished).length;
+  const shown = apis.filter((a) => only === "all" || (only === "unfinished") === !!a.unfinished);
   if (q.isLoading) return <section className="mf-stack"><h2 className="ws-h2">Migrated services</h2><Spinner label="Looking for migrated services…" /></section>;
   if (q.isError) return (
     <section className="mf-stack" data-testid="estate-section" data-estate="unavailable">
@@ -140,22 +144,33 @@ function MigratedApis() {
   );
   if (!apis.length) return null;
   return (
-    <section className="mf-stack" data-testid="estate-section" data-estate="ok">
-      <div><h2 className="ws-h2">Migrated services</h2><p className="mf-help" style={{ margin: "2px 0 0" }}>Services that are already running. Open one to see how its data flows: connectors, mappings and logs. They are read-only; make an editable copy to change one.</p></div>
+    <section className="mf-stack" id="migrated-services" data-testid="estate-section" data-estate="ok" data-estate-count={apis.length} data-estate-unfinished={unfinishedCount}>
+      <div><h2 className="ws-h2">Migrated services ({apis.length})</h2><p className="mf-help" style={{ margin: "2px 0 0" }}>Services that are already running. Open one to see how its data flows: connectors, mappings and logs. They are read-only; make an editable copy to change one.</p></div>
+      {unfinishedCount > 0 && (
+        <div className="mf-toolbarline">
+          <div className="ws-seg" role="group" aria-label="Show migrated services">
+            {([["all", `All (${apis.length})`], ["finished", `Finished (${apis.length - unfinishedCount})`], ["unfinished", `Not finished (${unfinishedCount})`]] as const).map(([v, l]) => <button key={v} type="button" className={only === v ? "ws-seg-on" : ""} aria-pressed={only === v} onClick={() => setOnly(v)} data-estate-filter={v}>{l}</button>)}
+          </div>
+          <span className="mf-help" style={{ margin: 0 }}>A service that is not finished is installed, but part of the old application has not been written yet, so callers do not get real answers from that part.</span>
+        </div>
+      )}
       <div className="mf-cardgrid">
-        {apis.map((a) => (
-          <article key={a.name} className="mf-flowcard" data-estate-card={a.name}>
+        {shown.map((a) => (
+          <article key={a.name} className="mf-flowcard" data-estate-card={a.name} data-estate-finished={a.unfinished ? "no" : "yes"}>
             <header className="mf-flowcard-head">
               <span className="mf-iconchip" style={{ ["--chip" as string]: "var(--ws-http)" }}><Server size={17} aria-hidden /></span>
               <Link className="mf-flowcard-name" to={`/studio/estate/${encodeURIComponent(a.name)}`}>{txt(a.name)}</Link>
             </header>
             <div className="mf-flowcard-meta">
-              {a.status && <Badge tone={/run|ready|ok|up/i.test(a.status) ? "ok" : "warn"}>{txt(a.status)}</Badge>}
+              {a.unfinished
+                ? <Badge tone="warn" title={a.unfinished.summary}>Not finished</Badge>
+                : a.status && <Badge tone={/run|ready|ok|up/i.test(a.status) ? "ok" : "warn"}>{txt(a.status)}</Badge>}
               {a.layer && <Badge>{txt(a.layer)}</Badge>}
               {a.technology && <span className="mf-faint">{txt(a.technology)}</span>}
               {a.operations !== undefined && <span className="mf-faint">{txt(a.operations)} operation{a.operations === 1 ? "" : "s"}</span>}
               {a.connectors !== undefined && <span className="mf-faint">{txt(a.connectors)} connector{a.connectors === 1 ? "" : "s"}</span>}
             </div>
+            {a.unfinished && <p className="mf-flowcard-desc" data-estate-why>{txt(a.unfinished.summary)}.</p>}
             <footer className="mf-flowcard-foot"><span className="mf-faint">{a.gateway?.published ? "On the gateway" : "Read-only"}</span><Link className="mf-button mf-button-default mf-button-sm" to={`/studio/estate/${encodeURIComponent(a.name)}`}>Open</Link></footer>
           </article>
         ))}
@@ -167,6 +182,7 @@ function MigratedApis() {
 export function FlowsListPage() {
   useDocumentTitle("Flows");
   const q = useQuery({ queryKey: ["studio", "flows"], queryFn: studioApi.flows, retry: 0, refetchInterval: 15000 });
+  const estateQ = useQuery({ queryKey: ["studio", "estate"], queryFn: studioApi.estate, retry: 0, staleTime: 60_000 });
   const { menu } = useFlowActions();
   const [text, setText] = useState("");
   const [filter, setFilter] = useState<"all" | "live" | "draft">("all");
@@ -180,15 +196,23 @@ export function FlowsListPage() {
     return all.filter((f) => (filter === "all" || (filter === "live") === (f.deployment?.status === "deployed")) && (!n || `${f.name} ${f.description ?? ""} ${(f.tags ?? []).join(" ")} ${(f.triggers ?? []).join(" ")}`.toLowerCase().includes(n)));
   }, [all, text, filter]);
   const liveCount = all.filter((f) => f.deployment?.status === "deployed").length;
+  const totals = estateQ.data ? estateTotals(all.length, estateQ.data.apis ?? [], estateQ.data.counts) : null;
   return (
     <div className="mf-stack ws-page" style={{ gap: 20 }}>
       <StudioHeader area="Build" title="Flows" subtitle="Design how data moves between your systems, test it step by step, and put it live on the gateway."
         actions={<><Button icon={FileUp} onClick={() => setImporting(true)} data-action="import">Import</Button><Button variant="primary" icon={Plus} onClick={() => setCreating(true)} data-action="new-flow">New flow</Button></>} />
+      {q.data && totals && (estateQ.data?.apis?.length ?? 0) > 0 && (
+        <p className="mf-help ws-totals" style={{ margin: 0 }} data-testid="flows-totals" data-total={totals.total}>
+          <strong>{totals.total} in total:</strong> {totals.text}. <a href="#migrated-services">Go to the migrated services</a>
+          {totals.migrations && <><br />{totals.migrations}</>}
+        </p>
+      )}
       {q.isError && !q.data && <Unreachable error={q.error} what="Your flows" onRetry={() => void q.refetch()} />}
       {q.isLoading && <Spinner label="Loading flows…" />}
       {q.data && all.length === 0 && <Empty icon={Workflow} title="No flows yet" hint="A flow receives a request (or runs on a schedule), calls your systems, reshapes the data and answers. Create your first one, or open a migrated service below to see a real example." action={<Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>New flow</Button>} />}
       {all.length > 0 && (
         <section className="mf-stack" data-testid="flows">
+          <h2 className="ws-h2">Built here ({all.length})</h2>
           <div className="mf-toolbarline">
             <label className="mf-search"><Search size={15} aria-hidden /><input className="mf-control" type="search" aria-label="Search flows" placeholder="Search flows" value={text} onChange={(e) => setText(e.target.value)} /></label>
             <div className="ws-seg" role="group" aria-label="Show">

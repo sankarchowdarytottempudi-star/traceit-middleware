@@ -116,9 +116,9 @@ function WorkspaceCard({ w }: { w: Workspace }) {
         {!shared && <div className="mf-mg-actions"><LinkBtn small to={`/migrations/new?workspace=${encodeURIComponent(w.name)}`} icon={<Plus size={14} aria-hidden="true" />}>New migration</LinkBtn></div>}
       </div>
       {w.total > 0 && (
-        <div className="mf-mg-row" style={{ flexWrap: "nowrap" }}>
+        <div className="mf-mg-row" style={{ flexWrap: "wrap" }}>
           <Bar pct={w.total ? (num(w.deployed) / w.total) * 100 : 0} tone="ok" label={`Deployed migrations in ${w.name}`} />
-          <span className="mf-mg-small mf-mg-muted mf-mg-nowrap">{num(w.deployed)} of {num(w.total)} deployed{num(w.failed) ? ` · ${num(w.failed)} failed` : ""}{num(w.inProgress) ? ` · ${num(w.inProgress)} in progress` : ""}</span>
+          <span className="mf-mg-small mf-mg-muted" style={{ flex: "1 1 100%" }} data-workspace-counts>{num(w.deployed)} of {num(w.total)} deployed and finished{num(w.unfinished) ? ` · ${num(w.unfinished)} installed, not finished` : ""}{num(w.failed) ? ` · ${num(w.failed)} failed` : ""}{num(w.inProgress) ? ` · ${num(w.inProgress)} in progress` : ""}</span>
         </div>
       )}
       <div className="mf-mg-grid-2">

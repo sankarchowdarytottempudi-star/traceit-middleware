@@ -48,6 +48,11 @@ export function registerEstate(app: FastifyInstance, cfg: Config, creds?: Client
       const list = (r.json as { migrations?: any[] } | null)?.migrations;
       return Array.isArray(list) ? list.map((m) => ({ id: String(m.id), apiName: m.apiName || undefined, name: m.name || undefined, layer: m.layer || undefined })) : [];
     },
+    readiness: async () => {
+      const r = await mtRequest(mt, "GET", "/api/readiness");
+      const list = (r.json as { services?: any[] } | null)?.services;
+      return Array.isArray(list) ? list.filter((x) => x && typeof x.api === "string") : [];
+    },
   });
   const runtime = { runtimeUrl: cfg.RUNTIME_URL, internalKey: cfg.RUNTIME_INTERNAL_KEY || "" };
 

@@ -310,6 +310,16 @@ function clientKind(type: string, pkgImports: Map<string, string>): ClientKind |
   return "other";
 }
 
+type ServiceClass = { resources: BalResource[]; file: BalFile; start: number; end: number };
+const SERVICE_CLASSES = new WeakMap<BalPackage, Map<string, ServiceClass>>();
+const PENDING = new WeakMap<BalPackage, { name: string; cls: string; file: BalFile; start: number; end: number }[]>();
+function serviceClasses(pkg: BalPackage): Map<string, ServiceClass> {
+  let m = SERVICE_CLASSES.get(pkg); if (!m) { m = new Map(); SERVICE_CLASSES.set(pkg, m); } return m;
+}
+function pendingServices(pkg: BalPackage) {
+  let l = PENDING.get(pkg); if (!l) { l = []; PENDING.set(pkg, l); } return l;
+}
+
 function parseTopLevel(pkg: BalPackage, f: BalFile) {
   const m = f.masked;
   for (const r of topStatements(f)) {
@@ -335,6 +345,12 @@ function parseTopLevel(pkg: BalPackage, f: BalFile) {
     if (/^(?:public\s+|isolated\s+|transactional\s+)*function\b/.test(head)) {
       const fn = parseFunction(f, stmt);
       if (fn) pkg.functions.set(`${f.module}:${fn.name}`, fn);
+      continue;
+    }
+    if ((mm = /^(?:public\s+)?(?:isolated\s+)?(?:distinct\s+)?service\s+class\s+([A-Za-z_]\w*)/.exec(head))) {
+      // `service class X { resource … }`, attached through a `final X svc = new;` — resources resolved after all files
+      const open = m.indexOf("{", s);
+      if (open >= 0 && open < r.end) serviceClasses(pkg).set(mm[1], { resources: parseResources(f, open + 1, r.end - 1), file: f, start: r.start, end: r.end });
       continue;
     }
     if ((mm = /^(?:isolated\s+)?service\s+/.exec(head)) && !/^(?:isolated\s+)?service\s+class\b/.test(head)) {
@@ -386,6 +402,8 @@ function parseTopLevel(pkg: BalPackage, f: BalFile) {
         pkg.services.push({ name, http: true, resources: parseResources(f, open + 1, close < 0 ? r.end : close), file: f, start: r.start, end: r.end });
         continue;
       }
+      const created = /^new\b\s*(?:([A-Za-z_]\w*)\s*\(|;|\(|$)/.exec(exprMasked.trim());
+      if (created) pendingServices(pkg).push({ name, cls: created[1] || type.replace(/^.*:/, ""), file: f, start: r.start, end: r.end });
       const kind = clientKind(type, pkg.imports);
       if (kind) {
         const init = f.text.slice(exprStart, r.end - 1).trim();
@@ -417,6 +435,16 @@ export function parsePackage(org: string, name: string, component: string, files
     while ((mm = re.exec(f.masked))) { const alias = mm[2] || mm[1].split(/[/.]/).pop()!; if (alias !== "_") pkg.imports.set(alias, mm[1]); }
   }
   for (const f of files) parseTopLevel(pkg, f);
+  // services made from a `service class`: `final ErrorRecordedApi cmsService = new;`
+  const classes = SERVICE_CLASSES.get(pkg);
+  for (const p of PENDING.get(pkg) || []) {
+    const c = classes?.get(p.cls);
+    if (c && !pkg.services.some((x) => x.name === p.name)) {
+      pkg.consts.delete(`${p.file.module}:${p.name}`);
+      pkg.services.push({ name: p.name, http: true, resources: c.resources, file: c.file, start: c.start, end: c.end });
+    }
+  }
+  SERVICE_CLASSES.delete(pkg); PENDING.delete(pkg);
   for (const f of files) {
     const re = /\.attach\s*\(/g;
     let mm: RegExpExecArray | null;

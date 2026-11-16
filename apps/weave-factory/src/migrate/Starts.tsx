@@ -5,7 +5,7 @@
 //  - "Parts that start by themselves": timers, queue and topic listeners. They are installed
 //    switched off, because the old application still does the same work; switching one on is a
 //    person's decision. Values typed here go to the service's settings and never come back.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, Power, PowerOff } from "lucide-react";
 import { api, type ApiError, type Decision, type Migration, type OpenItems, type ResolveResult, type StartPart, type TrialSeen } from "../api.ts";
@@ -197,6 +197,8 @@ export function StartParts({ m, onRun }: { m: Migration; onRun: (a: "deploy") =>
     onSuccess: (r) => { qc.setQueryData<OpenItems>(["open-items", m.id], r.openItems); setSaid(txt(r.message)); qc.invalidateQueries({ queryKey: ["migration", m.id] }); qc.invalidateQueries({ queryKey: ["migrations"] }); },
   });
   const parts = q.data?.starts ?? [];
+  // opened from the Estate page with #starts: bring this panel into view once it is there
+  useEffect(() => { if (parts.length && typeof location !== "undefined" && location.hash === "#starts") document.getElementById("starts")?.scrollIntoView({ block: "start" }); }, [parts.length]);
   if (!enabled || !parts.length) return null;
   const pending = q.data?.pending ?? [];
   const off = parts.filter((p) => p.on === false).length;
@@ -205,7 +207,7 @@ export function StartParts({ m, onRun }: { m: Migration; onRun: (a: "deploy") =>
   const locked = !!m.busy || !!q.data?.busy;
   const deployed = txt((m.phases ?? []).find((x) => x.key === "deploy")?.status) === "done";
   return (
-    <Panel title="Parts that start by themselves" actions={off ? <Pill tone="warn">{off} switched off</Pill> : <Pill tone="ok">All on</Pill>}>
+    <Panel id="starts" title="Parts that start by themselves" actions={off ? <Pill tone="warn">{off} switched off</Pill> : <Pill tone="ok">All on</Pill>}>
       <div className="mf-mg-stack" style={{ gap: 12 }} data-testid="starts">
         <p className="mf-mg-sub mf-mg-wrap" style={{ fontSize: 13.5, margin: 0 }}>
           These parts of the old application run on a timer or wait for messages; nobody calls them. The new service is installed with them switched off,

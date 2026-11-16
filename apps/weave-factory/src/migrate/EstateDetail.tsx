@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRight, Check, ChevronDown, ChevronRight, Copy, CopyPlus, RefreshCw, Workflow } from "lucide-react";
-import { api, type ApiError, type EstateApiDetail, type EstateConnector, type EstateMapping, type EstateOperation } from "../api.ts";
+import { api, type ApiError, type EstateApiDetail, type EstateConnector, type EstateMapping, type EstateOperation, type EstateStart } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
 import { LAYER_LABEL, ago, clock, compact, dateTime, healthLabel, layerKey, ms, niceMax, rebucket, splitMatch, ticks } from "../lib/migrate.ts";
 import { Btn, Code, Dialog, Empty, Failed, Field, Head, HealthPill, KV, LayerPill, LinkBtn, Loading, Method, Notice, Panel, Pill, SearchBox, Stat, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
@@ -49,6 +49,50 @@ function useOpenSet(): [Set<string>, (id: string) => void, (ids: string[]) => vo
   return [open, toggle, (ids) => setOpen(new Set(ids))];
 }
 
+// ---- Parts that start by themselves (timer, queue, topic)
+function every(said?: string): string {
+  const m = /every\s+([\d.]+)\s*s/i.exec(said || "");
+  if (!m) return "";
+  const sec = Math.round(Number(m[1]));
+  return sec >= 120 && sec % 60 === 0 ? `every ${sec / 60} minutes` : `every ${sec} s`;
+}
+function startLine(p: EstateStart): { tone: "ok" | "muted" | "bad" | "warn"; pill: string; text: string; todo?: string } {
+  const how = /timer|schedul/i.test(`${p.starts} ${p.kind}`) ? "a timer" : /topic|kafka/i.test(`${p.starts} ${p.kind}`) ? "a topic" : "a message queue";
+  if (p.live === "not-started") return { tone: "bad", pill: "Switched on, not started", text: `Works from ${how}. It is switched on, but it did not start: ${txt(p.why) || txt(p.said)}.`,
+    todo: "Check the setting it names under the migration's \"Parts that start by themselves\" or its connection settings, then deploy again." };
+  if (p.live === "on") return { tone: "ok", pill: "On", text: `Works from ${how}${every(p.said) ? `, ${every(p.said)}` : ""}. It is switched on and running.` };
+  if (p.live === "off" || p.on === false) return { tone: "muted", pill: "Off", text: `Works from ${how}. It is switched off, so this service does not do that work; the old application still does it.` };
+  if (p.on === true) return { tone: "warn", pill: "On, state not reported", text: `Works from ${how}. It is switched on in the settings; the running service did not report its state.` };
+  return { tone: "muted", pill: "State not reported", text: `Works from ${how}. The running service did not report whether it is switched on.` };
+}
+function SelfStarting({ d }: { d: EstateApiDetail }) {
+  const parts = d.selfStarting ?? [];
+  if (!parts.length) return null;
+  const r = d.runs;
+  return (
+    <Panel title="Starts by itself" actions={d.migrationId ? <Link className="mf-mg-name mf-mg-small" to={`/migrations/${encodeURIComponent(d.migrationId)}#starts`}>Switch it on or off</Link> : undefined}>
+      <div className="mf-mg-stack" style={{ gap: 10 }} data-testid="estate-starts">
+        <p className="mf-mg-small mf-mg-muted" style={{ margin: 0 }}>Nobody calls these parts: they run on a timer or wait for messages. That is why this API needs no operations of its own.</p>
+        {parts.map((p) => {
+          const l = startLine(p);
+          return (
+            <div key={p.name} className="mf-mg-card" data-testid="estate-start" data-live={p.live || "unknown"}>
+              <div className="mf-mg-row" style={{ gap: 8 }}><Pill tone={l.tone}>{l.pill}</Pill><span className="mf-mono mf-mg-wrap" style={{ fontWeight: 600 }}>{txt(p.name)}</span></div>
+              <span className="mf-mg-small mf-mg-wrap">{l.text}</span>
+              {l.todo && <span className="mf-mg-hint mf-mg-wrap">{l.todo}</span>}
+            </div>
+          );
+        })}
+        {r && (num(r.finished) + num(r.failed)) > 0 && (
+          <span className="mf-mg-small mf-mg-wrap" data-testid="estate-runs">
+            Recent runs: {num(r.finished)} finished, {num(r.failed)} failed. Last run {ago(r.lastAt) || "recently"}: {r.last === "failed" ? <strong style={{ color: "var(--bad)" }}>failed{r.lastReason ? ` (${txt(r.lastReason)})` : ""}</strong> : "finished"}.
+          </span>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 // ---- Overview
 function Overview({ d, onTab }: { d: EstateApiDetail; onTab: (t: Tab) => void }) {
   const est = useQuery({ queryKey: ["estate"], queryFn: () => api.estate(), staleTime: 30000 });
@@ -62,7 +106,11 @@ function Overview({ d, onTab }: { d: EstateApiDetail; onTab: (t: Tab) => void })
   const k = layerKey(d.layer);
   const ops = num(d.operationCount ?? d.operations?.length), cons = num(d.connectorCount ?? d.connectors?.length);
   const callers = around.links.filter((l) => l.to === d.name).map((l) => l.from);
-  const what = `${k === "other" ? "An" : k === "exp" ? "An experience" : k === "proc" ? "A process" : "A system"} API with ${ops} operation${ops === 1 ? "" : "s"}`
+  const selfParts = d.selfStarting ?? [];
+  const startsN = selfParts.length || num(d.startsBySelf);
+  const works = selfParts.length ? ` that works from ${selfParts.map((p) => `${/timer|schedul/i.test(`${p.starts} ${p.kind}`) ? "a timer" : /topic|kafka/i.test(`${p.starts} ${p.kind}`) ? "a topic" : "a message queue"} (${txt(p.name)})`).join(" and ")}` : "";
+  const what = `${k === "other" ? "An" : k === "exp" ? "An experience" : k === "proc" ? "A process" : "A system"} API`
+    + (ops || !works ? ` with ${ops} operation${ops === 1 ? "" : "s"}` : "") + (ops && works ? "," : "") + works
     + (cons ? ` that reaches ${cons} other system${cons === 1 ? "" : "s"} through connectors` : "")
     + (callers.length ? `. It is called by ${[...new Set(callers)].join(", ")}.` : ".");
   return (
@@ -70,10 +118,13 @@ function Overview({ d, onTab }: { d: EstateApiDetail; onTab: (t: Tab) => void })
       {(d.warnings ?? []).map((w, i) => <Notice key={i} tone="warn">{txt(w)}</Notice>)}
       <div className="mf-mg-stats">
         <Stat label="Health" value={healthLabel(d.health)} note={`${num(d.readyReplicas)} of ${num(d.replicas)} replica${num(d.replicas) === 1 ? "" : "s"} ready`} />
-        <Stat label="Operations" value={ops} note={<button type="button" className="mf-mg-back" onClick={() => onTab("operations")}>See them <ArrowRight size={13} aria-hidden="true" /></button>} />
+        <Stat label="Operations" value={startsN > 0 ? `${ops} · Starts by itself ${startsN}` : ops} note={startsN > 0 && ops === 0
+          ? (d.migrationId ? <Link className="mf-mg-back" to={`/migrations/${encodeURIComponent(d.migrationId)}#starts`}>Parts that start by themselves <ArrowRight size={13} aria-hidden="true" /></Link> : <span>Works from a timer or a queue</span>)
+          : <button type="button" className="mf-mg-back" onClick={() => onTab("operations")}>See them <ArrowRight size={13} aria-hidden="true" /></button>} />
         <Stat label="Requests, last hour" value={d.metricsAvailable ? compact(d.requestsLastHour) : "Not measured"} note={d.metricsAvailable ? `${compact(d.errorsLastHour)} error${num(d.errorsLastHour) === 1 ? "" : "s"}` : "This API does not report traffic figures"} />
         <Stat label="Last deployed" value={ago(d.lastDeployedAt) || "Unknown"} note={dateTime(d.lastDeployedAt)} />
       </div>
+      <SelfStarting d={d} />
       <div className="mf-mg-grid-2">
         <Panel title="What it is">
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6 }}>{what}</p>

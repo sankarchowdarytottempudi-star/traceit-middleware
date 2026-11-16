@@ -8,6 +8,7 @@ import { K8s, mergeLogs, type K8sDeployment, type K8sPod, type K8sService, type 
 import { apiMetrics, hourTotals, type Metrics } from "./prom.js";
 import { GatewayCatalog, matchGateway, type GatewayEntry } from "./gateway.js";
 import { scrubUrl } from "./toml.js";
+import { isHealthOnlyWarning, runSummary, startStates, type StartPart } from "./starts.js";
 
 export interface EstateOptions {
   servicesDir?: string; configDir?: string; namespace: string;
@@ -20,6 +21,8 @@ export interface EstateOptions {
 export interface ReadinessReport {
   api: string; ready: boolean; exists?: boolean; summary?: string;
   placeholders?: { operation: string }[]; missingBackends?: string[]; missingEntries?: { name: string; starts: string }[];
+  /** Parts of the service that start by themselves (timer, queue, topic) and their switch. */
+  starts?: StartPart[];
 }
 /** Why a running service is not finished, in the words shown to the user. */
 export interface Unfinished { summary: string; operations: string[]; entries: string[]; backends: string[]; }
@@ -53,6 +56,8 @@ export interface EstateApi {
   requestsLastHour?: number; errorsLastHour?: number; metricsAvailable: boolean; components: EstateComponent[];
   /** Set when the service is installed but does not yet do everything the old application did. */
   unfinished?: Unfinished;
+  /** How many parts of it start by themselves (timer, queue, topic). */
+  startsBySelf: number;
 }
 
 const LAYERS: Record<string, Layer> = { experience: "exp", exp: "exp", process: "proc", proc: "proc", system: "sys", sys: "sys" };
@@ -130,7 +135,7 @@ export function correctBasePaths(models: ApiModel[]): void {
 
 interface Cluster { deployments: K8sDeployment[]; services: K8sService[]; pods: K8sPod[]; error?: string; }
 export interface EstateCounts { services: number; finished: number; unfinished: number; migrations: number; migratedApis: number; }
-interface Snapshot { at: number; counts: EstateCounts; apis: EstateApi[]; links: EstateLink[]; cluster: Cluster; companions: Map<string, K8sDeployment[]>; gateway: { known: boolean; error?: string }; notes: string[]; }
+interface Snapshot { at: number; starts: Map<string, StartPart[]>; counts: EstateCounts; apis: EstateApi[]; links: EstateLink[]; cluster: Cluster; companions: Map<string, K8sDeployment[]>; gateway: { known: boolean; error?: string }; notes: string[]; }
 
 export class Estate {
   private modelCache?: { at: number; models: Map<string, ApiModel>; error?: string };
@@ -220,6 +225,7 @@ export class Estate {
         internalUrl: svc && port ? `http://${svc.name}.${this.o.namespace}.svc:${port.port}` : undefined,
         lastDeployedAt: dep?.lastDeployedAt, image: dep?.images[0], notMigrated,
         unfinished: unfinishedOf(readiness.find((r) => r.api === name), notMigrated),
+        startsBySelf: (readiness.find((r) => r.api === name)?.starts || []).length,
         features: model?.features || [], requestsLastHour: t?.scraped || t?.total ? t.total : undefined, errorsLastHour: t?.scraped || t?.total ? t.errors : undefined,
         metricsAvailable: !!t?.scraped, components: parts,
       };
@@ -248,7 +254,8 @@ export class Estate {
       services: apis.length, unfinished: apis.filter((a) => a.unfinished).length, finished: apis.filter((a) => !a.unfinished).length,
       migrations: migrations.length, migratedApis: new Set(migrations.map((m) => m.apiName || m.name || m.id)).size,
     };
-    this.snap = { at: Date.now(), counts, apis, links, cluster, companions, gateway: { known: gw.known, error: gw.error }, notes };
+    const starts = new Map<string, StartPart[]>(readiness.filter((r) => (r.starts || []).length).map((r) => [r.api, r.starts!]));
+    this.snap = { at: Date.now(), starts, counts, apis, links, cluster, companions, gateway: { known: gw.known, error: gw.error }, notes };
     return this.snap;
   }
 
@@ -265,8 +272,18 @@ export class Estate {
     const pods = await this.podsOf(name, s);
     const names = s.apis.map((a) => a.name);
     const nodePorts = new Map<number, string>(s.apis.filter((a) => a.nodePort).map((a) => [a.nodePort!, a.name]));
+    const parts = s.starts.get(name) || [];
+    let selfStarting: ReturnType<typeof startStates> = [];
+    let runs: ReturnType<typeof runSummary>;
+    if (parts.length) {
+      const pod = pods.find((p) => p.phase === "Running" && !p.component);
+      const lines = pod && !s.cluster.error ? await this.o.k8s.logs(pod.name, 5000).catch(() => []) : [];
+      selfStarting = startStates(parts, lines);
+      runs = runSummary(lines);
+    }
     return {
       ...api,
+      selfStarting, runs,
       operationCount: api.operations, connectorCount: api.connectors,
       operations: (model?.operations || []).map((o) => ({
         id: o.id, method: o.method, path: o.fullPath, summary: o.summary, implemented: o.implemented, file: o.file, line: o.line,
@@ -281,7 +298,9 @@ export class Estate {
       }),
       mappings: model?.mappings || [],
       config: (model?.config || []).map((c) => ({ key: c.key, value: c.value, source: c.source, secret: c.secret, component: c.component, doc: c.doc })),
-      configSource: model?.configSource, sourceComponents: model?.components || [], warnings: model?.warnings || [],
+      configSource: model?.configSource, sourceComponents: model?.components || [],
+      // a job that works from a timer or a queue has no operations on purpose: it does not "answer health checks only"
+      warnings: (model?.warnings || []).filter((w) => !(parts.length && isHealthOnlyWarning(w))),
       links: s.links.filter((l) => l.from === name || l.to === name),
       pods,
     };

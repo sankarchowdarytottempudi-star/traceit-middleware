@@ -138,7 +138,12 @@ export interface EstateApi {
   gateway?: EstateGateway; operations?: number; connectors?: number; migrationId?: string; health?: Health; deployed?: boolean; sourceAvailable?: boolean;
   internalUrl?: string; lastDeployedAt?: string; image?: string; notMigrated?: number; features?: string[];
   requestsLastHour?: number; errorsLastHour?: number; metricsAvailable?: boolean; components?: EstateComponent[];
+  /** How many parts of it start by themselves (timer, queue, topic). */
+  startsBySelf?: number;
 }
+/** A part of a service that starts by itself, with its switch and what the running service said. */
+export interface EstateStart { name: string; starts?: string; kind?: string; switch?: string; on?: boolean | null; live?: "on" | "off" | "not-started" | "unknown"; said?: string; why?: string }
+export interface EstateRuns { finished?: number; failed?: number; lastAt?: string; last?: "finished" | "failed"; lastReason?: string }
 export interface EstateLink { from: string; to: string; via?: string; label?: string; toKind?: "api" | "backend"; connector?: string; component?: string; }
 export interface EstateCall { connector?: string; kind?: string; op?: string; method?: string; path?: string; mapping?: string; headers?: string[]; forwarded?: string[]; file?: string; line?: number; }
 export interface EstateOperation {
@@ -157,6 +162,7 @@ export interface EstateApiDetail extends Omit<EstateApi, "operations" | "connect
   operationCount?: number; connectorCount?: number;
   operations?: EstateOperation[]; connectors?: EstateConnector[]; mappings?: EstateMapping[]; config?: EstateConfigEntry[]; configSource?: string;
   sourceComponents?: { name: string; dir?: string; files?: number; lines?: number }[]; warnings?: string[]; links?: EstateLink[]; pods?: EstatePod[];
+  selfStarting?: EstateStart[]; runs?: EstateRuns;
 }
 export interface EstateLogLine { at?: string; level?: string; text: string; pod?: string; }
 export interface EstateLogs { lines: EstateLogLine[]; pods?: EstatePod[]; errors?: string[]; }

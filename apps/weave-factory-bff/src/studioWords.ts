@@ -677,14 +677,24 @@ export function compileWords(req: WordsRequest): WordsOutcome {
     eat(m); cur = `($lowercase($string(${cur})) in ["true", "yes", "y", "1", "on"])`; steps.push('Give true when it says yes, y, true, 1 or on; otherwise false.'); acted = true;
   }
 
-  // ---- text in front or behind
-  if ((m = find(String.raw`\b(?:add|put|insert|place)\s+${VAL}\s+(?:in\s+front(?:\s+of\s+it)?|before(?:\s+it)?|at\s+the\s+(?:start|beginning|front)|as\s+(?:a\s+)?prefix)\b|\bprefix\w*\s+(?:it\s+|@\d+@\s+)?(?:with|of|:)?\s*${VAL}|\b(?:start|begin)\w*\s+with\s+${VAL}`))) {
+  // ---- text in front or behind. A word is separated by one space ("New" before web -> "New web"); text that already
+  // ends (or starts) with a separator such as - / _ : . is joined directly, and so is everything said "without a space" or with +.
+  const plainJoin = /\b(?:without|with\s+no|no)\s+(?:a\s+|any\s+)?(?:space|spaces|gap|separator)\b|\bdirectly\b|\+/i.test(raw);
+  if (plainJoin) work = work.replace(/\b(?:without|with\s+no|no)\s+(?:a\s+|any\s+)?(?:space|spaces|gap|separator)\b|\bdirectly\b/i, " ").replace(/\s+/g, " ").trim();
+  const gapped = (expr: string, pre: boolean): string => {
+    if (plainJoin) return expr;
+    let text: unknown; try { text = JSON.parse(expr); } catch { return pre ? `${expr} & " "` : `" " & ${expr}`; }
+    if (typeof text !== "string") return expr;
+    const edge = pre ? text.slice(-1) : text.charAt(0);
+    return text && /[\p{L}\p{N}]/u.test(edge) ? str(pre ? `${text} ` : ` ${text}`) : expr;
+  };
+  if ((m = find(String.raw`\b(?:add|put|insert|place)\s+${VAL}\s+(?:in\s+front(?:\s+of\s+it)?|before(?:\s+it)?|at\s+the\s+(?:start|beginning|front)|as\s+(?:a\s+)?prefix)\b(?:\s+(?:without|with\s+no|no)\s+(?:a\s+)?(?:space|gap))?|\bprefix\w*\s+(?:it\s+|@\d+@\s+)?(?:with|of|:)?\s*${VAL}|\b(?:start|begin)\w*\s+with\s+${VAL}`))) {
     const v = val(m[1] ?? m[2] ?? m[3] ?? "");
-    if (v) { eat(m); cur = `${v.expr} & ${/[&?]/.test(cur) ? `(${cur})` : cur}`; steps.push(`Put ${v.say} in front.`); acted = true; }
+    if (v) { eat(m); cur = `${gapped(v.expr, true)} & ${/[&?]/.test(cur) ? `(${cur})` : cur}`; steps.push(`Put ${v.say} in front.`); acted = true; }
   }
   if ((m = find(String.raw`\b(?:add|put|insert|place|append)\s+${VAL}\s+(?:at\s+the\s+end|after(?:\s+it)?|behind(?:\s+it)?|as\s+(?:a\s+)?suffix|to\s+the\s+end)\b|\bsuffix\w*\s+(?:it\s+|@\d+@\s+)?(?:with|of|:)?\s*${VAL}|\bappend\s+${VAL}|\b(?:end|finish)\w*\s+with\s+${VAL}|\bfollowed\s+by\s+${VAL}`))) {
     const v = val(m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5] ?? "");
-    if (v) { eat(m); cur = `${/[&?]/.test(cur) ? `(${cur})` : cur} & ${v.expr}`; steps.push(`Put ${v.say} at the end.`); acted = true; }
+    if (v) { eat(m); cur = `${/[&?]/.test(cur) ? `(${cur})` : cur} & ${gapped(v.expr, false)}`; steps.push(`Put ${v.say} at the end.`); acted = true; }
   }
 
   // ---- what to use when there is nothing

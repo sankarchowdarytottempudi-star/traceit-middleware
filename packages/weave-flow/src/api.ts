@@ -106,6 +106,7 @@ export interface MappingPreviewResponse {
   rules: {
     id: string; ok: boolean; value?: Json; error?: string;
     warning?: string;                     // the rule ran but deserves a look (e.g. the source path is missing in this sample)
+    missing?: string[];                   // fields the rule reads that are not in this sample
     compiled?: CompiledInstruction;       // instruction rules: what the words were compiled to for this preview
     suggestions?: string[];               // instruction rules that were not understood: phrasings that are
   }[];

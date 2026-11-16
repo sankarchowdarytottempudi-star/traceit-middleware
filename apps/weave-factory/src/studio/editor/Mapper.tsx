@@ -3,18 +3,19 @@
 // runtime's local interpreter turns into an expression (and shows how it understood it).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, Lightbulb, MessageSquare, Plus, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
-import type { CompileInstructionResponse, Json, MappingRule, MappingSpec } from "@traceit/weave-flow";
+import { ArrowRight, BookOpen, Check, Lightbulb, MessageSquare, Plus, RefreshCw, Sparkles, Trash2, TriangleAlert, Wand2 } from "lucide-react";
+import { JOIN_RULE, MAPPING_PHRASES, type CompileInstructionResponse, type Json, type MappingRule, type MappingSpec } from "@traceit/weave-flow";
 import { errorText, isUnavailable, studioApi } from "../api.ts";
 import { ruleProblem } from "../graph.ts";
-import { convertRule, describeRule, KIND_LABEL, leafPaths, looksLikeProse, newRule, readPath, showValue, specStats, targetFromSource, type RuleKind } from "../mapping.ts";
-import { AutoTextArea, Badge, Button, Callout, cx, DataView, IconButton, JsonEditor, JsonTree, Modal, Spinner, Tabs, Toggle, toast, useBreakpoint, useDebounced } from "../ui.tsx";
+import { arrayPaths, convertRule, describeRule, KIND_LABEL, leafPaths, looksLikeProse, newRule, readPath, SHAPE_HINT, SHAPE_LABEL, shapeNeedsTarget, showValue, specStats, targetFromSource, type RuleKind, type ShapeKind } from "../mapping.ts";
+import { AutoTextArea, Badge, Button, Callout, cx, DataView, IconButton, JsonEditor, JsonTree, Modal, Spinner, Tabs, Toggle, toast, useBreakpoint, useDebounced, type JsonTextState } from "../ui.tsx";
 import { txt } from "../../lib/text.ts";
 import { ExprInput } from "./fields.tsx";
 
 const DND_PATH = "application/x-weave-path";
 const KINDS: RuleKind[] = ["direct", "expr", "const", "instruction"];
-type RuleResult = { id: string; ok: boolean; value?: Json; error?: string; compiled?: { expr?: string } | null };
+type RuleResult = { id: string; ok: boolean; value?: Json; error?: string; warning?: string; missing?: string[]; compiled?: { expr?: string } | null };
+const SHAPES: ShapeKind[] = ["object", "each", "values", "value"];
 
 function dropPath(e: React.DragEvent): string | null {
   const p = e.dataTransfer.getData(DND_PATH);
@@ -37,7 +38,7 @@ const constText = (v: Json | undefined) => (v === undefined ? "" : typeof v === 
 const constType = (v: Json | undefined) => (v === null ? "empty value" : Array.isArray(v) ? "list" : typeof v === "object" ? "object" : typeof v === "number" ? "number" : typeof v === "boolean" ? "true / false" : "text");
 
 // ---------------------------------------------------------------- "in your words"
-function InstructionEditor({ rule, onChange, sample, examples, readOnly, stale }: { rule: MappingRule; onChange: (r: MappingRule) => void; sample: Json | undefined; examples: string[]; readOnly?: boolean; stale?: boolean }) {
+function InstructionEditor({ rule, onChange, sample, examples, readOnly, stale, missing, sampleInvalid }: { rule: MappingRule; onChange: (r: MappingRule) => void; sample: Json | undefined; examples: string[]; readOnly?: boolean; stale?: boolean; missing?: string[]; sampleInvalid?: boolean }) {
   const latest = useRef(rule);
   latest.current = rule;
   const [info, setInfo] = useState<{ forText: string; res?: CompileInstructionResponse; error?: string; offline?: boolean } | null>(null);
@@ -80,10 +81,15 @@ function InstructionEditor({ rule, onChange, sample, examples, readOnly, stale }
             <span><strong>Understood as:</strong> {txt(c.explanation) || "a rule"}</span>
           </div>
           <div className="mf-hstack">
-            <Badge tone={c.confidence === "exact" ? "ok" : "warn"}>{c.confidence === "exact" ? "confident" : "best guess, please check"}</Badge>
+            {missing?.length
+              ? <Badge tone="warn" icon={TriangleAlert}>check: {missing.join(", ")} {missing.length === 1 ? "is" : "are"} not in the sample</Badge>
+              : <Badge tone={c.confidence === "exact" ? "ok" : "warn"}>{c.confidence === "exact" ? "confident" : "best guess, please check"}</Badge>}
             <Badge>{c.engine === "in-estate-model" ? "your in-house model" : "built-in rules on this server"}</Badge>
             <button type="button" className="mf-linkbtn" onClick={() => setShowExpr((s) => !s)} aria-expanded={showExpr}>{showExpr ? "Hide expression" : "Show expression"}</button>
           </div>
+          {!!missing?.length && (
+            <span className="ws-understood-warn" data-rule-missing>{missing.join(", ")} {missing.length === 1 ? "is" : "are"} not in the {sampleInvalid ? "last valid " : ""}sample, so the result below was made without {missing.length === 1 ? "it" : "them"}. Add {missing.length === 1 ? "it" : "them"} to the sample, or check the field name.</span>
+          )}
           {showExpr && (
             <div className="mf-stack" style={{ gap: 6 }}>
               <code className="ws-understood-expr" data-compiled-expr>{txt(c.expr)}</code>
@@ -122,13 +128,13 @@ function InstructionEditor({ rule, onChange, sample, examples, readOnly, stale }
 }
 
 // ---------------------------------------------------------------- one rule
-function RuleCard({ rule, index, result, sample, paths, examples, readOnly, onChange, onRemove }: {
+function RuleCard({ rule, index, result, sample, paths, examples, readOnly, onChange, onRemove, shapeKind, sampleInvalid }: {
   rule: MappingRule; index: number; result?: RuleResult; sample: Json | undefined; paths: string[]; examples: string[]; readOnly?: boolean;
-  onChange: (r: MappingRule) => void; onRemove: () => void;
+  onChange: (r: MappingRule) => void; onRemove: () => void; shapeKind?: ShapeKind; sampleInvalid?: boolean;
 }) {
   const [note, setNote] = useState(!!rule.comment);
   const [over, setOver] = useState(false);
-  const problem = ruleProblem(rule);
+  const problem = ruleProblem(rule, shapeKind);
   const off = rule.enabled === false;
   const unresolved = rule.kind === "instruction" && !rule.compiled?.expr && !off;
   const listId = `ws-paths-${rule.id}`;
@@ -147,7 +153,7 @@ function RuleCard({ rule, index, result, sample, paths, examples, readOnly, onCh
     <li className={cx("ws-rule", off && "ws-rule-off", unresolved && "ws-rule-unresolved", over && "ws-rule-over")} data-rule-index={index} data-rule-kind={rule.kind} data-rule-target={rule.target} data-rule-state={unresolved ? "unresolved" : problem ? "incomplete" : (result && !result.ok) || prose ? "error" : "ok"}
       onDragOver={(e) => { allowDrop(e); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={onDrop}>
       <div className="ws-rule-top">
-        <input className="mf-control mf-control-sm mf-control-mono ws-rule-target" aria-label="Output field" placeholder="output field, e.g. customer.fullName" value={rule.target} readOnly={readOnly} onChange={(e) => onChange({ ...rule, target: e.target.value })} />
+        <input className="mf-control mf-control-sm mf-control-mono ws-rule-target" aria-label="Output field" placeholder={shapeNeedsTarget(shapeKind) ? (shapeKind === "each" ? "field of each item, e.g. name" : "output field, e.g. customer.fullName") : "label (optional)"} value={rule.target} readOnly={readOnly} onChange={(e) => onChange({ ...rule, target: e.target.value })} />
         <select className="mf-control mf-control-sm ws-rule-kind" aria-label="How this field is filled" value={rule.kind} disabled={readOnly} onChange={(e) => onChange(convertRule(rule, e.target.value as RuleKind))}>
           {KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
         </select>
@@ -166,7 +172,7 @@ function RuleCard({ rule, index, result, sample, paths, examples, readOnly, onCh
             <Badge>{constType(rule.value ?? "")}</Badge>
           </div>
         )}
-        {rule.kind === "instruction" && <InstructionEditor rule={rule} onChange={onChange} sample={sample} examples={examples} readOnly={readOnly} stale={!!result && (!result.ok || !!result.compiled?.expr) && !!rule.compiled?.expr} />}
+        {rule.kind === "instruction" && <InstructionEditor rule={rule} onChange={onChange} sample={sample} examples={examples} readOnly={readOnly} stale={!!result && (!result.ok || !!result.compiled?.expr) && !!rule.compiled?.expr} missing={result?.missing} sampleInvalid={sampleInvalid} />}
         {prose && !readOnly && (
           <Callout tone="info" title="This reads like a sentence, not an expression" actions={<Button size="sm" icon={Sparkles} onClick={() => onChange(convertRule(rule, "instruction"))} data-action="treat-as-words">Treat this as a rule in your words</Button>}>
             <span>Expressions use field names and functions. If you meant to describe the rule in plain words, switch it and it will be interpreted for you.</span>
@@ -178,7 +184,7 @@ function RuleCard({ rule, index, result, sample, paths, examples, readOnly, onCh
           : unresolved ? <span className="ws-rule-err" data-rule-msg="unresolved">Unresolved: {problem}</span>
           : problem ? <span className="ws-rule-err" data-rule-msg="incomplete">{problem}</span>
           : result && !result.ok ? <span className="ws-rule-err" data-rule-msg="error">{txt(result.error) || "This rule fails on the sample."}</span>
-          : result ? <span className="ws-rule-val" data-rule-value><ArrowRight size={12} aria-hidden /><code>{showValue(result.value)}</code></span>
+          : result ? <span className="ws-rule-val" data-rule-value><ArrowRight size={12} aria-hidden /><code>{showValue(result.value)}</code>{result.warning && <span className="ws-rule-warn" data-rule-warning><TriangleAlert size={12} aria-hidden /> {txt(result.warning)}</span>}</span>
           : localValue !== undefined ? <span className="ws-rule-val"><ArrowRight size={12} aria-hidden /><code>{showValue(localValue)}</code></span>
           : <span className="mf-faint">No preview yet</span>}
         <span style={{ flex: 1 }} />
@@ -199,9 +205,20 @@ export function Mapper({ spec, onChange, readOnly, lastInput, examples }: { spec
   const [editIn, setEditIn] = useState(false);
   const [editOut, setEditOut] = useState(false);
   const [suggested, setSuggested] = useState<MappingRule[] | null>(null);
+  const [sampleText, setSampleText] = useState<JsonTextState | null>(null);
+  const [help, setHelp] = useState(false);
+  const [helpFilter, setHelpFilter] = useState("");
+  const sampleInvalid = !!sampleText && !sampleText.valid;
+  const shape = spec.shape ?? { kind: "object" as ShapeKind };
+  const setShape = (next: Partial<NonNullable<MappingSpec["shape"]>>) => {
+    const merged = { ...shape, ...next };
+    const clean = { kind: merged.kind, ...(merged.each?.trim() && (merged.kind === "each" || merged.kind === "values") ? { each: merged.each.trim() } : {}), ...(merged.wrap?.trim() ? { wrap: merged.wrap.trim() } : {}) };
+    onChange({ ...spec, shape: clean.kind === "object" && !clean.wrap ? undefined : clean, ...(clean.kind === "values" || clean.kind === "value" ? { passthrough: undefined } : {}) });
+  };
   const sample = spec.sampleSource !== undefined ? spec.sampleSource : lastInput;
   const fromRun = spec.sampleSource === undefined && lastInput !== undefined;
   const paths = useMemo(() => leafPaths(sample), [sample]);
+  const lists = useMemo(() => arrayPaths(sample), [sample]);
   const targets = useMemo(() => leafPaths(spec.sampleTarget), [spec.sampleTarget]);
   const stats = specStats(spec);
   const rules = spec.rules;
@@ -211,7 +228,7 @@ export function Mapper({ spec, onChange, readOnly, lastInput, examples }: { spec
   const addFromPath = (path: string, target?: string) => add(newRule("direct", { source: path, target: target ?? targetFromSource(path, rules.map((r) => r.target)) }));
 
   const debouncedSpec = useDebounced(spec, 350);
-  const previewKey = useMemo(() => JSON.stringify([debouncedSpec.rules, debouncedSpec.passthrough ?? false, debouncedSpec.sampleTarget ?? null, sample ?? null]), [debouncedSpec, sample]);
+  const previewKey = useMemo(() => JSON.stringify([debouncedSpec.rules, debouncedSpec.passthrough ?? false, debouncedSpec.shape ?? null, debouncedSpec.sampleTarget ?? null, sample ?? null]), [debouncedSpec, sample]);
   const preview = useQuery({
     queryKey: ["studio", "mapping-preview", previewKey],
     queryFn: () => studioApi.mappingPreview({ ...debouncedSpec, sampleSource: undefined }, (sample ?? null) as Json),
@@ -243,7 +260,7 @@ export function Mapper({ spec, onChange, readOnly, lastInput, examples }: { spec
       <div className="ws-map-colbody">
         {editIn && !readOnly && (
           <div className="mf-stack" style={{ gap: 6 }}>
-            <JsonEditor value={sample} onChange={(v) => onChange({ ...spec, sampleSource: v as Json | undefined })} minRows={6} maxRows={18} ariaLabel="Sample input" placeholder={'{ "customer": { "name": "John Smith" } }'} />
+            <JsonEditor value={sample} onChange={(v) => onChange({ ...spec, sampleSource: v as Json | undefined })} onTextState={setSampleText} offerFix minRows={6} maxRows={18} ariaLabel="Sample input" placeholder={'{ "customer": { "name": "John Smith" } }'} />
             <span className="mf-help">A sample of the data arriving at this step. It is stored with the flow on this server and used only for previews.</span>
             {lastInput !== undefined && <div><Button size="sm" variant="ghost" onClick={() => onChange({ ...spec, sampleSource: lastInput })}>Use the input from the last test run</Button></div>}
           </div>
@@ -263,9 +280,57 @@ export function Mapper({ spec, onChange, readOnly, lastInput, examples }: { spec
         <Badge tone={rules.length ? "accent" : "neutral"}>{rules.length}</Badge>
         {stats.unresolved > 0 && <Badge tone="bad">{stats.unresolved} not understood</Badge>}
         <span style={{ flex: 1 }} />
-        {!readOnly && <Toggle checked={!!spec.passthrough} onChange={(v) => onChange({ ...spec, passthrough: v || undefined })} label={<span style={{ fontSize: 12.5 }}>Keep all input fields</span>} />}
+        <button type="button" className="mf-linkbtn" onClick={() => setHelp((h) => !h)} aria-expanded={help} data-action="phrase-help"><BookOpen size={13} aria-hidden /> What you can write</button>
       </header>
       <div className="ws-map-colbody">
+        <div className="ws-shape" data-testid="mapping-shape">
+          <label className="ws-shape-row">
+            <span className="mf-label">The output is</span>
+            <select className="mf-control mf-control-sm" aria-label="Shape of the output" value={shape.kind} disabled={readOnly} onChange={(e) => setShape({ kind: e.target.value as ShapeKind })} data-shape-kind>
+              {SHAPES.map((k) => <option key={k} value={k}>{SHAPE_LABEL[k]}</option>)}
+            </select>
+          </label>
+          {(shape.kind === "each" || shape.kind === "values") && (
+            <label className="ws-shape-row">
+              <span className="mf-label">for each item of</span>
+              <input className="mf-control mf-control-sm mf-control-mono" aria-label="List in the input" list="ws-shape-lists" placeholder={lists[0] ? `e.g. ${lists[0]}` : "e.g. order.lines"} value={shape.each ?? ""} readOnly={readOnly} onChange={(e) => setShape({ each: e.target.value })} data-shape-each />
+              <datalist id="ws-shape-lists">{lists.map((p) => <option key={p} value={p} />)}</datalist>
+            </label>
+          )}
+          <label className="ws-shape-row">
+            <span className="mf-label">Wrap in</span>
+            <input className="mf-control mf-control-sm mf-control-mono" aria-label="Wrap the result under a key" placeholder="(optional) e.g. result" value={shape.wrap ?? ""} readOnly={readOnly} onChange={(e) => setShape({ wrap: e.target.value })} data-shape-wrap />
+          </label>
+          {!readOnly && (shape.kind === "object" || shape.kind === "each") && <Toggle checked={!!spec.passthrough} onChange={(v) => onChange({ ...spec, passthrough: v || undefined })} label={<span style={{ fontSize: 12.5 }}>Keep all input fields{shape.kind === "each" ? " of each item" : ""}</span>} />}
+          <span className="mf-help" data-shape-hint>{SHAPE_HINT[shape.kind]}{shape.kind === "each" && !shape.each ? " Choose the list first." : ""}</span>
+        </div>
+        {help && (
+          <div className="ws-phrases" data-testid="phrase-help">
+            <div className="mf-hstack"><strong style={{ fontSize: 13 }}>What you can write in your words</strong><span style={{ flex: 1 }} />
+              <input className="mf-control mf-control-sm" aria-label="Find a phrase" placeholder="Find, e.g. sort" value={helpFilter} onChange={(e) => setHelpFilter(e.target.value)} data-phrase-filter />
+            </div>
+            <p className="mf-help" style={{ margin: 0 }}>Replace FIELD with a field of your input (for example data.channel). Anything not on this list is answered with "not understood" and phrasings to try; nothing is guessed. {JOIN_RULE}</p>
+            {[...new Set(MAPPING_PHRASES.map((p) => p.group))].map((g) => {
+              const items = MAPPING_PHRASES.filter((p) => p.group === g && (!helpFilter.trim() || `${p.phrase} ${p.example} ${p.group}`.toLowerCase().includes(helpFilter.trim().toLowerCase())));
+              if (!items.length) return null;
+              return (
+                <details key={g} open={!!helpFilter.trim() || g === "Text in front or behind"} className="ws-phrases-group" data-phrase-group={g}>
+                  <summary>{g} <span className="mf-faint">({items.length})</span></summary>
+                  <ul className="ws-phrases-list">
+                    {items.map((p) => (
+                      <li key={p.example} data-phrase={p.phrase}>
+                        <span className="ws-phrases-phrase">{p.phrase}</span>
+                        <span className="ws-phrases-ex"><span className="mf-faint">e.g.</span> <code>{p.example}</code></span>
+                        <span className="ws-phrases-expr"><span className="mf-faint">becomes</span> <code>{p.expr}</code> <span className="mf-faint">=</span> <code>{showValue(p.value, 60)}</code></span>
+                        {!readOnly && <Button size="sm" variant="ghost" onClick={() => add(newRule("instruction", { instruction: p.example }))} data-action="use-phrase">Use</Button>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              );
+            })}
+          </div>
+        )}
         {suggested && suggested.length > 0 && (
           <div className="ws-suggestions" data-testid="suggestions">
             <div className="mf-hstack"><Lightbulb size={15} aria-hidden /><strong style={{ fontSize: 13 }}>Suggested mappings</strong><span style={{ flex: 1 }} />
@@ -285,7 +350,7 @@ export function Mapper({ spec, onChange, readOnly, lastInput, examples }: { spec
         )}
         {rules.length === 0 && <p className="mf-help">{readOnly ? "This mapping has no rules." : "No rules yet. Each rule fills one field of the output. Add one below, or pick a field from the input."}</p>}
         <ul className="ws-rules">
-          {rules.map((r, i) => <RuleCard key={r.id} rule={r} index={i} result={results.get(r.id)} sample={sample} paths={paths} examples={examples} readOnly={readOnly} onChange={(n) => setRule(r.id, n)} onRemove={() => setRules(rules.filter((x) => x.id !== r.id))} />)}
+          {rules.map((r, i) => <RuleCard key={r.id} rule={r} index={i} result={results.get(r.id)} sample={sample} paths={paths} examples={examples} readOnly={readOnly} shapeKind={shape.kind} sampleInvalid={sampleInvalid} onChange={(n) => setRule(r.id, n)} onRemove={() => setRules(rules.filter((x) => x.id !== r.id))} />)}
         </ul>
         {!readOnly && (
           <div className="ws-addrule" onDragOver={allowDrop} onDrop={(e) => { const p = dropPath(e); if (p) addFromPath(p); }}>
@@ -335,7 +400,12 @@ export function Mapper({ spec, onChange, readOnly, lastInput, examples }: { spec
         )}
         {preview.isError && <Callout tone={isUnavailable(preview.error) ? "warn" : "bad"} title="No live preview">{errorText(preview.error)}</Callout>}
         {sample === undefined && <p className="mf-help">Add a sample input to see the output here as you build the rules.</p>}
-        {preview.data && <div data-testid="mapping-output"><DataView label="Result on the sample" value={preview.data.output} maxHeight={420} /></div>}
+        {sampleInvalid && sample !== undefined && (
+          <Callout tone="warn" title="The sample you are typing is not valid JSON yet">
+            <span data-testid="preview-on-last-sample">The result below uses the last valid sample{sampleText?.line ? `; fix line ${sampleText.line}` : ""} and it updates as soon as the sample is valid again.</span>
+          </Callout>
+        )}
+        {preview.data && <div data-testid="mapping-output"><DataView label={sampleInvalid ? "Result on the last valid sample" : fromRun ? "Result on the input of the last test run" : "Result on the sample"} value={preview.data.output} maxHeight={420} /></div>}
         {!!preview.data?.diff?.length && (
           <Callout tone="warn" title="Differs from the expected output">
             <ul className="ws-difflist">{preview.data.diff.slice(0, 12).map((d) => <li key={d.path}><code>{txt(d.path)}</code>: got {showValue(d.got, 60)}, expected {showValue(d.want, 60)}</li>)}</ul>

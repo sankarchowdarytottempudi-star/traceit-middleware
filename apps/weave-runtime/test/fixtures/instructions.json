@@ -442,6 +442,12 @@
   },
   {
    "instruction": "prefix the order id with ORD",
+   "expr": "\"ORD \" & order.id",
+   "confidence": "exact",
+   "value": "ORD ord-7781"
+  },
+  {
+   "instruction": "prefix the order id with ORD without a space",
    "expr": "\"ORD\" & order.id",
    "confidence": "exact",
    "value": "ORDord-7781"

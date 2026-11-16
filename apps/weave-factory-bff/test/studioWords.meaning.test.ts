@@ -108,7 +108,9 @@ const KEEPING: Row[] = [
   ["lower case of status", "active"],
   ['add "X-" before code', "X-ab-12-cd"],
   ['add "-X" after code', "ab-12-cd-X"],
-  ['prefix code with "ID"', "IDab-12-cd"],
+  ['prefix code with "ID"', "ID ab-12-cd"],
+  ['prefix code with "ID" without a space', "IDab-12-cd"],
+  ['prefix code with "ID-"', "ID-ab-12-cd"],
   ['append "!" to status', "ACTIVE!"],
 ];
 const CONDITIONS: Row[] = [

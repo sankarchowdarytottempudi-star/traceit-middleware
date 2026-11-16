@@ -438,3 +438,23 @@ input.ws-bar-name:focus { outline: none; border-color: var(--accent); background
 .ws-unfinished { flex: 0 0 auto; padding: 10px 12px 0; }
 .ws-unfinished .mf-callout { max-height: 34vh; overflow: auto; }
 .ws-totals a { font-weight: 600; }
+
+/* mapping: shape of the output, phrase help, sample repair, warnings */
+.ws-shape { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 10px; min-width: 0; }
+.ws-shape-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.ws-shape-row .mf-control { min-width: 0; max-width: 100%; }
+.ws-shape .mf-help { flex-basis: 100%; margin: 0; }
+.ws-phrases { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 10px; min-width: 0; }
+.ws-phrases-group summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 4px 0; }
+.ws-phrases-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ws-phrases-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 12.5px; min-width: 0; }
+.ws-phrases-list li > button { grid-row: 1 / span 3; grid-column: 2; align-self: center; }
+.ws-phrases-phrase { font-weight: 600; overflow-wrap: anywhere; }
+.ws-phrases-ex, .ws-phrases-expr { overflow-wrap: anywhere; min-width: 0; }
+.ws-phrases-ex code, .ws-phrases-expr code { font-size: 11.5px; overflow-wrap: anywhere; white-space: normal; }
+.ws-json-errline { display: block; margin-top: 4px; font-size: 11.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ws-jsonfix { margin-top: 6px; }
+.ws-jsonfix-preview { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ws-understood-warn { display: block; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 14%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); font-size: 12.5px; overflow-wrap: anywhere; }
+.ws-rule-warn { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .ws-phrases-list li { grid-template-columns: minmax(0, 1fr); } .ws-phrases-list li > button { grid-row: auto; grid-column: 1; justify-self: start; } }

@@ -91,8 +91,19 @@ export interface CompiledInstruction {
   confidence: "exact" | "guessed";
   engine: "rules" | "in-estate-model";
 }
+/** What the mapping produces. Older mappings have no shape and produce an object. */
+export interface MappingShape {
+  kind: "object" | "each" | "values" | "value";
+  // object: one object, one field per rule (default)
+  // each:   a list of objects, one per item of the input list at `each`; rules read `item.…`, `parent.…`, `index`
+  // values: a list of values (with `each`: the first rule's value per item; without: every rule's value in order)
+  // value:  the first rule's value on its own
+  each?: string;                    // input path of the list, for "each" (and "values" per item)
+  wrap?: string;                    // put the result under this key: { <wrap>: result }
+}
 export interface MappingSpec {
   rules: MappingRule[];
+  shape?: MappingShape;
   passthrough?: boolean;            // true: start from the input object and apply rules on top
   sampleSource?: Json;              // design-time samples; stored with the flow, never sent anywhere else
   sampleTarget?: Json;

@@ -1,4 +1,5 @@
 // Small UI kit for the studio screens. Plain CSS (studio.css), product tokens, light + dark.
+import { fixJson, jsonErrorAt } from "./mapping.ts";
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, Copy, Info, LoaderCircle, X, type LucideIcon } from "lucide-react";
@@ -153,9 +154,15 @@ export function AutoTextArea({ value, onChange, minRows = 1, maxRows = 12, class
   return <textarea ref={ref} className={cx("mf-control", mono && "mf-control-mono", className)} value={value} rows={minRows} spellCheck={!mono} onChange={(e) => onChange(e.target.value)} {...rest} />;
 }
 /** JSON editor that keeps what the user typed while it is not valid JSON yet. */
-export function JsonEditor({ value, onChange, minRows = 3, maxRows = 14, placeholder, disabled, ariaLabel, id }: { value: unknown; onChange: (v: unknown) => void; minRows?: number; maxRows?: number; placeholder?: string; disabled?: boolean; ariaLabel?: string; id?: string }) {
+export interface JsonTextState { valid: boolean; text: string; error?: string; line?: number; column?: number; lineText?: string }
+export function JsonEditor({ value, onChange, minRows = 3, maxRows = 14, placeholder, disabled, ariaLabel, id, onTextState, offerFix }: { value: unknown; onChange: (v: unknown) => void; minRows?: number; maxRows?: number; placeholder?: string; disabled?: boolean; ariaLabel?: string; id?: string;
+  /** Told whether the text being typed is valid JSON (the last valid value stays in use until it is). */
+  onTextState?: (s: JsonTextState) => void;
+  /** Offer to repair common slips (missing comma, trailing comma, single or curly quotes), with a preview first. */
+  offerFix?: boolean }) {
   const [text, setText] = useState(() => (value === undefined ? "" : pretty(value)));
   const [err, setErr] = useState<string | null>(null);
+  const [showFix, setShowFix] = useState(false);
   const last = useRef(value);
   useEffect(() => {
     // external change (undo, restore, another control): refresh the text unless it already matches
@@ -164,16 +171,44 @@ export function JsonEditor({ value, onChange, minRows = 3, maxRows = 14, placeho
     try { if (text.trim() && JSON.stringify(JSON.parse(text)) === JSON.stringify(value)) return; } catch { /* replace */ }
     setText(value === undefined ? "" : pretty(value));
     setErr(null);
+    onTextState?.({ valid: true, text: value === undefined ? "" : pretty(value) });
   }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  const apply = (t: string) => {
+    setText(t);
+    if (!t.trim()) { setErr(null); last.current = undefined; onChange(undefined); onTextState?.({ valid: true, text: t }); return; }
+    try { const v = JSON.parse(t); setErr(null); setShowFix(false); last.current = v; onChange(v); onTextState?.({ valid: true, text: t }); }
+    catch (e) {
+      const msg = (e as Error).message.replace(/^JSON\.parse: /, "");
+      setErr(msg);
+      const at = jsonErrorAt(t, msg);
+      onTextState?.({ valid: false, text: t, error: msg, line: at?.line, column: at?.column, lineText: at?.lineText });
+    }
+  };
+  const at = err ? jsonErrorAt(text, err) : null;
+  const fix = err && offerFix ? fixJson(text) : null;
   return (
     <div>
-      <AutoTextArea id={id} mono value={text} minRows={minRows} maxRows={maxRows} placeholder={placeholder} disabled={disabled} aria-label={ariaLabel} aria-invalid={!!err}
-        onChange={(t) => {
-          setText(t);
-          if (!t.trim()) { setErr(null); last.current = undefined; onChange(undefined); return; }
-          try { const v = JSON.parse(t); setErr(null); last.current = v; onChange(v); } catch (e) { setErr((e as Error).message.replace(/^JSON\.parse: /, "")); }
-        }} />
-      {err && <div className="mf-field-error">Not valid JSON yet: {err}</div>}
+      <AutoTextArea id={id} mono value={text} minRows={minRows} maxRows={maxRows} placeholder={placeholder} disabled={disabled} aria-label={ariaLabel} aria-invalid={!!err} onChange={apply} />
+      {err && (
+        <div className="mf-field-error" data-json-error>
+          Not valid JSON yet{at ? ` (line ${at.line}, column ${at.column})` : ""}: {err}
+          {at?.lineText?.trim() ? <code className="ws-json-errline" data-json-errline>{at.lineText.trim()}</code> : null}
+        </div>
+      )}
+      {fix && !disabled && (
+        <div className="ws-jsonfix" data-json-fix>
+          {!showFix
+            ? <button type="button" className="mf-linkbtn" onClick={() => setShowFix(true)} data-action="fix-json">Fix the JSON</button>
+            : <div className="mf-stack" style={{ gap: 6 }}>
+                <span className="mf-help">Suggested repair: {fix.changes.join("; ")}.</span>
+                <pre className="ws-jsonfix-preview" data-json-fix-preview>{fix.text}</pre>
+                <div className="mf-hstack">
+                  <Button size="sm" variant="primary" onClick={() => apply(fix.text)} data-action="use-fixed-json">Use the fixed text</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowFix(false)}>Keep editing</Button>
+                </div>
+              </div>}
+        </div>
+      )}
     </div>
   );
 }

@@ -479,7 +479,7 @@ const CONDS: [string, CondFn][] = [
   ["{S}(?: (?:is|are|was|were|has|value|comes|falls))?(?<not> not)? (?<op>greater than or equal to|more than or equal to|equal to or greater than|equal to or more than|at least|no less than|not less than|minimum|>=|=>|greater than|more than|bigger than|larger than|higher than|above|over|exceeds|exceeding|beyond|>|less than or equal to|equal to or less than|at most|no more than|not more than|maximum|up to|<=|=<|less than|smaller than|lower than|below|under|fewer than|<|on or after|after|later than|since|on or before|before|earlier than|prior to|until) {X}", (g, sub, c, subj) => {
     const s = sub(g.s); if (!s) return null; const k = g.op!.toLowerCase().replace(/\s+/g, " ");
     const date = /after|later|since|before|earlier|prior|until/.test(k);
-    const op = /or equal|equal to or|at least|no less|not less|minimum|>=|=>|on or after|since/.test(k) ? ">=" : /at most|no more|not more|maximum|up to|<=|=<|on or before|until/.test(k) ? "<=" : /greater|more|bigger|larger|higher|above|over|exceed|beyond|>|after|later/.test(k) ? ">" : "<";
+    const op = /(?:less|smaller|lower|fewer) than or equal|equal to or (?:less|smaller|lower)|at most|no more|not more|maximum|up to|<=|=<|on or before|until/.test(k) ? "<=" : /or equal|equal to or|at least|no less|not less|minimum|>=|=>|on or after|since/.test(k) ? ">=" : /greater|more|bigger|larger|higher|above|over|exceed|beyond|>|after|later/.test(k) ? ">" : "<";
     const words = op === ">=" ? "at least" : op === "<=" ? "at most" : op === ">" ? (date ? "after" : "greater than") : (date ? "before" : "less than");
     let r: X | null = null;
     if (date) {
@@ -612,7 +612,7 @@ const st = (src: string, fn: StepFn) => { STEPS.push(["{V}" + src + "{T}", fn]);
 const ar = (src: string, fn: StepFn) => { ARR_STEPS.push(["{V}" + src + "{T}", fn]); };
 const S1 = (s: X) => (s.t === "string" ? s.e : `$string(${s.e})`);
 const call = (fn: string, np: string, vp: string, t: T = "string"): StepFn => (_m, s) => step(s, `${fn}(${str(s)})`, `${s.np} ${np}`, vp, t);
-const IDENTITY = "{V}(?:as is|as it is|as-is|unchanged|untouched|same|same as|as it comes|as it came|as received|as given|as such|directly|copy|copied|copy of|copy from|copied from|no changes?|without (?:any )?changes?|straight through|pass through|passthrough|mapped from|map from|comes from|equals|equal to|=|is|from|map|mapped|exactly|keep|leave|use|take|get|return|set|leave unchanged|do nothing|value|field|original|original value|as before|direct|straight|same value|nothing else|no transformation|no conversion)?{T}";
+const IDENTITY = "{V}(?:filter|filtered|select|selected|pick|picked|only|only the|keep only|the items of|items of|entries of|records of|rows of|elements of|as is|as it is|as-is|unchanged|untouched|same|same as|as it comes|as it came|as received|as given|as such|directly|copy|copied|copy of|copy from|copied from|no changes?|without (?:any )?changes?|straight through|pass through|passthrough|mapped from|map from|comes from|equals|equal to|=|is|from|map|mapped|exactly|keep|leave|use|take|get|return|set|leave unchanged|do nothing|value|field|original|original value|as before|direct|straight|same value|nothing else|no transformation|no conversion)?{T}";
 
 st("(?:uppercase|uppercased|upper|capitals|caps|capital letters|uppercase letters|block letters|block capitals)", call("$uppercase", "in upper case", "convert it to upper case"));
 st("(?:titlecase|titlecased|title|(?:capitalize|capitalise) (?:each|every|all) words?|(?:capitalize|capitalise) first letter of (?:each|every) word|first letter of (?:each|every) word (?:in )?(?:capital|uppercase|capitalized)|start case|capitalized words|each word capitalized|initial caps|initial capitals)", call("$titleCase", "in title case", "write it in title case"));
@@ -718,20 +718,45 @@ st("(first|last) {N}", (m, s, c) => (s.t === "string" ? (m[1].toLowerCase() === 
 st("{ORD} {CH}", (m, s, c) => { const i = toOrd(m[1]); return i === 0 ? firstN(1)(m, s, c) : i === -1 ? lastN(1)(m, s, c) : i < 0 ? null : step(s, `$substring(${S1(s)}, ${i}, 1)`, `the ${ordName(i)} character of ${s.np}`, `take its ${ordName(i)} character`, "string"); });
 st("(?:initial|first initial)", (m, s, c) => firstN(1)(m, s, c));
 st("{CH} {N} (?:to|through|thru|-|until|till) {N}", (m, s) => { const a = toNum(m[1]), b = toNum(m[2]); return b >= a && a >= 1 ? step(s, `$substring(${S1(s)}, ${a - 1}, ${b - a + 1})`, `characters ${a} to ${b} of ${s.np}`, `take characters ${a} to ${b}`, "string") : null; });
+st("(?:substring|part|portion|characters|chars|letters|text|slice)(?: of)?(?: it)? (?:from|between)(?: (?:position|character|index|char|letter))? {N} (?:to|and|through|thru|-|until|till)(?: (?:position|character|index|char|letter))? {N}", (m, s) => { const a = toNum(m[1]), b = toNum(m[2]); return b >= a && a >= 1 ? step(s, `$substring(${S1(s)}, ${a - 1}, ${b - a + 1})`, `characters ${a} to ${b} of ${s.np}`, `take characters ${a} to ${b}`, "string") : null; });
 st("(?:(?:everything|text|part|characters) )?(?:from|starting at|starting from|after) (?:position|character|index|char|letter) {N}(?: onwards?| on| to end| until end)?", (m, s) => { const n = toNum(m[1]); return n >= 1 ? step(s, `$substring(${S1(s)}, ${n - 1})`, `${s.np} from character ${n}`, `take everything from character ${n}`, "string") : null; });
 st("(?:truncate|truncated|shorten|shortened|limit|limited|cap|capped|restrict|restricted|crop|clip|cut off|cut)(?: it)?(?: (?:to|at|after))?(?: (?:a )?(?:max|maximum|at most|only)(?: of)?)? {N}(?: {CH})?(?: long| max| maximum| at most)?", (m, s, c) => firstN(toNum(m[1]))(m, s, c));
 st("(?:max|maximum|at most|no more than|up to|not more than|maximum of|max of|max length|maximum length|max length of|maximum length of) {N}(?: {CH})?(?: long)?", (m, s, c) => firstN(toNum(m[1]))(m, s, c));
 st("(?:length|size|number of {CH}|character count|count of {CH}|how long|how many {CH}|text length|string length)", (_m, s) => (s.t === "array" ? null : step(s, `$length(${S1(s)})`, `the length of ${s.np}`, "count its characters", "number")));
 st("(?:reverse|reversed|backwards|backward|in reverse)", (_m, s) => (s.t === "array" ? null : step(s, `$join($reverse($split(${S1(s)}, "")), "")`, `${s.np} reversed`, "reverse its characters", "string")));
 // prefix / suffix / wrap
-const addFix = (pre: boolean, i = 1): StepFn => (m, s, c) => { const v = textArg(c, m[i]); return v ? step(s, pre ? `${w({ ...v, e: str(v) }, 3)} & ${w({ ...s, e: str(s) }, 3)}` : `${w({ ...s, e: str(s) }, 3)} & ${w({ ...v, e: str(v) }, 3)}`, `${s.np} with ${v.np} ${pre ? "in front" : "at the end"}`, `put ${v.np} ${pre ? "in front of it" : "after it"}`, "string", 3) : null; };
-st("(?:prefix|prepend|start|begin|precede)(?: it)? (?:with|by) {X}", addFix(true));
-st("(?:add|put|insert|prepend|place|attach) {X} (?:at|to|in|on|as|before) (?:start|beginning|front|a prefix|prefix|its start|it)(?: of it)?", addFix(true));
-st("(?:add|put|insert|place) {X} (?:in front|before)(?: of it)?", addFix(true));
-st("(?:add (?:a )?prefix(?: of)?|with prefix|prefix|prefixed with|prefixed by|prepend|starting with|preceded by) {X}", addFix(true));
-st("(?:suffix|append|end|finish|follow)(?: it)? (?:with|by) {X}", addFix(false));
-st("(?:add|put|insert|append|place|attach) {X} (?:at|to|in|on|as|after) (?:end|back|a suffix|suffix|tail|its end|it)(?: of it)?", addFix(false));
-st("(?:add (?:a )?suffix(?: of)?|with suffix|suffix|suffixed with|suffixed by|append|ending with|followed by) {X}", addFix(false));
+// Text put in front of (or after) a value: a word is separated by one space ("New" + "web" -> "New web"); text that
+// already ends (or starts) with a separator such as - / _ : . is joined directly, and so is everything when the sentence
+// says "without a space"/"directly" or uses "+". Fields put next to a value are joined with a space, like words.
+const NOSPACE = /\b(?:without|with\s+no|no)\s+(?:a\s+|any\s+)?(?:space|spaces|gap|separator)\b|\bdirectly\b|\battached\b|\bno\s+gap\b|\+/i;
+const NOSP = "(?: (?:without|with no|no) (?:a |any )?(?:space|spaces|gap|separator)| directly| attached)?";
+function gapped(v: X, pre: boolean, plain: boolean): { e: string; np: string; gap: boolean } {
+  if (plain) return { e: w({ ...v, e: str(v) }, 3), np: v.np, gap: false };
+  if (v.lit && v.t === "string") {
+    let text = ""; try { text = JSON.parse(v.e) as string; } catch { return { e: w({ ...v, e: str(v) }, 3), np: v.np, gap: false }; }
+    const edge = pre ? text.slice(-1) : text.charAt(0);
+    if (!text || !/[\p{L}\p{N}]/u.test(edge)) return { e: q(text), np: v.np, gap: false };
+    return { e: q(pre ? text + " " : " " + text), np: v.np, gap: true };
+  }
+  return { e: pre ? `${w({ ...v, e: str(v) }, 3)} & " "` : `" " & ${w({ ...v, e: str(v) }, 3)}`, np: v.np, gap: true };
+}
+const addFix = (pre: boolean, i = 1, plainForce = false): StepFn => (m, s, c) => {
+  const v = textArg(c, m[i]); if (!v) return null;
+  const g = gapped(v, pre, plainForce || NOSPACE.test(m[0]));
+  const sub = w({ ...s, e: str(s) }, 3);
+  const how = g.gap ? ` and a space` : "";
+  return step(s, pre ? `${g.e} & ${sub}` : `${sub} & ${g.e}`, `${s.np} with ${v.np}${how} ${pre ? "in front" : "at the end"}`, `put ${v.np}${how} ${pre ? "in front of it" : "after it"}`, "string", 3);
+};
+st("(?:prefix|prepend|start|begin|precede)(?: it)? (?:with|by) {X}" + NOSP, addFix(true));
+st("(?:add|put|insert|prepend|place|attach) {X} (?:at|to|in|on|as|before) (?:start|beginning|front|a prefix|prefix|its start|it)(?: of it)?" + NOSP, addFix(true));
+st("(?:add|put|insert|place) {X} (?:in front|before)(?: of it)?" + NOSP, addFix(true));
+st("(?:add (?:a )?prefix(?: of)?|with prefix|prefix|prefixed with|prefixed by|prepend|starting with|preceded by) {X}" + NOSP, addFix(true));
+st("(?:suffix|append|end|finish|follow)(?: it)? (?:with|by) {X}" + NOSP, addFix(false));
+st("(?:add|put|insert|append|place|attach) {X} (?:at|to|in|on|as|after) (?:end|back|a suffix|suffix|tail|its end|it)(?: of it)?" + NOSP, addFix(false));
+st("(?:add|put|insert|append|place|attach) {X} (?:after|behind)(?: it)?" + NOSP, addFix(false));
+st("(?:add (?:a )?suffix(?: of)?|with suffix|suffix|suffixed with|suffixed by|append|ending with|followed by) {X}" + NOSP, addFix(false));
+st("(⟦q\\d+⟧) ?\\+", addFix(true, 1, true));
+st("\\+ ?(⟦q\\d+⟧)", addFix(false, 1, true));
 st("(?:wrap|wrapped|surround|surrounded|enclose|enclosed)(?: it)?(?: (?:in|with|by|inside))? (double quotes|single quotes|quotes|square brackets|curly braces|curly brackets|brackets|parentheses|round brackets|angle brackets)", (m, s) => { const k = m[1].toLowerCase(); const [a, b] = k === "single quotes" ? ["'", "'"] : k.includes("quote") ? ['"', '"'] : k.startsWith("square") ? ["[", "]"] : k.startsWith("curly") ? ["{", "}"] : k.startsWith("angle") ? ["<", ">"] : ["(", ")"]; return step(s, `${q(a)} & ${w({ ...s, e: str(s) }, 3)} & ${q(b)}`, `${s.np} in ${k}`, `wrap it in ${k}`, "string", 3); });
 st("(?:wrap|wrapped|surround|surrounded|enclose|enclosed)(?: it)? (?:in|with|by) {X}", (m, s, c) => { const l = litText(c, m[1]); return l ? step(s, `${q(l)} & ${w({ ...s, e: str(s) }, 3)} & ${q(l)}`, `${s.np} wrapped in ${show(l)}`, `put ${show(l)} before and after it`, "string", 3) : null; });
 // default when empty
@@ -747,6 +772,9 @@ st("(?:(?:reformat|format|parse|date|dates|change|convert) )?(?:(?:it|date) )?fr
 st("(?:it )?(?:is|comes|arrives|came|given|written) (?:in|as) {Q}(?: (?:format|pattern))?(?:,| and| then|;)*(?: (?:convert|change|reformat|format|make|turn|output|return|write|show))?(?: it)?(?: (?:to|into|as|in))? {Q}(?: (?:format|pattern))?", (m, s, c) => { const a = c.lits[+m[1]], b = c.lits[+m[2]]; return a.pattern && b.pattern ? step(s, `$formatDate(${s.e}, ${q(b.text)}, ${q(a.text)})`, `${s.np} as ${b.text}`, `read it as ${a.text} and write it as ${b.text}`, "string") : null; });
 st("(?:parse|read|interpret)(?: it)?(?: (?:as|using|with|from))?(?: (?:date|format|pattern))* {Q}(?: (?:format|pattern))?", (m, s, c) => { const a = c.lits[+m[1]]; return a.pattern ? step(s, `$parseDate(${s.e}, ${q(a.text)})`, `${s.np} read as ${a.text}`, `read it as a date written ${a.text}`, "string") : null; });
 st("(?:(?:reformat|reformatted|format|formatted|date format|pattern|date) )?(?:(?:it|date|dates) )?(?:(?:as|to|in|into|like|with|using|of) )?(?:(?:format|pattern|date format|picture|mask) )?{Q}(?: (?:format|pattern))?", (m, s, c) => { const a = c.lits[+m[1]]; if (a.pattern) return step(s, `$formatDate(${s.e}, ${q(a.text)})`, `${s.np} as ${a.text}`, `write it as ${a.text}`, "string"); return /^[#0,.\s%-]+$/.test(a.text) && /[#0]/.test(a.text) ? step(s, `$formatNumber(${num(s)}, ${q(a.text)})`, `${s.np} formatted as ${a.text}`, `format it as ${a.text}`, "string") : null; });
+st("(?:parse|parsed|read|interpret)(?: it)?(?: (?:as|into) (?:a )?(?:date|date and time|datetime|timestamp))?", (_m, s) => step(s, `$parseDate(${s.e})`, `${s.np} read as a date`, "read it as a date (written as an ISO timestamp)", "string"));
+st("(?:format|formatted|show|shown|write|written|display|displayed)(?: it)?(?: as)?(?: (?:a )?(?:number|amount|money))? with {N} (?:decimals?|decimal places?|digits after the (?:point|dot|comma))(?<th> and (?:a )?(?:thousands? separators?|commas|grouping))?", (m, s) => { const n = toNum(m[1]); if (n > 10) return null; const th = /thousand|comma|grouping/i.test(m[0]); const pat = (th ? "#,##0" : "0") + (n ? "." + "0".repeat(n) : ""); return step(s, `$formatNumber(${num(s)}, ${q(pat)})`, `${s.np} written with ${n} decimals${th ? " and thousands separators" : ""}`, `write it as a number with ${n} decimals${th ? " and thousands separators" : ""}`, "string"); });
+st("(?:with )?(?:thousands? separators?|thousands? commas|grouping commas)", (_m, s) => step(s, `$formatNumber(${num(s)}, "#,##0.##")`, `${s.np} with thousands separators`, "write it with thousands separators", "string"));
 st("(?:iso|iso ?8601|iso date ?time|iso timestamp|iso format|iso date and time|utc timestamp|utc|timestamp|date ?time|date and time)(?: format)?", (_m, s) => step(s, `$parseDate(${s.e})`, `${s.np} as an ISO timestamp`, "write it as an ISO date and time", "string"));
 st("(?:date only|only date|just date|date part|date portion|date without time|iso date|date|drop time|remove time|strip time|without time|no time)", dfmt("yyyy-MM-dd", "a date (yyyy-MM-dd)"));
 st("(?:time only|only time|just time|time part|time portion|time|time of day)", dfmt("HH:mm:ss", "a time (HH:mm:ss)"));
@@ -853,6 +881,23 @@ ar("csv", joinArr(","));
 ar("(?:join|joined|concatenate|concatenated|combine|combined|single string|one string|join together|comma separated list)(?: (?:them|all|items|values|together|into text|into string|into one string|as text))*", joinArr(", "));
 ar("(?:unique|distinct|deduplicate|deduplicated|dedupe|dedup|unique values|distinct values|remove duplicates|without duplicates|no duplicates|drop duplicates)(?: (?:values|items|only))?", (_m, s) => step(s, `$distinct(${s.e})`, `the distinct values of ${s.np}`, "remove duplicates", "array"));
 ar("(?:sort|sorted|order|ordered)(?: (?:them|by value))?(?: (?:in|by))?(?: (asc|ascending|desc|descending|alphabetically|alphabetical|a to z|z to a|reverse|low to high|high to low|smallest first|largest first|oldest first|newest first|increasing|decreasing))?(?: order)?", (m, s) => { const k = (m[1] ?? "").toLowerCase(); const desc = /desc|z to a|reverse|high to low|largest first|newest first|decreasing/.test(k); return step(s, desc ? `$reverse($sort(${s.e}))` : `$sort(${s.e})`, `${s.np} sorted${desc ? " in descending order" : ""}`, `sort the items${desc ? " in descending order" : ""}`, "array"); });
+// "sort data.items by price (descending)", "group data.items by type": the key is a field of each item
+const itemKey = (c: Ctx, s: X, raw: string): string | null => {
+  const t = raw.trim(); const fm = /^⟦f(\d+)⟧$/.exec(t);
+  let path = fm ? (fieldX(c, +fm[1])?.e ?? "") : t;
+  path = path.replace(/^\$\.?/, "");
+  const base = s.e.replace(/^\$\.?/, "");
+  if (base && path.startsWith(base + ".")) path = path.slice(base.length + 1);
+  return /^[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*$/.test(path) ? path : null;
+};
+ar("(?:sort|sorted|order|ordered|arrange|arranged|rank|ranked)(?: (?:them|the items|items|it))? (?:by|on|using) (⟦f\\d+⟧|[A-Za-z_][\\w.]*)(?: (?:in|from))?(?: (asc|ascending|desc|descending|low to high|high to low|smallest first|largest first|highest first|lowest first|increasing|decreasing|a to z|z to a|reverse))?(?: order)?", (m, s, c) => {
+  const k = itemKey(c, s, m[1]); if (!k) return null; const desc = /desc|high to low|largest first|highest first|decreasing|z to a|reverse/i.test(m[2] ?? "");
+  return step(s, `$sort(${s.e}, function($l, $r) { $l.${k} ${desc ? "<" : ">"} $r.${k} })`, `${s.np} sorted by ${k}${desc ? " from high to low" : ""}`, `sort the items by ${k}${desc ? " in descending order" : ""}`, "array");
+});
+ar("(?:group|grouped|groups|bucket|bucketed)(?: (?:them|the items|items|it))? (?:by|on|per) (⟦f\\d+⟧|[A-Za-z_][\\w.]*)", (m, s, c) => {
+  const k = itemKey(c, s, m[1]); if (!k) return null;
+  return step(s, `${w(s, 1)}{${k}: [$]}`, `${s.np} grouped by ${k}`, `group the items by ${k} (one list per ${k})`, "object");
+});
 ar("(?:reverse|reversed|backwards|reverse order|in reverse|in reverse order)", (_m, s) => step(s, `$reverse(${s.e})`, `${s.np} in reverse order`, "reverse the order", "array"));
 
 function oneStep(c: Ctx, raw: string, s: X): X | null {
@@ -1429,8 +1474,36 @@ function normalize(t: string): string {
 }
 
 /** The rule-based compiler. Synchronous and local; never calls anything. */
+// "is one of "A", "B" or "C"": the commas belong to the list, not to the sentence
+const ONE_OF_LIST = /\b(one of|any of|either|among|none of)\s+((?:"[^"]*"|'[^']*'|[\w.-]+)(?:\s*,\s*(?:or\s+|and\s+)?(?:"[^"]*"|'[^']*'|[\w.-]+))+(?:\s+(?:or|and)\s+(?:"[^"]*"|'[^']*'|[\w.-]+))?)/gi;
+function listCommas(raw: string): string {
+  // a plain path right before "is one of" is read as that field (the same as writing it in brackets)
+  raw = raw.replace(/(?<![(\w.⟦])([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)(?=\s+(?:is|are|was)\s+(?:not\s+)?(?:one of|any of|in|among|either|none of)\s)/g, "($1)");
+  return raw.replace(ONE_OF_LIST, (_m, head: string, list: string) => `${head} ${list.split(/\s*,\s*(?:or\s+|and\s+)?|\s+(?:or|and)\s+/).filter(Boolean).join(" or ")}`);
+}
+/** "build an object with name from customer.name and mail from customer.email": one key per part. */
+function buildObject(req: CompileInstructionRequest, raw: string): CompileOutcome | null {
+  const m = /^(?:build|make|create|return|output|give|put together)\s+(?:an?\s+|the\s+)?(?:object|record|structure|json object)\s+(?:with|of|containing|having|that has)\s+(.+)$/i.exec(raw);
+  if (!m) return null;
+  const parts = m[1].split(/\s*[,;]\s*(?:and\s+)?|\s+and\s+(?=[A-Za-z_][\w-]*\s+(?:from|=|as|:|is|set to|taken from|copied from)\s)/i).map((x) => x.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  const keys: string[] = []; const exprs: string[] = []; const says: string[] = []; const fields: string[] = []; let guessed = false;
+  for (const part of parts) {
+    const pm = /^([A-Za-z_][\w-]*)\s+(?:from|=|as|:|is|set to|taken from|copied from)\s+(.+)$/i.exec(part);
+    if (!pm) return { ok: false, compiled: null, understood: [], reason: `In "${part}" the key and its value were not recognised. Write each part as: key from field (for example: name from customer.name).`, suggestions: [], fields: [] };
+    const sub = compileLocal({ ...req, instruction: pm[2], target: pm[1] }, { suggest: false });
+    if (!sub.ok || !sub.compiled) return { ok: false, compiled: null, understood: [], reason: `The value of "${pm[1]}" (${pm[2]}) was not understood: ${sub.reason ?? "say it another way"}`, suggestions: [], fields: [] };
+    keys.push(pm[1]); exprs.push(sub.compiled.expr); says.push(`${pm[1]} = ${sub.compiled.explanation.replace(/^./, (x) => x.toLowerCase())}`); fields.push(...sub.fields);
+    if (sub.compiled.confidence !== "exact") guessed = true;
+  }
+  const expr = `{${keys.map((k, i) => `${JSON.stringify(k)}: ${exprs[i]}`).join(", ")}}`;
+  return { ok: true, compiled: { expr, explanation: `An object with ${says.join("; ")}`, confidence: guessed ? "guessed" : "exact", engine: "rules" }, understood: [], suggestions: [], fields: fields.filter((f, i, a) => a.indexOf(f) === i) };
+}
+
 export function compileLocal(req: CompileInstructionRequest, opts: { suggest?: boolean } = {}): CompileOutcome {
-  const raw = (req.instruction ?? "").replace(/\s+/g, " ").trim();
+  const raw = listCommas((req.instruction ?? "").replace(/\s+/g, " ").trim());
+  const built = raw.length <= 600 ? buildObject(req, raw) : null;
+  if (built) return built;
   const sample = req.sampleSource as unknown;
   const paths = sample !== null && typeof sample === "object" ? samplePaths(sample) : [];
   const wantSuggestions = opts.suggest !== false;

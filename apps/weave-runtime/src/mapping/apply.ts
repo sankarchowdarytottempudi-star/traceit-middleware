@@ -3,7 +3,7 @@
 import type { CompiledInstruction, Json, MappingRule, MappingSpec } from "@traceit/weave-flow";
 import { evalExpr, checkExpr, type ExprScope } from "../expr.js";
 
-export interface RuleResult { id: string; ok: boolean; value?: Json; error?: string; warning?: string; compiled?: CompiledInstruction; suggestions?: string[]; }
+export interface RuleResult { id: string; ok: boolean; value?: Json; error?: string; warning?: string; missing?: string[]; compiled?: CompiledInstruction; suggestions?: string[]; }
 export type InstructionCompiler = (rule: MappingRule, source: unknown) => Promise<{ compiled: CompiledInstruction | null; reason?: string; suggestions: string[] }>;
 
 type Seg = string | number;
@@ -49,18 +49,33 @@ export function setPath(root: Record<string, unknown>, path: string, value: unkn
 
 const WORDY = /^[A-Za-z][A-Za-z']*(\s+[A-Za-z(][\w'().,_-]*){2,}/;
 
-export async function applyMapping(spec: MappingSpec | undefined, source: unknown, scope: ExprScope, compiler?: InstructionCompiler):
-  Promise<{ output: Json; rules: RuleResult[] }> {
-  const rules = Array.isArray(spec?.rules) ? spec!.rules : [];
-  const out: Record<string, unknown> = spec?.passthrough && source && typeof source === "object" && !Array.isArray(source)
+/** Dotted field paths an expression reads ("data.channel"), outside quotes and $variables. */
+export function exprRefs(expr: string): string[] {
+  const bare = expr.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""').replace(/\/(?:[^/\\\n]|\\.)+\/[gimsuy]*/g, "//");
+  const out: string[] = [];
+  for (const m of bare.matchAll(/(?<![\w$.`\]])([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+)(?![\w(])/g)) if (!out.includes(m[1])) out.push(m[1]);
+  return out;
+}
+/** The fields an expression reads that are not in the input (only checked when the input is an object). */
+function missingRefs(expr: string, source: unknown): string[] {
+  if (!source || typeof source !== "object") return [];
+  return exprRefs(expr).filter((p) => { try { return getPath(source, p) === undefined; } catch { return false; } });
+}
+const noTarget = (kind?: string) => kind === "values" || kind === "value";
+
+async function runRules(rules: MappingRule[], source: unknown, scope: ExprScope, compiler: InstructionCompiler | undefined, passthrough: boolean, needTarget: boolean):
+  Promise<{ output: Record<string, unknown>; values: unknown[]; rules: RuleResult[] }> {
+  const out: Record<string, unknown> = passthrough && source && typeof source === "object" && !Array.isArray(source)
     ? JSON.parse(JSON.stringify(source)) : {};
+  const values: unknown[] = [];
   const results: RuleResult[] = [];
   const ruleScope: ExprScope = { ...scope, input: source };
   for (const rule of rules) {
     if (!rule || rule.enabled === false) continue;
     const res: RuleResult = { id: rule.id, ok: true };
+    let usedExpr = "";
     try {
-      if (!rule.target || !String(rule.target).trim()) throw new Error("This rule has no target field");
+      if (needTarget && (!rule.target || !String(rule.target).trim())) throw new Error("This rule has no target field");
       let value: unknown;
       switch (rule.kind) {
         case "const": value = rule.value; break;
@@ -78,6 +93,7 @@ export async function applyMapping(spec: MappingSpec | undefined, source: unknow
               ? `This is not a valid expression. It reads like plain words: switch the rule to "In my own words" so it can be interpreted. (${bad})`
               : bad);
           }
+          usedExpr = rule.expr;
           value = await evalExpr(rule.expr, ruleScope);
           break;
         }
@@ -92,6 +108,7 @@ export async function applyMapping(spec: MappingSpec | undefined, source: unknow
             }
             compiled = r.compiled; res.compiled = compiled;
           }
+          usedExpr = compiled.expr;
           try { value = await evalExpr(compiled.expr, ruleScope); }
           catch (e) {
             // The stored reading of the words fails on this input. Read the words again: a newer interpreter may read them
@@ -99,6 +116,7 @@ export async function applyMapping(spec: MappingSpec | undefined, source: unknow
             const stored = compiled;
             const again = stored === rule.compiled && compiler && rule.instruction?.trim() ? await compiler(rule, source).catch(() => null) : null;
             if (!again?.compiled?.expr || again.compiled.expr === stored.expr) throw e;
+            usedExpr = again.compiled.expr;
             value = await evalExpr(again.compiled.expr, ruleScope);
             res.compiled = again.compiled;
           }
@@ -106,14 +124,57 @@ export async function applyMapping(spec: MappingSpec | undefined, source: unknow
         }
         default: throw new Error(`Unknown rule kind "${String((rule as { kind?: unknown }).kind)}"`);
       }
+      // a field the rule reads is not in the input: the value is computed without it, which is rarely what was meant
+      const missing = usedExpr ? missingRefs(usedExpr, source) : [];
+      if (missing.length && !res.warning) { res.warning = `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not in the input, so the result was made without ${missing.length === 1 ? "it" : "them"}`; res.missing = missing; }
       if (value === undefined) { if (!res.warning) res.warning = "The rule produced no value for this input, so the field is left out"; }
-      else { setPath(out, rule.target, value); res.value = value as Json; }
+      else {
+        if (needTarget || (rule.target && String(rule.target).trim())) setPath(out, rule.target || "value", value);
+        values.push(value); res.value = value as Json;
+      }
     } catch (e) {
       res.ok = false; res.error = (e as Error).message;
     }
     results.push(res);
   }
-  return { output: out as Json, rules: results };
+  return { output: out, values, rules: results };
+}
+
+export async function applyMapping(spec: MappingSpec | undefined, source: unknown, scope: ExprScope, compiler?: InstructionCompiler):
+  Promise<{ output: Json; rules: RuleResult[] }> {
+  const rules = Array.isArray(spec?.rules) ? spec!.rules : [];
+  const shape = spec?.shape;
+  const kind = shape?.kind ?? "object";
+  const wrap = (v: unknown): Json => {
+    const key = shape?.wrap && String(shape.wrap).trim();
+    if (!key) return v as Json;
+    const o: Record<string, unknown> = {}; setPath(o, key, v); return o as Json;
+  };
+  if ((kind === "each" || kind === "values") && shape?.each && String(shape.each).trim()) {
+    const list = getPath(source, shape.each);
+    const items = list === undefined || list === null ? [] : Array.isArray(list) ? list : [list];
+    const out: unknown[] = []; const merged = new Map<string, RuleResult>(); let i = 0;
+    for (const item of items) {
+      const ctx = { item, parent: source, index: i };
+      const r = await runRules(rules, ctx, { ...scope, item, index: i }, compiler, kind === "each" && !!spec?.passthrough && false, kind === "each");
+      if (kind === "each") {
+        const base = spec?.passthrough && item && typeof item === "object" && !Array.isArray(item) ? JSON.parse(JSON.stringify(item)) : {};
+        out.push(Object.assign(base, r.output));
+      } else out.push(r.values[0]);
+      for (const res of r.rules) {
+        const prev = merged.get(res.id);
+        if (!prev || (prev.ok && !res.ok) || (!prev.warning && res.warning && prev.ok === res.ok)) merged.set(res.id, i === 0 || !prev ? res : { ...res, value: prev.value ?? res.value });
+      }
+      i++;
+    }
+    const results = [...merged.values()];
+    if (!items.length) results.push(...rules.filter((r) => r && r.enabled !== false).map((r) => ({ id: r.id, ok: true, warning: `"${shape.each}" has no items in the input, so the list is empty` } as RuleResult)));
+    return { output: wrap(out), rules: results };
+  }
+  const r = await runRules(rules, source, scope, compiler, kind === "object" && !!spec?.passthrough, !noTarget(kind));
+  if (kind === "values") return { output: wrap(r.values), rules: r.rules };
+  if (kind === "value") return { output: wrap(r.values[0] ?? null), rules: r.rules };
+  return { output: wrap(r.output), rules: r.rules };
 }
 
 /** Compares a mapping result with the desired sample. */

@@ -342,9 +342,9 @@ export function mappingOf(v: unknown): MappingSpec {
   return { ...m, rules: Array.isArray(m.rules) ? m.rules : [] } as MappingSpec;
 }
 /** Why a mapping rule cannot run yet, or null when it is complete. */
-export function ruleProblem(r: MappingRule): string | null {
+export function ruleProblem(r: MappingRule, shapeKind?: string): string | null {
   if (r.enabled === false) return null;
-  if (!r.target?.trim()) return "Choose the output field this rule fills.";
+  if (!r.target?.trim() && shapeKind !== "values" && shapeKind !== "value") return "Choose the output field this rule fills.";
   if (r.kind === "direct" && !r.source?.trim()) return "Choose the input field to copy.";
   if (r.kind === "expr" && !r.expr?.trim()) return "Write the expression.";
   if (r.kind === "instruction") {
@@ -376,7 +376,7 @@ export function localIssues(doc: FlowDoc, defOf: (type: string) => NodeTypeDef |
       if (f.kind === "mapping") {
         const spec = mappingOf(v);
         for (const r of spec.rules) {
-          const p = ruleProblem(r);
+          const p = ruleProblem(r, spec.shape?.kind);
           if (p) issues.push({ level: "error", nodeId: n.id, field: f.key, message: `Mapping rule for "${r.target || "(no field)"}": ${p}` });
         }
         continue;

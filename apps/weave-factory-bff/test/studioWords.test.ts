@@ -149,3 +149,12 @@ describe("mapping suggestions from a wanted output", () => {
     expect(r[0]).toMatchObject({ kind: "expr", expr: 'b & ", " & a' });
   });
 });
+
+describe("text in front or behind joins a word with one space", () => {
+  const sample = { data: { email: "a@example.invalid", channel: "web" } };
+  const value = (instruction: string) => { const r = compileWords({ instruction, sampleSource: sample }); return r.ok ? r.compiled!.expr : `NOT: ${r.reason}`; };
+  it("the owner's sentence", () => { expect(value('add "New" before data.channel value')).toBe('"New " & data.channel'); });
+  it("after", () => { expect(value('put "Online" at the end of data.channel')).toBe('data.channel & " Online"'); });
+  it("a separator is joined directly", () => { expect(value('add "CH-" before data.channel')).toBe('"CH-" & data.channel'); });
+  it("without a space", () => { expect(value('add "New" before data.channel without a space')).toBe('"New" & data.channel'); });
+});

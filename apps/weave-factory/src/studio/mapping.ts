@@ -74,7 +74,7 @@ export function specStats(spec: MappingSpec): SpecStats {
     s.byKind[r.kind] = (s.byKind[r.kind] ?? 0) + 1;
     if (r.enabled === false) continue;
     if (r.kind === "instruction" && !r.compiled?.expr) s.unresolved++;
-    else if (ruleProblem(r)) s.incomplete++;
+    else if (ruleProblem(r, spec.shape?.kind)) s.incomplete++;
   }
   return s;
 }
@@ -90,3 +90,58 @@ export function showValue(v: unknown, max = 120): string {
   const s = typeof v === "string" ? JSON.stringify(v) : JSON.stringify(v);
   return s === undefined ? "(nothing)" : s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
+
+// ---------------------------------------------------------------- the sample while it is being typed
+/** Where JSON.parse gave up, as line and column (1-based), with the text of that line. */
+export function jsonErrorAt(text: string, message: string): { line: number; column: number; lineText: string } | null {
+  let pos = -1;
+  const p = /position\s+(\d+)/i.exec(message);
+  const lc = /line\s+(\d+)\s+column\s+(\d+)/i.exec(message);
+  const lines = text.split("\n");
+  if (lc) { const line = Number(lc[1]), column = Number(lc[2]); return { line, column, lineText: lines[line - 1] ?? "" }; }
+  if (p) pos = Number(p[1]);
+  else if (/unexpected end/i.test(message)) pos = text.length;
+  if (pos < 0) return null;
+  const before = text.slice(0, pos).split("\n");
+  const line = before.length, column = before[before.length - 1].length + 1;
+  return { line, column, lineText: lines[line - 1] ?? "" };
+}
+/** Repairs the slips people make when typing JSON by hand. Returns the corrected text and what was changed, or null
+ *  when the text cannot be repaired this way (it is then left for the person to fix). */
+export function fixJson(text: string): { text: string; changes: string[] } | null {
+  try { JSON.parse(text); return null; } catch { /* repair below */ }
+  const changes: string[] = [];
+  let t = text;
+  const smart = t.replace(/[“”„‟″]/g, '"').replace(/[‘’‚‛′]/g, "'");
+  if (smart !== t) { changes.push("curly quotes replaced by straight ones"); t = smart; }
+  // single-quoted keys and texts (outside double-quoted strings)
+  const sq = t.replace(/"(?:[^"\\]|\\.)*"|'((?:[^'\\]|\\.)*)'/g, (m, inner: string | undefined) => (inner === undefined ? m : JSON.stringify(inner.replace(/\\'/g, "'"))));
+  if (sq !== t) { changes.push("single quotes replaced by double quotes"); t = sq; }
+  // a missing comma between two properties or two items: value at the end of a line, next line starts a key or a value
+  const mc = t.replace(/("(?:[^"\\]|\\.)*"|\d|true|false|null|[}\]])(\s*\n\s*)(?=["{[\d-]|true|false|null)/g, (_m, a: string, gap: string) => `${a},${gap}`);
+  if (mc !== t) { changes.push("missing comma added between two fields"); t = mc; }
+  // a missing comma on one line: "a": "b" "c": ...
+  const mc1 = t.replace(/("(?:[^"\\]|\\.)*"|\d|true|false|null|[}\]])(\s+)(?="(?:[^"\\]|\\.)*"\s*:)/g, (_m, a: string, gap: string) => `${a},${gap}`);
+  if (mc1 !== t) { if (!changes.includes("missing comma added between two fields")) changes.push("missing comma added between two fields"); t = mc1; }
+  const tc = t.replace(/,(\s*[}\]])/g, "$1");
+  if (tc !== t) { changes.push("comma before a closing bracket removed"); t = tc; }
+  try { JSON.parse(t); } catch { return null; }
+  return changes.length ? { text: t, changes } : null;
+}
+/** Paths of the lists in a sample ("order.lines"), for "for each item of". */
+export function arrayPaths(value: Json | undefined, base = "", out: string[] = [], depth = 0): string[] {
+  if (value === null || value === undefined || typeof value !== "object" || depth > 8) return out;
+  if (Array.isArray(value)) { if (base) out.push(base); const first = value.find((x) => x && typeof x === "object" && !Array.isArray(x)); if (first) arrayPaths(first as Json, base, out, depth + 1); return out; }
+  for (const [k, v] of Object.entries(value)) arrayPaths(v as Json, base ? `${base}.${seg(k)}` : seg(k), out, depth + 1);
+  return [...new Set(out)];
+}
+export type ShapeKind = NonNullable<MappingSpec["shape"]>["kind"];
+export const SHAPE_LABEL: Record<ShapeKind, string> = { object: "One object", each: "A list of objects", values: "A list of values", value: "A single value" };
+export const SHAPE_HINT: Record<ShapeKind, string> = {
+  object: "Each rule fills one field of the output object.",
+  each: "One object per item of a list in the input. Rules read the item as item.… (for example item.name), the whole input as parent.…, and the position as index.",
+  values: "A list. With \"for each item of\", the first rule gives one value per item (read it as item.…); without it, every rule gives one value, in order.",
+  value: "The output is the value of the first rule on its own (no field name needed).",
+};
+/** Rules of a list of values or a single value need no output field name. */
+export const shapeNeedsTarget = (kind?: ShapeKind) => kind !== "values" && kind !== "value";

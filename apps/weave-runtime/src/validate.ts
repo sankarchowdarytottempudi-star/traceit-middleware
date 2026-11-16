@@ -41,7 +41,8 @@ export function validateMapping(spec: MappingSpec | undefined, nodeId: string | 
     const where = `mapping.rules[${i}]`;
     const label = r.target ? `"${r.target}"` : `rule ${i + 1}`;
     const err = (message: string) => issues.push({ level: "error", nodeId, field: where, message });
-    if (!r.target || !String(r.target).trim()) err(`Mapping rule ${i + 1} has no target field`);
+    const valuesOnly = spec?.shape?.kind === "values" || spec?.shape?.kind === "value";
+    if (!valuesOnly && (!r.target || !String(r.target).trim())) err(`Mapping rule ${i + 1} has no target field`);
     else { try { parsePath(r.target); } catch (e) { err((e as Error).message); } seen.set(r.target, (seen.get(r.target) ?? 0) + 1); }
     switch (r.kind) {
       case "direct": if (!r.source || !r.source.trim()) err(`Mapping ${label}: choose the source field to copy`); else { try { parsePath(r.source); } catch (e) { err(`Mapping ${label}: ${(e as Error).message}`); } } break;

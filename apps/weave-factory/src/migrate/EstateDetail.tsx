@@ -1,18 +1,19 @@
 // One running API: what it is, its operations, connectors, mappings, configuration, logs and traffic.
-import { ChangeRequests } from "../changes/ChangeRequests.tsx";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, ChevronDown, ChevronRight, Copy, CopyPlus, RefreshCw, Workflow } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, Copy, CopyPlus, Pencil, RefreshCw, Workflow } from "lucide-react";
 import { api, type ApiError, type EstateApiDetail, type EstateConnector, type EstateMapping, type EstateOperation, type EstateStart } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
 import { LAYER_LABEL, ago, clock, compact, dateTime, healthLabel, layerKey, ms, niceMax, rebucket, splitMatch, ticks } from "../lib/migrate.ts";
 import { Btn, Code, Dialog, Empty, Failed, Field, Head, HealthPill, KV, LayerPill, LinkBtn, Loading, Method, Notice, Panel, Pill, SearchBox, Stat, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
 import { MigratedExecutionsList } from "../studio/editor/MigratedExecutions.tsx";
 import { Landscape } from "./EstateList.tsx";
+import { CloneApiDialog, VersionsPanel } from "../versions/Versions.tsx";
+import { ChangeRequests } from "../changes/ChangeRequests.tsx";
 
-type Tab = "overview" | "operations" | "connectors" | "mappings" | "config" | "executions" | "logs" | "traffic" | "changes";
-const TABS: Tab[] = ["overview", "operations", "connectors", "mappings", "config", "executions", "logs", "traffic", "changes"];
+type Tab = "overview" | "operations" | "connectors" | "mappings" | "config" | "executions" | "logs" | "traffic" | "versions" | "changes";
+const TABS: Tab[] = ["overview", "operations", "connectors", "mappings", "config", "executions", "logs", "traffic", "versions", "changes"];
 
 function CopyBtn({ value, label }: { value: string; label: string }) {
   const [done, setDone] = useState(false);
@@ -527,6 +528,8 @@ export function EstateDetail() {
   const tab = (TABS.includes(sp.get("tab") as Tab) ? sp.get("tab") : "overview") as Tab;
   const setTab = (t: Tab) => { const n = new URLSearchParams(); if (t !== "overview") n.set("tab", t); setSp(n, { replace: true }); };
   const [cloning, setCloning] = useState(false);
+  const [flowCopy, setFlowCopy] = useState(false);
+  const nav = useNavigate();
   const det = useQuery({ queryKey: ["estate-api", name], queryFn: () => api.estateApi(name), enabled: !!name, refetchInterval: 30000 });
   const d = det.data;
   const tabs: TabDef<Tab>[] = [
@@ -538,6 +541,7 @@ export function EstateDetail() {
     { id: "executions", label: "Executions" },
     { id: "logs", label: "Logs" },
     { id: "traffic", label: "Traffic" },
+    { id: "versions", label: "Versions" },
     { id: "changes", label: "Request a change" },
   ];
   const notFound = det.isError && (det.error as ApiError).status === 404;
@@ -547,7 +551,10 @@ export function EstateDetail() {
         subtitle={d ? <span className="mf-mg-row" style={{ gap: 8 }}><HealthPill health={d.health} /><LayerPill layer={d.layer} />{d.gateway?.published ? <Pill tone="accent">Published on the gateway</Pill> : <Pill>Internal only</Pill>}{num(d.notMigrated) > 0 && <Pill tone="warn" title="Callers of these operations get the answer: not migrated yet">{num(d.notMigrated)} operation{num(d.notMigrated) === 1 ? "" : "s"} not migrated</Pill>}</span> : undefined}
         actions={d ? <>
           <LinkBtn to={`/studio/estate/${encodeURIComponent(name)}`} icon={<Workflow size={15} aria-hidden="true" />}>Open as flow</LinkBtn>
-          <Btn kind="primary" icon={<CopyPlus size={15} aria-hidden="true" />} onClick={() => setCloning(true)}>Clone to edit</Btn>
+          <Btn icon={<Pencil size={15} aria-hidden="true" />} data-testid="estate-edit" onClick={() => (d.migrationId ? nav(`/migrations/${encodeURIComponent(d.migrationId)}`) : setTab("versions"))}
+            title="Change this API itself; a deployed change becomes its next version">Edit</Btn>
+          <Btn kind="primary" icon={<CopyPlus size={15} aria-hidden="true" />} data-testid="estate-clone" onClick={() => setCloning(true)}
+            title="A copy under a new name, with its own history">Clone</Btn>
         </> : undefined} />
       {det.isLoading ? <Loading rows={3} h={100} /> : notFound ? (
         <div className="mf-mg-tablewrap"><Empty title="This API is not running on the cluster" hint="It may have been removed or renamed." action={<LinkBtn to="/estate" small>See all running APIs</LinkBtn>} /></div>
@@ -563,11 +570,13 @@ export function EstateDetail() {
             {tab === "executions" && <MigratedExecutionsList api={name} openId={sp.get("execution")} onOpen={(id) => { const n = new URLSearchParams(sp); if (id) n.set("execution", id); else n.delete("execution"); setSp(n, { replace: true }); }} />}
             {tab === "logs" && <Logs name={name} />}
             {tab === "traffic" && <Traffic name={name} />}
+            {tab === "versions" && <VersionsPanel api={name} />}
             {tab === "changes" && <ChangeRequests api={name} />}
           </div>
         </>
       )}
-      {cloning && <CloneDialog name={name} onClose={() => setCloning(false)} />}
+      {cloning && <CloneApiDialog name={name} onClose={() => setCloning(false)} onFlowCopy={() => { setCloning(false); setFlowCopy(true); }} />}
+      {flowCopy && <CloneDialog name={name} onClose={() => setFlowCopy(false)} />}
     </>
   );
 }

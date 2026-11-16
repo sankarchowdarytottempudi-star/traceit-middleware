@@ -13,6 +13,7 @@ import { registerEstate } from "./estate/routes.js";
 import { registerMigrate } from "./migrate/routes.js";
 import { registerParts } from "./migrate/parts.js";
 import { registerServers } from "./servers/routes.js";
+import { registerVersions, flowVersionRecorder } from "./versions/routes.js";
 import { registerChanges } from "./changes/routes.js";
 
 function resolveSpaDir(): string | null {
@@ -56,9 +57,11 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   registerMigrate(app, cfg);
   registerParts(app, cfg);
   registerServers(app, cfg);
-  registerChanges(app, cfg);
   registerEstate(app, cfg, creds);
-  registerStudio(app, { runtimeUrl: cfg.RUNTIME_URL, internalKey: cfg.RUNTIME_INTERNAL_KEY || "" }, (req) => app.userFor(req));
+  const studioCfg = { runtimeUrl: cfg.RUNTIME_URL, internalKey: cfg.RUNTIME_INTERNAL_KEY || "" };
+  registerStudio(app, studioCfg, (req) => app.userFor(req), flowVersionRecorder(cfg, studioCfg));
+  registerVersions(app, cfg);
+  registerChanges(app, cfg);
   app.setErrorHandler((err, _req, reply) => {
     const status = (err as any).statusCode ?? 500;
     reply.code(status).type("application/problem+json").send({ type: "about:blank", title: err.message || "Error", status });

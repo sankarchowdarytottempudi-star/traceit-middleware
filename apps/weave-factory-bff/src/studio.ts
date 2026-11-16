@@ -41,7 +41,8 @@ export async function readWithRetry(cfg: StudioConfig, method: string, path: str
   }
 }
 
-export function registerStudio(app: FastifyInstance, cfg: StudioConfig, userOf: (req: FastifyRequest) => Promise<string | null>) {
+export function registerStudio(app: FastifyInstance, cfg: StudioConfig, userOf: (req: FastifyRequest) => Promise<string | null>,
+  onFlowDeployed?: (flowId: string, user: string) => void) {
   app.all("/api/studio/*", async (req, reply) => {
     const user = await userOf(req);
     if (!user) return reply.code(401).type("application/problem+json").send({ type: "about:blank", title: "Not signed in", status: 401 });
@@ -69,6 +70,8 @@ export function registerStudio(app: FastifyInstance, cfg: StudioConfig, userOf: 
         return reply.code(r.status).type(r.type).send(r.text);
       }
       const r = await readWithRetry(cfg, method, "/v1" + rest, body, user);
+      const dep = method === "POST" && /^\/flows\/([^/]+)\/deploy$/.exec(route);
+      if (dep && r.status < 300 && onFlowDeployed) onFlowDeployed(decodeURIComponent(dep[1]), user);   // version in git
       reply.code(r.status).type(String(r.headers["content-type"] || "application/json"));
       return reply.send(r.text);
     } catch (e) {

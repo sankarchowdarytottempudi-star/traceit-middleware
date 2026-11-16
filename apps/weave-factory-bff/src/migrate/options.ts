@@ -14,10 +14,12 @@ export const SOURCE_TECHNOLOGIES: SourceTech[] = [
   { id: "dotnet", label: ".NET (ASP.NET Web API)", upload: "The solution folder as a .zip" },
   { id: "java", label: "Java (Spring / JAX-RS)", upload: "The project folder as a .zip, or the .jar" },
   { id: "ballerina", label: "Ballerina", upload: "The package folder as a .zip" },
+  { id: "node", label: "Node.js (JavaScript / TypeScript)", upload: "The project folder as a .zip, without node_modules",
+    hint: "express, fastify, koa, NestJS, hapi and serverless handlers. Upload the whole project: the routes, the files they import and the .env files." },
   { id: "openapi", label: "OpenAPI / Swagger description", upload: "A .zip that contains the openapi or swagger file (.yaml or .json)" },
   { id: "spec", label: "Written specification (no source code)", upload: "The functionality and mapping specification as a .json file", sourceType: "spec",
     hint: "Documents and a service are generated straight from the specification." },
-  { id: "other", label: "Something else (for example Node.js)", upload: "A .zip that contains the OpenAPI or Swagger description of the API",
+  { id: "other", label: "Something else (for example Python or Go)", upload: "A .zip that contains the OpenAPI or Swagger description of the API",
     hint: "Technologies that are not in this list are not read from their code. Upload the API's OpenAPI or Swagger description instead (most frameworks can export one), or use a written specification. An archive with neither is rejected with \"technology not recognised\"." },
 ];
 

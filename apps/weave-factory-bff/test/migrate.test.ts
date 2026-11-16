@@ -49,6 +49,8 @@ describe("upload validation", () => {
     const ids = SOURCE_TECHNOLOGIES.map((t) => t.id);
     for (const id of ["auto", "mule4", "ibm", "oracle", "boomi", "webmethods", "workato", "dotnet", "java", "ballerina", "openapi", "spec", "other"]) expect(ids).toContain(id);
     expect(SOURCE_TECHNOLOGIES.find((t) => t.id === "other")!.hint).toMatch(/OpenAPI/);
+    // Node.js is read from its code now
+    expect(SOURCE_TECHNOLOGIES.find((t) => t.id === "node")!.upload).toMatch(/without node_modules/);
     expect(TARGET_TECHNOLOGIES.find((t) => t.id === "wso2")!.depth).toBe("full");
   });
 });

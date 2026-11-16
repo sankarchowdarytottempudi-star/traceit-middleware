@@ -17,7 +17,8 @@ const api = `${opts.base}/api/factory/migrations`;
 try {
   const list = await (await s.context.request.get(api)).json();
   const all = Array.isArray(list?.migrations) ? list.migrations : [];
-  if (!id) id = (all.find((m) => m?.progress?.failure) ?? all[0])?.id ?? "";
+  // the "failed build" case below is laid over this migration, so it must already have a service
+  if (!id) id = (all.find((m) => m?.progress?.failure && m?.serviceDir) ?? all.find((m) => m?.serviceDir) ?? all[0])?.id ?? "";
   if (!id) { s.warn("there is no migration to look at"); }
   else {
     const real = await (await s.context.request.get(`${api}/${id}`)).json();

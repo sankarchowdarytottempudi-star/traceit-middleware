@@ -458,3 +458,11 @@ input.ws-bar-name:focus { outline: none; border-color: var(--accent); background
 .ws-understood-warn { display: block; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 14%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); font-size: 12.5px; overflow-wrap: anywhere; }
 .ws-rule-warn { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .ws-phrases-list li { grid-template-columns: minmax(0, 1fr); } .ws-phrases-list li > button { grid-row: auto; grid-column: 1; justify-self: start; } }
+
+/* estate flow: finding steps in large trees, nested sub-flows switch */
+.ws-canvas-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; border-bottom: 1px solid var(--line, rgba(0,0,0,.08)); min-width: 0; }
+.ws-stepfind { position: relative; flex: 1 1 220px; min-width: 0; max-width: 420px; }
+.ws-stepfind .mf-search { width: 100%; }
+.ws-stepfind-list { position: absolute; z-index: 20; top: 100%; left: 0; right: 0; margin: 4px 0 0; padding: 4px; list-style: none; background: var(--surface, #fff); border: 1px solid var(--line, rgba(0,0,0,.12)); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.ws-stepfind-list button { display: block; width: 100%; text-align: left; padding: 6px 8px; border: 0; background: none; color: inherit; border-radius: 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-stepfind-list button:hover, .ws-stepfind-list button:focus-visible { background: var(--hover, rgba(0,0,0,.05)); }

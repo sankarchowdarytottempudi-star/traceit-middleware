@@ -18,16 +18,26 @@ import { NodePanel } from "../editor/NodePanel.tsx";
 import { MappingsTab } from "../editor/tabs.tsx";
 import { methodTone } from "./Connectors.tsx";
 
-export interface EstateOperation { id: string; name: string; method: string; path: string; steps: number; }
+export interface EstateOperation { id: string; name: string; method: string; path: string; steps: number; state?: string; }
 
 /** One entry per trigger: the operations a migrated service offers. */
 export function operationsOf(flow: Pick<Flow, "nodes" | "edges">): EstateOperation[] {
   return (flow.nodes ?? []).filter((n) => String(n.type).startsWith("trigger.")).map((n) => {
     const c = n.config ?? {};
     const methods = Array.isArray(c.methods) ? (c.methods as unknown[]).map(String) : c.method ? [String(c.method)] : [];
-    return { id: n.id, name: n.name, method: methods.join(", ") || (n.type === "trigger.schedule" ? "TIMER" : "RUN"), path: typeof c.path === "string" ? c.path : "", steps: operationNodes(n.id, flow.edges ?? []).size - 1 };
+    const entry = (c.__entry ?? null) as { kind?: string; state?: string; everySeconds?: number | null } | null;
+    const method = methods.join(", ") || (entry?.kind ? String(entry.kind).toUpperCase() : n.type === "trigger.schedule" ? "TIMER" : "RUN");
+    return { id: n.id, name: n.name, method, path: typeof c.path === "string" ? c.path : "", state: entry?.state ? String(entry.state) : undefined, steps: operationNodes(n.id, flow.edges ?? []).size - 1 };
   });
 }
+/** Hides sub-flows nested deeper than `depth` under an entry (the tree stays connected). */
+export function limitDepth(flow: Flow, depth: number): Flow {
+  const deep = new Set(flow.nodes.filter((n) => typeof n.config?.__depth === "number" && (n.config.__depth as number) > depth).map((n) => n.id));
+  if (!deep.size) return flow;
+  return { ...flow, nodes: flow.nodes.filter((n) => !deep.has(n.id)), edges: flow.edges.filter((e) => !deep.has(e.from) && !deep.has(e.to)) };
+}
+/** How many sub-flows of the slice are nested deeper than the first level. */
+export const nestedCount = (flow: Flow) => flow.nodes.filter((n) => typeof n.config?.__depth === "number" && (n.config.__depth as number) > 1).length;
 /** The part of the flow that belongs to one operation (its trigger and everything reachable from it). */
 export function sliceOperation(flow: Flow, triggerId: string | null): Flow {
   if (!triggerId || !flow.nodes.some((n) => n.id === triggerId)) return flow;
@@ -63,7 +73,12 @@ function EstateView({ api, flow, detail }: { api: string; flow: Flow; detail?: E
   const ops = useMemo(() => operationsOf(flow), [flow]);
   const wanted = params.get("operation");
   const current = ops.find((o) => o.id === wanted)?.id ?? ops[0]?.id ?? null;
-  const slice = useMemo(() => sliceOperation(flow, current), [flow, current]);
+  const full = useMemo(() => sliceOperation(flow, current), [flow, current]);
+  const nested = nestedCount(full);
+  const [showNested, setShowNested] = useState<boolean | null>(null);
+  // large trees open with the first level of sub-flows only; small ones show everything
+  const open = showNested ?? nested <= 12;
+  const slice = useMemo(() => (open ? full : limitDepth(full, 1)), [full, open]);
   const store = useMemo(() => {
     const s = new EditorStore({ ...slice, readOnly: true }, { readOnly: true });
     s.setCatalog(catalog.byType);
@@ -75,6 +90,7 @@ function EstateView({ api, flow, detail }: { api: string; flow: Flow; detail?: E
   return (
     <EditorContext.Provider value={store}>
       <EstateInner api={api} flow={flow} detail={detail} catalog={catalog} store={store} ops={ops} current={current}
+        nested={nested} showNested={open} onNested={(v) => setShowNested(v)} slice={slice}
         tab={(["flow", "connectors", "mappings", "logs"] as TabId[]).includes(params.get("tab") as TabId) ? (params.get("tab") as TabId) : "flow"}
         onTab={(t) => setParam("tab", t === "flow" ? null : t)} onOperation={(id) => setParam("operation", id)} />
     </EditorContext.Provider>
@@ -94,7 +110,7 @@ function OperationList({ ops, current, onPick }: { ops: EstateOperation[]; curre
           <li key={o.id} className={cx("ws-opitem", o.id === current && "ws-opitem-on")} data-operation={o.id}>
             <button type="button" className="ws-opitem-main" onClick={() => onPick(o.id)} aria-current={o.id === current}>
               <Badge tone={methodTone(o.method)}>{txt(o.method)}</Badge>
-              <span className="ws-opitem-text"><span className="ws-opitem-name">{txt(o.path) || txt(o.name)}</span><span className="ws-opitem-path">{o.path ? txt(o.name) : ""}{o.path ? " · " : ""}{o.steps} step{o.steps === 1 ? "" : "s"}</span></span>
+              <span className="ws-opitem-text"><span className="ws-opitem-name">{txt(o.path) || txt(o.name)}</span><span className="ws-opitem-path">{o.state ? `${txt(o.state)} · ` : o.path ? `${txt(o.name)} · ` : ""}{o.steps} step{o.steps === 1 ? "" : "s"}</span></span>
             </button>
           </li>
         ))}
@@ -104,9 +120,24 @@ function OperationList({ ops, current, onPick }: { ops: EstateOperation[]; curre
   );
 }
 
-function EstateInner({ api, flow, detail, catalog, store, ops, current, tab, onTab, onOperation }: {
+function StepFinder({ slice, onPick }: { slice: Flow; onPick: (id: string) => void }) {
+  const [text, setText] = useState("");
+  const needle = text.trim().toLowerCase();
+  const hits = needle ? slice.nodes.filter((n) => `${n.name} ${n.notes ?? ""}`.toLowerCase().includes(needle)).slice(0, 8) : [];
+  return (
+    <div className="ws-stepfind" data-testid="estate-stepfind">
+      <label className="mf-search"><Search size={15} aria-hidden /><input className="mf-control" type="search" aria-label="Find a step" placeholder="Find a step or sub-flow" value={text}
+        onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && hits[0]) onPick(hits[0].id); }} /></label>
+      {hits.length > 0 && <ul className="ws-stepfind-list">{hits.map((n) => <li key={n.id}><button type="button" onClick={() => onPick(n.id)}>{txt(n.name)}</button></li>)}</ul>}
+      {needle && hits.length === 0 && <span className="mf-help">No step matches.</span>}
+    </div>
+  );
+}
+
+function EstateInner({ api, flow, detail, catalog, store, ops, current, tab, onTab, onOperation, nested = 0, showNested = true, onNested, slice }: {
   api: string; flow: Flow; detail?: EstateApiDetail; catalog: Catalog; store: EditorStore; ops: EstateOperation[]; current: string | null;
   tab: TabId; onTab: (t: TabId) => void; onOperation: (id: string) => void;
+  nested?: number; showNested?: boolean; onNested?: (v: boolean) => void; slice?: Flow;
 }) {
   const bp = useBreakpoint();
   const desktop = bp === "desktop";
@@ -179,6 +210,12 @@ function EstateInner({ api, flow, detail, catalog, store, ops, current, tab, onT
                 <span className="ws-opbar-text">{cur ? txt(cur.path) || txt(cur.name) : "Choose an operation"}</span>
                 <span className="mf-faint">{ops.length} operations</span>
               </button>
+            )}
+            {slice && (slice.nodes.length > 12 || nested > 0) && (
+              <div className="ws-canvas-tools" data-testid="estate-canvas-tools">
+                <StepFinder slice={slice} onPick={(id) => { store.select([id]); setTimeout(() => canvasApi.current?.focusNode(id), 80); if (!desktop) setOpenNode(id); }} />
+                {nested > 0 && <span data-testid="estate-nested"><Toggle checked={showNested} onChange={(v) => onNested?.(v)} label={showNested ? `Nested sub-flows shown (${nested})` : `Show nested sub-flows (${nested})`} /></span>}
+              </div>
             )}
             <div className="ws-canvaswrap">
               <FlowCanvas key={current ?? "all"} apiRef={canvasApi} defFor={defFor} compact={!desktop} onOpenNode={(id) => { if (desktop) setClosedFor(null); else setOpenNode(id); }}

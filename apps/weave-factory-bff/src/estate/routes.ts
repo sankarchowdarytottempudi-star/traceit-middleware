@@ -56,6 +56,11 @@ export function registerEstate(app: FastifyInstance, cfg: Config, creds?: Client
       const list = (r.json as { migrations?: any[] } | null)?.migrations;
       return Array.isArray(list) ? list.map((m) => ({ id: String(m.id), apiName: m.apiName || undefined, name: m.name || undefined, layer: m.layer || undefined })) : [];
     },
+    parity: async (id: string) => {
+      const r = await mtRequest(mt, "GET", `/api/migrations/${encodeURIComponent(id)}/parity`);
+      const j = r.json as { ok?: boolean; flows?: unknown[] } | null;
+      return j && j.ok !== false && Array.isArray(j.flows) ? (j as never) : null;
+    },
     readiness: async () => {
       const r = await mtRequest(mt, "GET", "/api/readiness");
       const list = (r.json as { services?: any[] } | null)?.services;

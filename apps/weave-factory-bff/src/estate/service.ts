@@ -9,6 +9,7 @@ import { apiMetrics, hourTotals, type Metrics } from "./prom.js";
 import { GatewayCatalog, matchGateway, type GatewayEntry } from "./gateway.js";
 import { scrubUrl } from "./toml.js";
 import { isHealthOnlyWarning, runSummary, startStates, type StartPart } from "./starts.js";
+import { appendEntries, type ParityMap } from "./entries.js";
 
 export interface EstateOptions {
   servicesDir?: string; configDir?: string; namespace: string;
@@ -17,6 +18,8 @@ export interface EstateOptions {
   migrations: () => Promise<{ id: string; apiName?: string; name?: string; layer?: string }[]>;
   /** The migration tool's check of every service: is anything of the old application still unwritten? */
   readiness?: () => Promise<ReadinessReport[]>;
+  /** The migration tool's item-by-item map of the old application (flows, calls, where in the new code). */
+  parity?: (migrationId: string) => Promise<ParityMap | null>;
 }
 export interface ReadinessReport {
   api: string; ready: boolean; exists?: boolean; summary?: string;
@@ -332,11 +335,22 @@ export class Estate {
     const names = s.apis.map((a) => a.name);
     const nodePorts = new Map<number, string>(s.apis.filter((a) => a.nodePort).map((a) => [a.nodePort!, a.name]));
     const byName = new Map(model.connectors.filter((c) => !c.component).map((c) => [c.name, c]));
-    return buildFlow(model, {
+    const flow = buildFlow(model, {
       apiOf: (c) => { const conn = byName.get(c); return conn ? targetApi(conn, name, names, nodePorts) : undefined; },
       gateway: api.gateway?.known ? { published: api.gateway.published, context: api.gateway.context, version: api.gateway.version } : undefined,
       operation,
     });
+    if (operation || !api.migrationId || !this.o.parity) return flow;
+    // entries that start by themselves (timer, queue, topic) and the old sub-flows behind them
+    const map = await Promise.race([this.o.parity(api.migrationId).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 15000))]);
+    const parts = s.starts.get(name) || [];
+    let states: ReturnType<typeof startStates> = [];
+    if (parts.length) {
+      const pod = (await this.podsOf(name, s)).find((p) => p.phase === "Running" && !p.component);
+      const lines = pod && !s.cluster.error ? await this.o.k8s.logs(pod.name, 5000).catch(() => []) : [];
+      states = startStates(parts, lines);
+    }
+    return appendEntries(flow, map, states);
   }
 
   async logs(name: string, opts: { tail: number; q?: string; level?: string; pod?: string }, userToken?: string | null): Promise<{ lines: LogLine[]; pods: EstatePod[]; errors: string[] } | null> {

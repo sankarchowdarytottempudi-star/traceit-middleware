@@ -3,10 +3,10 @@
 // uploaded code; nothing leaves the server). "Runtime properties": the running application's own
 // properties override the file in the upload; pasted here they go to the service's settings.
 // Values are never shown, only names.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Play } from "lucide-react";
-import { api, type ApiError, type Migration, type ParityFlow, type ParityTotals, type RuntimePropsResult } from "../api.ts";
+import { Play, Upload } from "lucide-react";
+import { api, uploadOldCode, type ApiError, type Migration, type ParityFlow, type ParityTotals, type RuntimePropsResult } from "../api.ts";
 import { txt } from "../lib/text.ts";
 import { Bar, Btn, Failed, Field, Loading, Notice, Panel, Pill, errText } from "./ui.tsx";
 
@@ -71,13 +71,53 @@ function FlowRow({ f }: { f: ParityFlow }) {
   );
 }
 
+/** Upload the old application's archive again, for this migration only. */
+export function OldCodeUpload({ m, again }: { m: Migration; again?: boolean }) {
+  const qc = useQueryClient();
+  const input = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [pct, setPct] = useState<number | null>(null);
+  const [err, setErr] = useState("");
+  const [ask, setAsk] = useState(false);
+  const [done, setDone] = useState("");
+  const send = (force: boolean) => {
+    if (!file) return;
+    setErr(""); setDone(""); setPct(0);
+    uploadOldCode(m.id, file, force, (f) => setPct(f)).promise
+      .then((r) => {
+        setPct(null); setAsk(false); setFile(null);
+        if (input.current) input.current.value = "";
+        setDone(txt(r.summary) || "The old application is attached.");
+        qc.invalidateQueries({ queryKey: ["migration", m.id] }); qc.invalidateQueries({ queryKey: ["parity-map", m.id] }); qc.invalidateQueries({ queryKey: ["migrations"] });
+      })
+      .catch((e: ApiError & { body?: { needsForce?: boolean } }) => { setPct(null); setErr(errText(e)); setAsk(!!e.body?.needsForce); });
+  };
+  return (
+    <div className="mf-mg-stack" style={{ gap: 8 }} data-testid="oldcode-upload">
+      {!again && <p className="mf-mg-sub mf-mg-wrap" style={{ fontSize: 13.5, margin: 0 }}>The old application's code is not on this server any more, so the new service cannot be checked against it item by item. Upload the same .zip or .jar that was migrated.</p>}
+      <span className="mf-mg-hint mf-mg-wrap">Only used to check the new service against the old code; the service is not generated again.</span>
+      <div className="mf-mg-row" style={{ gap: 8 }}>
+        <input ref={input} type="file" accept=".zip,.jar" data-testid="oldcode-file" aria-label="Old application (.zip or .jar)" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setErr(""); setAsk(false); setDone(""); }} style={{ maxWidth: "100%" }} />
+        <Btn small kind="primary" icon={<Upload size={14} aria-hidden="true" />} disabled={!file || pct !== null} busy={pct !== null} onClick={() => send(false)}>Upload the old application (.zip or .jar)</Btn>
+      </div>
+      {pct !== null && <Bar pct={Math.round(pct * 100)} label="Upload progress" />}
+      {err && <Notice tone={ask ? "warn" : "bad"}><span data-testid="oldcode-error">{err}</span>{ask && <span className="mf-mg-actions" style={{ marginTop: 8 }}><Btn small kind="primary" onClick={() => send(true)}>It is the right application, upload it</Btn></span>}</Notice>}
+      {done && <Notice tone="ok"><span data-testid="oldcode-done">{done}</span></Notice>}
+    </div>
+  );
+}
+
 export function ParityPanel({ m }: { m: Migration }) {
   // the tool says on the migration whether a comparison exists; only then is it read
   const enabled = !!m.serviceDir && !!m.parity;
   const q = useQuery({ queryKey: ["parity-map", m.id], queryFn: () => api.parityMap(m.id), enabled, staleTime: 30000,
     retry: (n, e) => (e as ApiError)?.status !== 404 && n < 2 });
   const [all, setAll] = useState(false);
-  if (!enabled) return null;
+  if (!enabled) {
+    // no comparison yet: the old code is missing on this server (a written specification has none)
+    if (!m.serviceDir || m.sourceType === "spec") return null;
+    return <Panel title="Old code, item by item" actions={<Pill tone="warn">Not checked</Pill>}><OldCodeUpload m={m} /></Panel>;
+  }
   if (q.isLoading) return <Panel title="Old code, item by item"><Loading rows={2} /></Panel>;
   if (q.isError) {
     if ((q.error as ApiError)?.status === 404) return null;
@@ -85,7 +125,7 @@ export function ParityPanel({ m }: { m: Migration }) {
   }
   const d = q.data;
   if (!d) return null;
-  if (!d.ok) return <Panel title="Old code, item by item"><Notice>{txt(d.error) || "The old code could not be compared."}</Notice></Panel>;
+  if (!d.ok) return <Panel title="Old code, item by item" actions={<Pill tone="warn">Not checked</Pill>}><div className="mf-mg-stack" style={{ gap: 10 }}><Notice>{txt(d.error) || "The old code could not be compared."}</Notice>{m.sourceType !== "spec" && <OldCodeUpload m={m} />}</div></Panel>;
   const flows = d.flows ?? [];
   const gaps = flows.filter((f) => f.status !== "complete");
   const shown = all ? flows : gaps;
@@ -116,6 +156,10 @@ export function ParityPanel({ m }: { m: Migration }) {
             <span className="mf-mg-hint">Values are kept in the service's settings on this server and are not shown.</span>
           </div>
         )}
+        <details data-testid="oldcode-again">
+          <summary className="mf-mg-small" style={{ cursor: "pointer", fontWeight: 600 }}>Upload the old application again</summary>
+          <div style={{ marginTop: 8 }}><OldCodeUpload m={m} again /></div>
+        </details>
       </div>
     </Panel>
   );

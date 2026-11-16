@@ -64,7 +64,7 @@ export interface StartPart { name: string; starts?: string; kind?: string; switc
   empty?: { key: string; secret?: boolean; secretSet?: boolean }[]; setHere?: { key: string; secret?: boolean; secretSet?: boolean }[] }
 export interface LogEntry { t?: string; level?: string; line?: string; }
 export interface Migration {
-  id: string; name?: string; apiName?: string | null; workspace?: string; technology?: string; targetTech?: string; sourceType?: string; sourceFile?: string;
+  id: string; name?: string; apiName?: string | null; workspace?: string; technology?: string; targetTech?: string; sourceType?: string; sourceFile?: string; sourceAttachedAt?: string;
   layer?: string | null; estimateDays?: number | null; createdAt?: string; updatedAt?: string; serviceDir?: string; lessonsApplied?: number;
   busy?: boolean; phases: Phase[]; progress: Progress; log?: LogEntry[];
   /** Place in the line of projects taken from a repository (0 or absent: not waiting). */
@@ -213,6 +213,30 @@ export function uploadMigration(input: UploadInput, onProgress?: (fraction: numb
   return { promise, abort: () => xhr.abort() };
 }
 
+export interface SourceUploadResult { ok: boolean; summary?: string; parity?: { ok?: boolean; summary?: string; complete?: boolean; error?: string } }
+/** The old application's archive for an existing migration: the reference of the parity map. The
+ * tool never generates the service again from it. `force` confirms an archive whose names do not match. */
+export function uploadOldCode(id: string, file: File, force: boolean, onProgress?: (fraction: number) => void): { promise: Promise<SourceUploadResult>; abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<SourceUploadResult>((resolve, reject) => {
+    xhr.open("POST", at(`/api/factory/migrations/${encodeURIComponent(id)}/source${qs({ filename: file.name, force: force ? "1" : undefined })}`));
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
+    xhr.onerror = () => reject(new Error("The upload was interrupted. Check your connection and try again."));
+    xhr.onabort = () => reject(Object.assign(new Error("Upload cancelled"), { aborted: true }));
+    xhr.onload = () => {
+      let body: any = null;
+      try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300 && body && body.ok) { resolve(body as SourceUploadResult); return; }
+      const msg = (body && (body.error || body.detail)) || (xhr.status === 413 ? "The file is too large" : `The upload was not accepted (${xhr.status})`);
+      reject(Object.assign(new Error(String(msg)), { status: xhr.status, body }));
+    };
+    xhr.send(file);
+  });
+  return { promise, abort: () => xhr.abort() };
+}
+
 const F = "/api/factory";
 export const api = {
   me: () => j<Me>("/api/auth/me"),
@@ -243,7 +267,7 @@ export const api = {
   importRepo: (id: string, body: { paths: string[]; workspace: string; environment?: string; build?: boolean }) => j<RepoImportResult>(`${F}/repos/${enc(id)}/import`, post(body)),
   removeRepo: (id: string) => j<{ ok: boolean }>(`${F}/repos/${enc(id)}`, { method: "DELETE" }),
   workspaces: () => j<{ workspaces: Workspace[] }>(`${F}/workspaces`),
-  addWorkspaceConfig: (body: { name: string; servers: Record<string, { host: string; port?: number; username?: string; password?: string }> }) => j<WorkspaceConfig>(`${F}/workspace-configs`, post(body)),
+  addWorkspaceConfig: (body: { name: string; servers: Record<string, { host: string; port?: number; username?: string; password?: string; hostname?: string }> }) => j<WorkspaceConfig>(`${F}/workspace-configs`, post(body)),
   deleteWorkspaceConfig: (id: string) => j<{ ok: boolean }>(`${F}/workspace-configs/${enc(id)}`, { method: "DELETE" }),
   checkServer: (id: string, tier: string) => j<{ started?: boolean; plan?: unknown; note?: string }>(`${F}/workspace-configs/${enc(id)}/check/${enc(tier)}`, post({})),
   environments: () => j<{ environments: Environment[] }>(`${F}/environments`),

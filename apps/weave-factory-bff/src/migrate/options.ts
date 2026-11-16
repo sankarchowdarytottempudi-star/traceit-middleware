@@ -61,6 +61,21 @@ export function validateUpload(q: { name?: string; workspace?: string; filename?
   return { ok: true, headers };
 }
 
+/** The old application's archive, uploaded again for an existing migration (only a reference for
+ * the parity map and the compare; the tool never generates the service again from it). */
+export function sourceUploadOf(q: Record<string, string | undefined>, length: number | undefined, limitMb: number):
+  { ok: true; headers: Record<string, string> } | { ok: false; status: number; error: string } {
+  const filename = headerSafe((q.filename || "").split(/[\\/]/).pop() || "");
+  if (!filename) return { ok: false, status: 400, error: "Choose the file to upload" };
+  if (!/\.(zip|jar)$/i.test(filename)) return { ok: false, status: 400, error: "Upload the old application as a .zip of its project folder or its deployable .jar." };
+  if (length === undefined || !Number.isFinite(length)) return { ok: false, status: 411, error: "The upload has no size; try again" };
+  if (length <= 0) return { ok: false, status: 400, error: "The file is empty" };
+  if (length > limitMb * 1024 * 1024) return { ok: false, status: 413, error: `The file is larger than ${limitMb} MB` };
+  const headers: Record<string, string> = { "X-Filename": filename };
+  if (q.force === "1" || q.force === "true") headers["X-Force"] = "1";
+  return { ok: true, headers };
+}
+
 /** Passwords and tokens kept by the migration tool are never passed on to the browser. */
 export function withoutSecrets<T>(value: T): T {
   if (Array.isArray(value)) return value.map((v) => withoutSecrets(v)) as unknown as T;

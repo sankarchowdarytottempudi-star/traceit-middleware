@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import { registerRoutes } from "../src/routes";
 import { registerMigrate } from "../src/migrate/routes";
-import { validateUpload, withoutSecrets, collisionOf, mergeWorkspaces, headerSafe, decisionOf, runtimePropertiesOf, repoOf, repoRefreshOf, repoImportOf, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES } from "../src/migrate/options";
+import { validateUpload, withoutSecrets, collisionOf, mergeWorkspaces, headerSafe, decisionOf, runtimePropertiesOf, sourceUploadOf, repoOf, repoRefreshOf, repoImportOf, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES } from "../src/migrate/options";
 import type { Config } from "../src/config";
 
 const MT = "http://localhost:30900";
@@ -96,6 +96,27 @@ describe("migration routes", () => {
     expect(r.statusCode).toBe(201);
     expect(r.json()).toEqual({ id: "new1", name: "Orders" });
     expect(scope.isDone()).toBe(true);
+  });
+  it("streams the old application's archive for an existing migration, with the confirmation only when asked", async () => {
+    const body = Buffer.from("PK-old-app");
+    const scope = nock(MT, { reqheaders: { "x-admin-token": "tok", "x-filename": "seaware-sys.zip", "content-length": String(body.length) }, badheaders: ["x-force"] })
+      .post("/api/migrations/m7/source").reply(200, { ok: true, summary: "3 of 3 old flows found" });
+    const r = await app().inject({ method: "POST", url: "/api/factory/migrations/m7/source?filename=seaware-sys.zip", headers: { "content-type": "application/octet-stream" }, payload: body });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ ok: true, summary: "3 of 3 old flows found" });
+    expect(scope.isDone()).toBe(true);
+    const forced = nock(MT, { reqheaders: { "x-force": "1" } }).post("/api/migrations/m7/source").reply(409, { error: "This archive does not look like it", needsForce: true });
+    const f = await app().inject({ method: "POST", url: "/api/factory/migrations/m7/source?filename=other.jar&force=1", headers: { "content-type": "application/octet-stream" }, payload: body });
+    expect(f.statusCode).toBe(409);
+    expect(f.json().needsForce).toBe(true);
+    expect(forced.isDone()).toBe(true);
+    const bad = await app().inject({ method: "POST", url: "/api/factory/migrations/m7/source?filename=notes.txt", headers: { "content-type": "application/octet-stream" }, payload: body });
+    expect(bad.statusCode).toBe(400);
+    const anon = await app(false).inject({ method: "POST", url: "/api/factory/migrations/m7/source?filename=a.zip", headers: { "content-type": "application/octet-stream" }, payload: body });
+    expect(anon.statusCode).toBe(401);
+    expect(sourceUploadOf({ filename: "C:\\x\\app.JAR" }, 5, 1)).toEqual({ ok: true, headers: { "X-Filename": "app.JAR" } });
+    expect(sourceUploadOf({ filename: "a.zip" }, 2 * 1024 * 1024, 1)).toMatchObject({ ok: false, status: 413 });
+    expect(sourceUploadOf({ filename: "a.zip" }, 0, 1)).toMatchObject({ ok: false, status: 400 });
   });
   it("refuses a bad upload before contacting the migration tool", async () => {
     const r = await app().inject({ method: "POST", url: "/api/factory/migrations?name=Orders&filename=orders.exe", headers: { "content-type": "application/octet-stream" }, payload: Buffer.from("x") });

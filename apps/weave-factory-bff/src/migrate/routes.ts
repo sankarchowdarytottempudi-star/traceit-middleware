@@ -5,7 +5,7 @@ import { sidOf } from "../auth.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "../config.js";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
-import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, runtimePropertiesOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
+import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
@@ -40,6 +40,29 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
       }
       try {
         const r = await mtUpload(mt, "/api/migrations", v.headers, req.raw, len);
+        return pass(reply, r);
+      } catch (e) {
+        reply.code(502);
+        return { error: "The migration tool did not accept the upload", detail: e instanceof Error ? e.message : undefined };
+      }
+    });
+  });
+
+  // The old application's archive for an existing migration: checked by the tool and kept as the
+  // reference of the parity map. Streamed as it arrives; never used to generate the service again.
+  app.register(async (scope) => {
+    scope.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));
+    scope.post("/api/factory/migrations/:id/source", { bodyLimit: (limitMb + 1) * 1024 * 1024 }, async (req, reply) => {
+      await need(req);
+      const len = req.headers["content-length"] ? Number(req.headers["content-length"]) : undefined;
+      const v = sourceUploadOf(req.query as Record<string, string>, len, Math.min(limitMb, 200));
+      if (!v.ok) {
+        req.raw.resume();
+        reply.code(v.status);
+        return { error: v.error };
+      }
+      try {
+        const r = await mtUpload(mt, `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/source`, v.headers, req.raw, len);
         return pass(reply, r);
       } catch (e) {
         reply.code(502);

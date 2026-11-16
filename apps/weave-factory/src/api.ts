@@ -245,6 +245,14 @@ export function uploadOldCode(id: string, file: File, force: boolean, onProgress
 }
 
 const F = "/api/factory";
+/** The latest corpus run of the migration tool (every upload through the whole pipeline, in a sandbox). */
+export interface ToolHealthStop { stage: string; class: string; what: string; count?: number; item?: string; backend?: string; value?: number | null }
+export interface ToolHealthProject { name?: string; archive?: string; operations?: number; ported?: number; openItems?: Record<string, number>;
+  build?: { rc: number; errors: number }; tests?: { coverage?: number | null; passed?: number; failed?: number }; parity?: { summary?: string };
+  trial?: { ran?: boolean; started?: boolean; passed?: boolean }; stops?: ToolHealthStop[] }
+export interface ToolHealth { ok: boolean; error?: string; run?: string; started?: string; finished?: string; projects?: ToolHealthProject[];
+  backlog?: { stage: string; gap: string; projects: string[]; count: number }[]; decisions?: (ToolHealthStop & { project: string })[];
+  fixed?: { gap: string; before: number; after: number; at?: string }[] }
 export const api = {
   me: () => j<Me>("/api/auth/me"),
 
@@ -282,6 +290,7 @@ export const api = {
   deleteEnvironment: (id: string) => j<{ ok: boolean }>(`${F}/environments/${enc(id)}`, { method: "DELETE" }),
 
   knowledge: () => j<{ feedback: Lesson[] }>(`${F}/knowledge`),
+  toolHealth: () => j<ToolHealth>(`${F}/tool-health`),
   proxy: (body: { service?: string; envId?: string; path: string; method: string; headers?: Record<string, string>; body?: string }) => j<ProxyResult>(`${F}/proxy`, post(body)),
   inferMapping: (sampleSource: unknown, desiredOutput: unknown) => j<InferResult>(`${F}/infer-mapping`, post({ sampleSource, desiredOutput })),
 

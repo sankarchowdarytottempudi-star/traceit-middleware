@@ -163,6 +163,8 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
   // write-only: it goes to the tool with the request that sets it and never comes back.
   const repoId = (req: FastifyRequest): string | null => { const id = (req.params as { id?: string }).id ?? ""; return /^[0-9a-f]{8,16}$/.test(id) ? id : null; };
   app.get("/api/factory/repos", async (req, reply) => { await need(req); return pass(reply, await mtRequest(mt, "GET", "/api/repos")); });
+  // Tool health: the latest corpus run (every upload through the whole pipeline in a sandbox). Names and counts only.
+  app.get("/api/factory/tool-health", async (req, reply) => { await need(req); return pass(reply, await mtRequest(mt, "GET", "/api/tool-health")); });
   app.post("/api/factory/repos", async (req, reply) => {
     await need(req);
     const v = repoOf(req.body);

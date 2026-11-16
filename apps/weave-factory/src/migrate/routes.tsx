@@ -1,13 +1,14 @@
 // Migrate (migrations lifecycle, deployed-API estate, workspaces, playground, knowledge).
 // Owned by the migrate work stream.
 import { Route } from "react-router-dom";
-import { Boxes, Layers, FlaskConical, BookOpen, Network } from "lucide-react";
+import { Boxes, Layers, FlaskConical, BookOpen, Network, Activity } from "lucide-react";
 import type { NavGroup } from "../nav.ts";
 import "./migrate.css";
 import { Migrations } from "../screens/Migrations.tsx";
 import { Workspaces } from "../screens/Workspaces.tsx";
 import { Playground } from "../screens/Playground.tsx";
 import { Knowledge } from "../screens/Knowledge.tsx";
+import { ToolHealthPage } from "../screens/ToolHealth.tsx";
 import { EstateList } from "./EstateList.tsx";
 import { EstateDetail } from "./EstateDetail.tsx";
 import { MigrationNew } from "./MigrationNew.tsx";
@@ -23,7 +24,7 @@ export const migrateNav: NavGroup[] = [
     { to: "/workspaces", label: "Workspaces", icon: Layers },
   ] },
   { title: "TEST", items: [{ to: "/playground", label: "Playground", icon: FlaskConical }] },
-  { title: "KNOWLEDGE", items: [{ to: "/knowledge", label: "Knowledge base", icon: BookOpen }] },
+  { title: "KNOWLEDGE", items: [{ to: "/knowledge", label: "Knowledge base", icon: BookOpen }, { to: "/tool-health", label: "Tool health", icon: Activity }] },
 ];
 
 /** Called (not rendered) inside <Routes> so the <Route> elements stay direct children. */
@@ -41,6 +42,7 @@ export function migrateRoutes() {
       <Route path="workspaces/:id/releases" element={<ReleasesPage />} />
       <Route path="playground" element={<Playground />} />
       <Route path="knowledge" element={<Knowledge />} />
+      <Route path="tool-health" element={<ToolHealthPage />} />
     </>
   );
 }

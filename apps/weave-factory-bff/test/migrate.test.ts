@@ -394,3 +394,14 @@ describe("projects from a git repository", () => {
     expect((await app().inject({ method: "DELETE", url: "/api/factory/repos/nope" })).statusCode).toBe(404);
   });
 });
+
+describe("tool health", () => {
+  afterEach(() => nock.cleanAll());
+  it("passes the tool's corpus report on for a signed-in user only", async () => {
+    nock(MT).get("/api/tool-health").reply(200, { ok: true, run: "r1", projects: [], backlog: [], decisions: [] });
+    const r = await app().inject({ method: "GET", url: "/api/factory/tool-health" });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().run).toBe("r1");
+    expect((await app(false).inject({ method: "GET", url: "/api/factory/tool-health" })).statusCode).toBe(401);
+  });
+});

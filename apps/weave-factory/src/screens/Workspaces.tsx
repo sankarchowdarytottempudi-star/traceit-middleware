@@ -40,8 +40,8 @@ function EnvironmentForm({ workspace, onDone, onCancel }: { workspace?: string; 
   );
 }
 
-type ServerDraft = { host: string; port: string; username: string; password: string };
-const emptyServer = (): ServerDraft => ({ host: "", port: "22", username: "root", password: "" });
+type ServerDraft = { host: string; port: string; username: string; hostname: string };
+const emptyServer = (): ServerDraft => ({ host: "", port: "22", username: "root", hostname: "" });
 function ServersDialog({ workspace, onClose }: { workspace: string; onClose: () => void }) {
   const qc = useQueryClient();
   const [servers, setServers] = useState<Record<string, ServerDraft>>(() => Object.fromEntries(TIERS.map(([k]) => [k, emptyServer()])));
@@ -50,7 +50,7 @@ function ServersDialog({ workspace, onClose }: { workspace: string; onClose: () 
   const hasNonProd = filled.some(([k]) => k !== "prod");
   const badPort = filled.some(([k]) => { const p = Number(servers[k].port); return !Number.isInteger(p) || p < 1 || p > 65535; });
   const save = useMutation({
-    mutationFn: () => api.addWorkspaceConfig({ name: workspace, servers: Object.fromEntries(filled.map(([k]) => [k, { host: servers[k].host.trim(), port: Number(servers[k].port) || 22, username: servers[k].username.trim() || "root", password: servers[k].password }])) }),
+    mutationFn: () => api.addWorkspaceConfig({ name: workspace, servers: Object.fromEntries(filled.map(([k]) => [k, { host: servers[k].host.trim(), port: Number(servers[k].port) || 22, username: servers[k].username.trim() || "root", ...(servers[k].hostname.trim() ? { hostname: servers[k].hostname.trim() } : {}) }])) }),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["workspaces"] }); onClose(); },
   });
   const upd = (tier: string, key: keyof ServerDraft, v: string) => setServers((s) => ({ ...s, [tier]: { ...s[tier], [key]: v } }));
@@ -65,11 +65,11 @@ function ServersDialog({ workspace, onClose }: { workspace: string; onClose: () 
             <Field label="Host"><input className="mf-mg-input mf-mono" value={servers[k].host} onChange={(e) => upd(k, "host", e.target.value)} autoCapitalize="none" spellCheck={false} placeholder="Leave empty to skip" /></Field>
             <Field label="Port"><input className="mf-mg-input mf-mono" value={servers[k].port} onChange={(e) => upd(k, "port", e.target.value)} inputMode="numeric" /></Field>
             <Field label="User name"><input className="mf-mg-input mf-mono" value={servers[k].username} onChange={(e) => upd(k, "username", e.target.value)} autoCapitalize="none" spellCheck={false} /></Field>
-            <Field label="Password"><input className="mf-mg-input" type="password" value={servers[k].password} onChange={(e) => upd(k, "password", e.target.value)} autoComplete="new-password" /></Field>
+            <Field label="Gateway host name (optional)"><input className="mf-mg-input mf-mono" value={servers[k].hostname} onChange={(e) => upd(k, "hostname", e.target.value)} autoCapitalize="none" spellCheck={false} placeholder="api.customer.com" /></Field>
           </div>
         </fieldset>
       ))}
-      <Notice>Passwords are stored on this server only and are never shown again. To change a server later, remove the servers and add them again.</Notice>
+      <Notice>No password is kept. After saving, open the workspace's Servers page: the Factory reaches each server with its own SSH key (copy it onto the server, or give the user's password once to put it there), then installs Kubernetes and WSO2.</Notice>
       {tried && !hasNonProd && <Notice tone="bad">Fill in the host of at least one development, test or acceptance server.</Notice>}
       {tried && badPort && <Notice tone="bad">A port must be a number between 1 and 65535.</Notice>}
       {save.isError && <Notice tone="bad">{errText(save.error)}</Notice>}
@@ -175,13 +175,16 @@ function WorkspaceCard({ w }: { w: Workspace }) {
                             <div style={{ fontSize: 13.5, fontWeight: 600 }}>{label}</div>
                             <div className="mf-mono mf-mg-small mf-mg-muted mf-mg-wrap">{txt(s?.username)}@{txt(s?.host)}:{txt(s?.port)}</div>
                           </div>
-                          <Pill tone={s?.hasPassword || s?.passwordSet ? "ok" : "warn"}>{s?.hasPassword || s?.passwordSet ? "Password set" : "No password"}</Pill>
                           <Pill tone={s?.provisioned ? "ok" : undefined}>{s?.provisioned ? "Platform installed" : "Not installed yet"}</Pill>
                         </div>
                       );
                     })}
                   </div>
-                  <div><Btn small kind="danger" onClick={() => { delServers.reset(); setDropServers(true); }}>Remove the servers</Btn></div>
+                  <div className="mf-mg-actions">
+                    <LinkBtn small kind="primary" to={`/workspaces/${encodeURIComponent(w.config!.id)}/servers`}>Servers and installation</LinkBtn>
+                    <LinkBtn small to={`/workspaces/${encodeURIComponent(w.config!.id)}/releases`}>Releases</LinkBtn>
+                    <Btn small kind="danger" onClick={() => { delServers.reset(); setDropServers(true); }}>Remove the servers</Btn>
+                  </div>
                 </>
               )}
             </div>
@@ -196,7 +199,7 @@ function WorkspaceCard({ w }: { w: Workspace }) {
       )}
       {dropServers && w.config && (
         <Confirm title="Remove the target servers?" confirmLabel="Remove" danger busy={delServers.isPending} error={delServers.isError ? errText(delServers.error) : undefined} onConfirm={() => delServers.mutate(w.config!.id)} onClose={() => setDropServers(false)}>
-          <span>The recorded servers and their passwords for <strong>{txt(w.name)}</strong> will be removed from this server. Nothing changes on the servers themselves.</span>
+          <span>The recorded servers for <strong>{txt(w.name)}</strong> will be removed from this server. Nothing changes on the servers themselves.</span>
         </Confirm>
       )}
     </section>

@@ -36,7 +36,27 @@ function Mark({ ok }: { ok: boolean | null | undefined }) {
   return ok === null || ok === undefined ? <Pill tone="muted">not checked</Pill> : ok ? <Pill tone="ok">found</Pill> : <Pill tone="bad">missing</Pill>;
 }
 
-function FlowRow({ f }: { f: ParityFlow }) {
+/** An error handler of an old flow, as the tool reports it (an object; older answers sent text). */
+type ErrorHandler = string | { type?: string; how?: string; handled?: boolean | null };
+type FlowView = Omit<ParityFlow, "errors"> & { errors?: ErrorHandler[]; discarded?: { name: string; chain?: string }[] };
+
+/** "Any error → continue (handled)", "HTTP:CONNECTIVITY → passed on (not handled in the new service)". */
+export function errorWords(e: ErrorHandler): string {
+  let o: { type?: string; how?: string; handled?: boolean | null } | null = null;
+  if (typeof e === "string") {
+    try { const j = JSON.parse(e); o = j && typeof j === "object" ? j : null; } catch { return e; }
+    if (!o) return e;
+  } else o = e;
+  const type = txt(o?.type) || "ANY";
+  const what = type.toUpperCase() === "ANY" ? "Any error" : type;
+  const how = o?.how === "continue" ? "continue" : o?.how === "propagate" ? "passed on to the caller" : txt(o?.how) || "handled";
+  const state = o?.handled === true ? " (handled)" : o?.handled === false ? " (not handled in the new service)" : "";
+  return `${what} → ${how}${state}`;
+}
+
+function FlowRow({ f: flow }: { f: ParityFlow }) {
+  const f = flow as unknown as FlowView;
+  const discarded = f.discarded ?? [];
   const fields = f.fields ?? [], calls = f.calls ?? [], conds = f.conditions ?? [], missing = f.missing ?? [];
   const found = fields.filter((x) => x.found).length;
   return (
@@ -65,7 +85,20 @@ function FlowRow({ f }: { f: ParityFlow }) {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{conds.map((c, i) => <Pill key={i} tone={c.found ? "ok" : "bad"}><span className="mf-mono">{txt(c.value)}</span></Pill>)}</div>
           </div>
         )}
-        {(f.errors ?? []).length > 0 && <span className="mf-mg-small mf-mg-muted mf-mg-wrap">Error handlers: {(f.errors ?? []).map((e) => txt(e)).join(", ")}</span>}
+        {discarded.length > 0 && (
+          <div className="mf-mg-sec" data-testid="parity-discarded"><h3>Not used by the old app</h3>
+            <ul className="mf-mg-small mf-mg-muted mf-mg-wrap" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+              {discarded.map((d, i) => <li key={i}><span className="mf-mono">{txt(d.name)}</span>: result discarded{d.chain ? ` (${txt(d.chain)})` : ""}</li>)}
+            </ul>
+          </div>
+        )}
+        {(f.errors ?? []).length > 0 && (
+          <div className="mf-mg-sec" data-testid="parity-errors"><h3>Error handlers</h3>
+            <ul className="mf-mg-small mf-mg-muted mf-mg-wrap" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+              {(f.errors ?? []).map((e, i) => <li key={i}>{errorWords(e)}</li>)}
+            </ul>
+          </div>
+        )}
       </div>
     </details>
   );

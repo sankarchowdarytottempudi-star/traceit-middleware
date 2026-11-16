@@ -19,7 +19,7 @@ const MAP = {
   totals: { calls: { found: 3, of: 4, percent: 75 }, fields: { found: 9, of: 10, percent: 90 }, conditions: { found: 2, of: 2, percent: 100 }, tables: { found: 1, of: 1, percent: 100 } },
   flows: [
     { name: "zohoUpsert_shorex_Sub_Flow", kind: "sub-flow", status: "gaps", missing: ["POST /crm/v6/Shorex/upsert"], calls: [{ what: "POST /crm/v6/Shorex/upsert", found: false }], fields: [{ name: "data", found: true, common: true }], conditions: [], errors: [] },
-    { name: "zoho-reservations-UpsertSub_Flow", kind: "sub-flow", status: "gaps", missing: ["field primaryClientId"], calls: [], fields: [{ name: "Account_Name", found: true, where: "steps.bal" }, { name: "primaryClientId", found: false }], conditions: [{ value: "Booked", found: true }], errors: ["continue HTTP:CONNECTIVITY"] },
+    { name: "zoho-reservations-UpsertSub_Flow", kind: "sub-flow", status: "gaps", missing: ["field primaryClientId"], calls: [], fields: [{ name: "Account_Name", found: true, where: "steps.bal" }, { name: "primaryClientId", found: false }], conditions: [{ value: "Booked", found: true }], errors: [{ type: "HTTP:CONNECTIVITY", how: "continue", handled: true }, { type: "ANY", how: "propagate", handled: false }], discarded: [{ name: "errorMessage", chain: "db-sys-httpRequestorSub_Flow is called only inside <async> by interfaceFlow; its result is thrown away" }] },
     { name: "interfaceFlow", kind: "flow", trigger: "scheduler", status: "complete", missing: [], calls: [{ what: "os:store (kept state)", found: null }], fields: [], conditions: [{ value: "delta", found: true }], errors: [] },
     { name: "zohoUpsert_addonsRequest_Sub_Flow", kind: "sub-flow", status: "complete", missing: [], calls: [{ what: "POST /crm/v6/Addons/upsert", found: true }], fields: [], conditions: [], errors: [] },
   ],
@@ -52,6 +52,9 @@ try {
     const res = panel.locator('[data-testid="parity-flow"][data-flow="zoho-reservations-UpsertSub_Flow"]');
     await res.locator("summary").click();
     s.check((await res.getByText("primaryClientId").count()) >= 1 && (await res.getByText("Account_Name").count()) === 1, "found and missing fields are listed");
+    const eh = await res.locator('[data-testid="parity-errors"]').innerText();
+    s.check(/HTTP:CONNECTIVITY → continue \(handled\)/.test(eh) && /Any error → passed on to the caller \(not handled in the new service\)/.test(eh) && !eh.includes("{"), "error handlers are shown in words, not as raw data");
+    s.check(/errorMessage: result discarded \(db-sys-httpRequestorSub_Flow is called only inside <async>/.test(await res.locator('[data-testid="parity-discarded"]').innerText()), "a field the old app throws away is shown as not used, with why");
     await panel.getByRole("button", { name: /All flows/ }).click();
     s.check((await panel.locator('[data-testid="parity-flow"]').count()) === 4, "all flows can be listed");
     const conn = await panel.locator('[data-testid="parity-connections"]').innerText();

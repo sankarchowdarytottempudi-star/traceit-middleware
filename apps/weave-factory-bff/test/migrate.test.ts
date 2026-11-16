@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import { registerRoutes } from "../src/routes";
 import { registerMigrate } from "../src/migrate/routes";
-import { validateUpload, withoutSecrets, collisionOf, mergeWorkspaces, headerSafe, decisionOf, repoOf, repoRefreshOf, repoImportOf, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES } from "../src/migrate/options";
+import { validateUpload, withoutSecrets, collisionOf, mergeWorkspaces, headerSafe, decisionOf, runtimePropertiesOf, repoOf, repoRefreshOf, repoImportOf, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES } from "../src/migrate/options";
 import type { Config } from "../src/config";
 
 const MT = "http://localhost:30900";
@@ -199,6 +199,36 @@ describe("migration routes", () => {
     expect(check.isDone()).toBe(true);
     expect((await app().inject({ method: "POST", url: "/api/factory/workspace-configs/w1/check/moon" })).statusCode).toBe(400);
     expect((await app().inject({ method: "POST", url: "/api/factory/workspace-configs/w1/provision/dev" })).statusCode).toBe(404);
+  });
+});
+
+describe("parity map and runtime properties", () => {
+  it("passes the parity map through for a signed-in user", async () => {
+    const got = nock(MT).get("/api/migrations/m1/parity").reply(200, { ok: true, complete: false, flowCount: 3, flowsWithGaps: 1, flows: [], connections: [{ config: "HTTP_cfg", kind: "http", settingsKey: "zohoSys.url", set: true, password: "x" }] });
+    const r = await app().inject({ method: "GET", url: "/api/factory/migrations/m1/parity" });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().flowsWithGaps).toBe(1);
+    expect(JSON.stringify(r.json())).not.toContain('"password"');
+    expect(got.isDone()).toBe(true);
+    expect((await app(false).inject({ method: "GET", url: "/api/factory/migrations/m1/parity" })).statusCode).toBe(401);
+  });
+  it("checks pasted runtime properties and forwards only the text", () => {
+    expect(runtimePropertiesOf({ text: "scheduler.mode=delta\nscheduler.frequency: 60\ndata.x\t5" })).toMatchObject({ ok: true });
+    expect(runtimePropertiesOf({ text: "" })).toMatchObject({ ok: false });
+    expect(runtimePropertiesOf({ text: "just words here" })).toMatchObject({ ok: false });
+    expect(runtimePropertiesOf({ text: "a=b".padEnd(200 * 1024 + 1, "x") })).toMatchObject({ ok: false });
+    expect(runtimePropertiesOf({ text: 7 })).toMatchObject({ ok: false });
+  });
+  it("sends runtime properties to the tool and returns only names", async () => {
+    const text = "scheduler.mode=delta\nzoho.password=s3cret";
+    const sent = nock(MT).post("/api/migrations/m1/runtime-properties", (b) => JSON.stringify(b) === JSON.stringify({ text })).reply(200, { applied: [{ property: "scheduler.mode", setting: "sync.mode" }], unknown: ["zoho.password"], unchanged: [] });
+    const r = await app().inject({ method: "POST", url: "/api/factory/migrations/m1/runtime-properties", payload: { text, extra: "drop me" } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().applied[0].setting).toBe("sync.mode");
+    expect(sent.isDone()).toBe(true);
+    const bad = await app().inject({ method: "POST", url: "/api/factory/migrations/m1/runtime-properties", payload: { text: "nothing useful" } });
+    expect(bad.statusCode).toBe(400);
+    expect((await app(false).inject({ method: "POST", url: "/api/factory/migrations/m1/runtime-properties", payload: { text } })).statusCode).toBe(401);
   });
 });
 

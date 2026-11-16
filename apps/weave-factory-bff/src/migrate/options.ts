@@ -146,6 +146,21 @@ export function decisionOf(body: unknown): { ok: true; decision: Decision } | { 
   return { ok: false, error: "This cannot be done for this item." };
 }
 
+/** Runtime properties of the old application, pasted as text (key=value, key: value or tab separated
+ * lines, as copied from the runtime screen). Only the text travels on; its values are never logged
+ * or returned. */
+export const RUNTIME_LIMIT = 200 * 1024;
+const PROP_LINE = /^\s*[A-Za-z0-9_][\w.\-\[\]]*\s*(=|:|\t)\s*\S/;
+export function runtimePropertiesOf(body: unknown): { ok: true; text: string } | { ok: false; error: string } {
+  const b = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+  const text = typeof b.text === "string" ? b.text : "";
+  if (!text.trim()) return { ok: false, error: "Paste the runtime properties first." };
+  if (text.length > RUNTIME_LIMIT) return { ok: false, error: "The text is longer than 200 KB. Paste the properties of one application." };
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() && !/^\s*[#!]/.test(l));
+  if (!lines.some((l) => PROP_LINE.test(l))) return { ok: false, error: "No property was found. Use one property per line: name=value, name: value, or name and value separated by a tab." };
+  return { ok: true, text };
+}
+
 export interface MigrationLite { id: string; name?: string; apiName?: string; workspace?: string; progress?: { outcome?: string; overallPercent?: number } }
 
 /** Another migration that already produced a service with the same name. */

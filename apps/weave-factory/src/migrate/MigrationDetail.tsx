@@ -10,6 +10,7 @@ import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, KV, LinkBtn, Loa
 import { Markdown } from "./markdown.tsx";
 import { Finish } from "./Finish.tsx";
 import { StartParts, TrialRun } from "./Starts.tsx";
+import { ParityPanel, RuntimeProps } from "./Parity.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
 const TABS: Tab[] = ["progress", "documents", "checks", "feedback"];
@@ -338,7 +339,7 @@ export function MigrationDetail() {
     <>
       <Head area="Migrations" areaTo="/migrations" back={{ to: "/migrations", label: "All migrations" }} title={txt(m.name) || txt(m.apiName) || m.id}
         subtitle={<span className="mf-mg-row" style={{ gap: 8 }}>
-          <Pill tone={outcomeTone(outcome)}>{outcome}</Pill>{num(p.partsOff) > 0 && <Pill tone="warn" title="Parts that start by themselves (timer, queue, topic) and are switched off: the service does not do that work yet.">{num(p.partsOff)} part{num(p.partsOff) === 1 ? "" : "s"} switched off</Pill>}{m.busy && <Pill tone="accent"><Loader2 size={12} className="mf-spin" aria-hidden="true" />A step is running</Pill>}
+          <Pill tone={outcomeTone(outcome)}>{outcome}</Pill>{m.parity && m.parity.complete === false && <Pill tone="bad" title="Flows of the old application with items the new service does not do yet. See &quot;Old code, item by item&quot;.">{num(m.parity.flowsWithGaps)} flow{num(m.parity.flowsWithGaps) === 1 ? "" : "s"} with gaps</Pill>}{num(p.partsOff) > 0 && <Pill tone="warn" title="Parts that start by themselves (timer, queue, topic) and are switched off: the service does not do that work yet.">{num(p.partsOff)} part{num(p.partsOff) === 1 ? "" : "s"} switched off</Pill>}{m.busy && <Pill tone="accent"><Loader2 size={12} className="mf-spin" aria-hidden="true" />A step is running</Pill>}
           {m.apiName ? <span className="mf-mono mf-mg-small">{txt(m.apiName)}</span> : null}{m.workspace ? <span className="mf-mg-small">{txt(m.workspace)}</span> : null}
         </span>}
         actions={<>
@@ -373,6 +374,8 @@ export function MigrationDetail() {
           <Finish m={m} onRun={(a) => start(a)} />
           <StartParts m={m} onRun={(a) => start(a)} />
           <TrialRun m={m} />
+          <ParityPanel m={m} />
+          <RuntimeProps m={m} onRun={(a) => start(a)} />
           <Panel title="What you can do next">
             {m.busy ? <Notice><span className="mf-mg-row" style={{ gap: 8 }}><Loader2 size={14} className="mf-spin" aria-hidden="true" />A step is running. This screen updates by itself; the activity below shows what is happening.</span></Notice> : null}
             <div className="mf-mg-stack" style={{ gap: 10 }}>

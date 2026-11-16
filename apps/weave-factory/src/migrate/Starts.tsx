@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, Power, PowerOff } from "lucide-react";
-import { api, type ApiError, type Decision, type Migration, type OpenItems, type ResolveResult, type StartPart } from "../api.ts";
+import { api, type ApiError, type Decision, type Migration, type OpenItems, type ResolveResult, type StartPart, type TrialSeen } from "../api.ts";
 import { txt } from "../lib/text.ts";
 import { ago } from "../lib/migrate.ts";
 import { Btn, Field, Method, Notice, Panel, Pill, errText } from "./ui.tsx";
@@ -17,7 +17,23 @@ const OP_WORDS: Record<string, [string, "ok" | "warn" | "bad" | "muted"]> = {
   answered: ["answered", "ok"], confirmed: ["as expected", "ok"], error: ["error on made-up data", "warn"],
   missing: ["not in the service", "bad"], placeholder: ["not migrated", "bad"], "no-answer": ["no answer", "bad"],
   stopped: ["not tried", "bad"], "case-failed": ["not as expected", "bad"],
+  handled: ["answered with an error", "ok"], "success-when-down": ["answered success", "warn"], "slow-when-down": ["no answer in time", "warn"],
 };
+const DOWN = "its APIs are down";
+
+function Seen({ seen }: { seen?: TrialSeen[] }) {
+  if (!seen || !seen.length) return null;
+  return (
+    <ul data-testid="trial-seen" style={{ listStyle: "none", margin: "2px 0 0", padding: 0, display: "grid", gap: 2, flexBasis: "100%" }}>
+      {seen.map((x, i) => (
+        <li key={i} className="mf-mg-small mf-mono mf-mg-wrap">
+          {txt(x.what)} <span className="mf-mg-muted">× {x.n}</span>
+          {x.failed ? <span style={{ color: "var(--bad)" }}> · {x.failed} failed</span> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
 const PART_WORDS: Record<string, [string, "ok" | "warn" | "bad" | "muted"]> = {
   confirmed: ["ran as expected", "ok"], ran: ["ran", "ok"], "ran-with-errors": ["ran, with errors", "warn"],
   "not-tried": ["not tried", "muted"], "nothing-seen": ["nothing seen", "warn"], failed: ["failed", "bad"], "case-failed": ["not as expected", "bad"],
@@ -26,7 +42,9 @@ const PART_WORDS: Record<string, [string, "ok" | "warn" | "bad" | "muted"]> = {
 export function TrialRun({ m }: { m: Migration }) {
   const t = m.trial;
   if (!t) return null;
-  const ops = t.operations ?? [], parts = t.parts ?? [];
+  const rows = t.operations ?? [], parts = t.parts ?? [];
+  const ops = rows.filter((o) => o.case !== DOWN);
+  const downOf = (op: string) => rows.find((o) => o.case === DOWN && o.op === op);
   const tone = !t.ran ? "muted" : t.passed ? "ok" : "bad";
   return (
     <Panel title="Trial run" actions={<Pill tone={tone}>{!t.ran ? "Not run" : t.passed ? "Passed" : "Found faults"}</Pill>}>
@@ -54,6 +72,16 @@ export function TrialRun({ m }: { m: Migration }) {
                     <Pill tone={tn}>{word}{o.status ? ` · ${o.status}` : ""}</Pill>
                     {(o.calls ?? []).length > 0 && <span className="mf-mg-muted mf-mg-wrap">called {(o.calls ?? []).map((c) => txt(c)).join(", ")}</span>}
                     {o.note ? <span className="mf-mg-muted mf-mg-wrap">{txt(o.note)}</span> : null}
+                    <Seen seen={o.seen} />
+                    {(() => {
+                      const d = downOf(o.op);
+                      if (!d) return null;
+                      const [dw, dt] = OP_WORDS[txt(d.result)] ?? [txt(d.result), "muted"];
+                      return <span className="mf-mg-row mf-mg-small" style={{ gap: 6, flexBasis: "100%", paddingLeft: 12 }} data-testid="trial-down">
+                        <span className="mf-mg-muted">When its APIs are down:</span><Pill tone={dt}>{dw}{d.status ? ` · ${d.status}` : ""}</Pill>
+                        {d.note ? <span className="mf-mg-muted mf-mg-wrap">{txt(d.note)}</span> : null}
+                      </span>;
+                    })()}
                   </li>
                 );
               })}
@@ -62,15 +90,17 @@ export function TrialRun({ m }: { m: Migration }) {
           </div>
         )}
         {parts.length > 0 && (
-          <div className="mf-mg-sec"><h3>Parts that start by themselves (each switched on alone, for the trial only)</h3>
+          <div className="mf-mg-sec"><h3>Parts that start by themselves (each scenario: the part switched on alone, for the trial only)</h3>
             <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
               {parts.map((p, i) => {
                 const [word, tn] = PART_WORDS[txt(p.result)] ?? [txt(p.result), "muted"];
                 return (
                   <li key={i} className="mf-mg-row mf-mg-small" style={{ gap: 6 }} data-testid="trial-part">
-                    <span className="mf-mono">{txt(p.name)}</span><span className="mf-mg-muted">({txt(p.starts)})</span><Pill tone={tn}>{word}</Pill>
+                    <span className="mf-mono">{txt(p.name)}</span>{p.scenario ? <strong data-testid="trial-scenario">· {txt(p.scenario)}</strong> : null}<span className="mf-mg-muted">({txt(p.starts)})</span><Pill tone={tn}>{word}</Pill>
+                    {p.about ? <span className="mf-mg-muted mf-mg-wrap" style={{ flexBasis: "100%" }}>{txt(p.about)}</span> : null}
                     {(p.calls ?? []).length > 0 && <span className="mf-mg-muted mf-mg-wrap">called {(p.calls ?? []).map((c) => txt(c)).join(", ")}</span>}
                     {p.note ? <span className="mf-mg-muted mf-mg-wrap" style={{ flexBasis: "100%" }}>{txt(p.note)}</span> : null}
+                    <Seen seen={p.seen} />
                   </li>
                 );
               })}

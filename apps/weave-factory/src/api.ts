@@ -44,11 +44,21 @@ export interface StepRef { phase?: string; phaseKey?: string; step?: string; ste
 export interface Progress { overallPercent: number; majorPhase: string; majorPhaseKey?: string | null; currentStep?: StepRef | string | null; nextStep?: StepRef | string | null; done: boolean; outcome: string; failure?: StepFailure | null;
   /** Parts that start by themselves (timer, queue, topic) that are switched off in the service's settings. */
   partsOff?: number; starts?: { name: string; starts?: string; switch?: string | null; on?: boolean | null }[] }
+/** The old application item by item, and where the new service does each item. */
+export interface ParityTotals { found: number; of: number; percent: number }
+export interface ParityFlow { name: string; kind?: string; trigger?: string; status: string; missing?: string[];
+  calls?: { what: string; found: boolean | null }[]; fields?: { name: string; found: boolean; where?: string; common?: boolean }[];
+  conditions?: { value: string; found: boolean }[]; errors?: string[]; unchecked?: string[] }
+export interface ParityMap { ok: boolean; error?: string; api?: string; complete?: boolean; flowCount?: number; flowsWithGaps?: number; summary?: string;
+  totals?: { calls?: ParityTotals; fields?: ParityTotals; conditions?: ParityTotals; tables?: ParityTotals };
+  flows?: ParityFlow[]; connections?: { config: string; kind?: string; settingsKey?: string; set?: boolean }[]; examples?: { operation: string; file?: string }[] }
+export interface RuntimePropsResult { applied?: { property: string; setting: string }[]; unknown?: string[]; unchanged?: string[]; message?: string; changed?: boolean }
 /** The last trial run of the built service (closed network, stand-ins with made-up data). */
 export interface TrialReport { ran: boolean; reason?: string; at?: string; started?: boolean; startSeconds?: number; why?: string; passed?: boolean; summary?: string; faults?: string[];
   examples?: number; ownReplies?: boolean;
-  operations?: { op: string; case?: string; status?: number | null; result: string; calls?: string[]; note?: string }[];
-  parts?: { name: string; starts?: string; result: string; calls?: string[]; said?: string; note?: string }[] }
+  operations?: { op: string; case?: string; status?: number | null; result: string; calls?: string[]; note?: string; seen?: TrialSeen[] }[];
+  parts?: { name: string; scenario?: string; about?: string; starts?: string; result: string; calls?: string[]; said?: string; note?: string; seen?: TrialSeen[] }[] }
+export interface TrialSeen { what: string; n: number; failed?: number }
 /** A part of the service that starts by itself, with its switch in the service's settings. */
 export interface StartPart { name: string; starts?: string; kind?: string; switch?: string | null; on?: boolean | null;
   empty?: { key: string; secret?: boolean; secretSet?: boolean }[]; setHere?: { key: string; secret?: boolean; secretSet?: boolean }[] }
@@ -63,6 +73,9 @@ export interface Migration {
   optimization?: { beforeMs?: number; afterMs?: number; actions?: string[]; meetsTarget?: boolean; at?: string };
   testNodePort?: number | string; testBasePath?: string; discoveredEnvs?: { name?: string; candidates?: string[] }[];
   trial?: TrialReport;
+  parity?: { complete?: boolean; summary?: string; flowsWithGaps?: number; totals?: ParityMap["totals"] };
+  /** Where the service's settings came from: the running application's properties, or only the uploaded file. */
+  settingsSource?: "runtime" | "file" | string;
 }
 /** "Finish this migration": what is left of a generated service and what the old application did there. */
 export interface SourceCall { method: string; path: string; config: string; backend?: string }
@@ -214,6 +227,8 @@ export const api = {
   parity: (id: string, body: { envId: string; path: string; method: string; headers?: Record<string, string>; body?: string }) => j<ParityResult>(`${F}/migrations/${enc(id)}/parity`, post(body)),
   optimize: (id: string, confirmReplace = false) => j<OptimizeResult>(`${F}/migrations/${enc(id)}/optimize`, post(confirmReplace ? { confirmReplace: true } : {})),
   openItems: (id: string) => j<OpenItems>(`${F}/migrations/${enc(id)}/open-items`),
+  parityMap: (id: string) => j<ParityMap>(`${F}/migrations/${enc(id)}/parity`),
+  runtimeProperties: (id: string, text: string) => j<RuntimePropsResult>(`${F}/migrations/${enc(id)}/runtime-properties`, post({ text })),
   resolve: (id: string, body: Decision) => j<ResolveResult>(`${F}/migrations/${enc(id)}/resolve`, post(body)),
   feedback: (id: string) => j<{ feedback: Lesson[] }>(`${F}/migrations/${enc(id)}/feedback`),
   addFeedback: (id: string, body: { summary: string; scope: string; phase?: string; mistakes?: string[]; technology?: string }) => j<Lesson>(`${F}/migrations/${enc(id)}/feedback`, post(body)),

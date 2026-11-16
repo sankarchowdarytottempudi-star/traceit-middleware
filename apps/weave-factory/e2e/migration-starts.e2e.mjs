@@ -83,6 +83,31 @@ try {
       s.check(!(await panel.innerText()).includes("stand-in-value-7") && (await input.count()) === 0, "the value is not shown after saving");
       await page.unroute(`**/api/factory/migrations/${id}/resolve`);
     }
+    // ------------------------------------------------------------ 3. scenarios and what each one did
+    s.step("3. Scenarios of the trial and what the service did in each");
+    const TRIAL = { ran: true, started: true, passed: false, at: new Date().toISOString(), summary: "stand-in report",
+      faults: ["interfaceFlow - zoho down (runs on a timer): expected error rows, it was not done"],
+      operations: [{ op: "ANY /clearObjectStore", case: "", status: 200, result: "answered", calls: ["dbSys"], seen: [{ what: "dbSys POST error rows", n: 1, failed: 0 }] },
+                   { op: "ANY /clearObjectStore", case: "its APIs are down", status: 503, result: "handled", calls: ["dbSys"], seen: [] }],
+      parts: [{ name: "interfaceFlow", scenario: "normal delta run", about: "two pages of reservations, written to every CRM module", starts: "runs on a timer", result: "confirmed",
+                calls: ["reservationProc", "zohoSys"], seen: [{ what: "zohoSys POST write Shorex", n: 3, failed: 0 }, { what: "reservationProc POST Seaware sign-in", n: 1, failed: 0 }] },
+              { name: "interfaceFlow", scenario: "zoho down", starts: "runs on a timer", result: "case-failed", note: "expected error rows, it was not done",
+                calls: ["zohoSys"], seen: [{ what: "zohoSys POST write Accounts (refused)", n: 8, failed: 8 }] }] };
+    await s.context.route(`**/api/factory/migrations/${id}`, async (r) => {
+      if (r.request().method() !== "GET") return r.continue();
+      const res = await r.fetch();
+      return r.fulfill({ response: res, json: { ...(await res.json()), trial: TRIAL } });
+    });
+    await s.goto(`/migrations/${id}`);
+    await trial.waitFor();
+    s.check((await page.locator('[data-testid="trial-scenario"]').count()) === 2, "each scenario of a part is named");
+    const tt = await trial.innerText();
+    s.check(/zohoSys POST write Shorex × 3/.test(tt), "what the service did is listed with counts");
+    s.check(/8 failed/.test(tt), "refused calls are counted");
+    s.check(/two pages of reservations/.test(tt), "what a scenario is about is shown");
+    s.check((await page.locator('[data-testid="trial-down"]').count()) === 1 && (await page.locator('[data-testid="trial-op"]').count()) === 1, "the APIs-down request is shown under its operation, not as an operation of its own");
+    await s.shot("scenarios");
+    await s.context.unroute(`**/api/factory/migrations/${id}`);
     s.check((await s.overflow()) === 0, "nothing runs off the side of the page");
   }
 } catch (e) {

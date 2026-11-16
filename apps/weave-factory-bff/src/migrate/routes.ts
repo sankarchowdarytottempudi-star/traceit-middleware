@@ -5,7 +5,7 @@ import { sidOf } from "../auth.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "../config.js";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
-import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
+import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, runtimePropertiesOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
@@ -76,6 +76,18 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
   app.get("/api/factory/migrations/:id/open-items", async (req, reply) => {
     await need(req);
     return pass(reply, await mtRequest(mt, "GET", `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/open-items`));
+  });
+  // the old application, item by item, and where the new service does each item
+  app.get("/api/factory/migrations/:id/parity", async (req, reply) => {
+    await need(req);
+    return pass(reply, await mtRequest(mt, "GET", `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/parity`));
+  });
+  // runtime properties of the running old application: only the text goes on, and only names come back
+  app.post("/api/factory/migrations/:id/runtime-properties", { bodyLimit: 512 * 1024 }, async (req, reply) => {
+    await need(req);
+    const d = runtimePropertiesOf(req.body);
+    if (!d.ok) { reply.code(400); return { error: d.error }; }
+    return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/runtime-properties`, { text: d.text }));
   });
   app.post("/api/factory/migrations/:id/resolve", async (req, reply) => {
     await need(req);

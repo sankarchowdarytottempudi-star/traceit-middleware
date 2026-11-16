@@ -11,6 +11,7 @@ import { registerRoutes } from "./routes.js";
 import { registerStudio } from "./studio.js";
 import { registerEstate } from "./estate/routes.js";
 import { registerMigrate } from "./migrate/routes.js";
+import { registerParts } from "./migrate/parts.js";
 import { registerServers } from "./servers/routes.js";
 import { registerChanges } from "./changes/routes.js";
 
@@ -53,6 +54,7 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   registerAuth(app, cfg, creds, store);
   registerRoutes(app, cfg);
   registerMigrate(app, cfg);
+  registerParts(app, cfg);
   registerServers(app, cfg);
   registerChanges(app, cfg);
   registerEstate(app, cfg, creds);

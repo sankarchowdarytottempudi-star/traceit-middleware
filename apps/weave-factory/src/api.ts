@@ -197,12 +197,12 @@ export interface MigratedExecutionList {
   notes: string[]; generatedAt: string;
 }
 
-export interface UploadInput { name: string; workspace: string; file: File; sourceType?: string; target?: string; }
+export interface UploadInput { name: string; workspace: string; file: File; sourceType?: string; target?: string; scope?: string; }
 /** Upload with progress. The file is the request body; everything else travels in the address. */
 export function uploadMigration(input: UploadInput, onProgress?: (fraction: number) => void): { promise: Promise<Migration>; abort: () => void } {
   const xhr = new XMLHttpRequest();
   const promise = new Promise<Migration>((resolve, reject) => {
-    xhr.open("POST", at(`/api/factory/migrations${qs({ name: input.name, workspace: input.workspace, filename: input.file.name, sourceType: input.sourceType, target: input.target })}`));
+    xhr.open("POST", at(`/api/factory/migrations${qs({ name: input.name, workspace: input.workspace, filename: input.file.name, sourceType: input.sourceType, target: input.target, scope: input.scope })}`));
     xhr.withCredentials = true;
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };

@@ -1,5 +1,6 @@
 // What the migration tool accepts. It recognises the source technology from the uploaded archive
 // by itself; this list tells the user what to upload and what happens to anything else.
+import { scopeHeaderOf } from "./partspec.js";
 export interface SourceTech { id: string; label: string; upload: string; hint?: string; sourceType?: "spec"; }
 export interface TargetTech { id: string; label: string; depth: "full" | "skeleton"; hint: string; }
 
@@ -40,7 +41,7 @@ export function headerSafe(s: string, max = 120): string {
   return s.replace(/[^\x20-\x7e]/g, "-").replace(/["\\]/g, "").trim().slice(0, max);
 }
 
-export function validateUpload(q: { name?: string; workspace?: string; filename?: string; sourceType?: string; target?: string }, length: number | undefined, limitMb: number):
+export function validateUpload(q: { name?: string; workspace?: string; filename?: string; sourceType?: string; target?: string; scope?: string }, length: number | undefined, limitMb: number):
   { ok: true; headers: Record<string, string> } | { ok: false; status: number; error: string } {
   const name = headerSafe(q.name || "");
   const filename = headerSafe((q.filename || "").replace(/^.*[\\/]/, ""), 160);
@@ -60,6 +61,10 @@ export function validateUpload(q: { name?: string; workspace?: string; filename?
   const headers: Record<string, string> = { "X-Name": name, "X-Filename": filename, "X-Target-Tech": target };
   if (workspace) headers["X-Workspace"] = workspace;
   if (spec) headers["X-Source-Type"] = "spec";
+  // only part of a Node.js project: the tool makes that part and keeps the whole upload
+  const part = scopeHeaderOf(q.scope);
+  if (!part.ok) return { ok: false, status: 400, error: part.error };
+  if (part.header) headers["X-Scope"] = part.header;
   return { ok: true, headers };
 }
 

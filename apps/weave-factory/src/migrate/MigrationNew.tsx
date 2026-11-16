@@ -7,6 +7,7 @@ import { api, uploadMigration, type ApiError } from "../api.ts";
 import { txt } from "../lib/text.ts";
 import { fileSize, validateNewMigration } from "../lib/migrate.ts";
 import { Bar, Btn, Failed, Field, Head, LinkBtn, Loading, Notice, Panel, Pill, SourceWays, errText, useTitle } from "./ui.tsx";
+import { NewPartFields, type PartSpec } from "./Part.tsx";
 
 const NEW = "__new__";
 function StepTitle({ n, children }: { n: number; children: string }) {
@@ -29,6 +30,7 @@ export function MigrationNew() {
   const [technology, setTechnology] = useState("auto");
   const [target, setTarget] = useState("wso2");
   const [file, setFile] = useState<File | null>(null);
+  const [part, setPart] = useState<PartSpec | null>(null);
   const [startNow, setStartNow] = useState(true);
   const [tried, setTried] = useState(false);
   const [over, setOver] = useState(false);
@@ -54,7 +56,7 @@ export function MigrationNew() {
     setTried(true); setError("");
     if (!opts.data || !file || Object.keys(errors).length) return;
     setProgress(0);
-    const up = uploadMigration({ name: name.trim(), workspace, file, sourceType: isSpec ? "spec" : technology === "auto" ? undefined : technology, target }, setProgress);
+    const up = uploadMigration({ name: name.trim(), workspace, file, sourceType: isSpec ? "spec" : technology === "auto" ? undefined : technology, target, scope: part && !isSpec ? JSON.stringify(part) : undefined }, setProgress);
     abortRef.current = up.abort;
     try {
       const m = await up.promise;
@@ -105,6 +107,7 @@ export function MigrationNew() {
               ))}
             </div>
             {tech?.hint && <Notice>{txt(tech.hint)}</Notice>}
+            {!isSpec && (technology === "auto" || technology === "node") && <NewPartFields value={part} onChange={setPart} disabled={uploading} />}
           </Panel>
 
           <Panel title={<StepTitle n={3}>What should it become?</StepTitle>}>

@@ -12,6 +12,7 @@ import { Finish } from "./Finish.tsx";
 import { StartParts, TrialRun } from "./Starts.tsx";
 import { ChangeRequests } from "../changes/ChangeRequests.tsx";
 import { ParityPanel, RuntimeProps } from "./Parity.tsx";
+import { ProjectPart } from "./Part.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
 const TABS: Tab[] = ["progress", "documents", "checks", "feedback"];
@@ -372,6 +373,7 @@ export function MigrationDetail() {
       {tab === "progress" && (
         <div className="mf-mg-stack">
           {failure && !m.busy && <WhatNow v={failure} disabled={!!m.busy} busy={run.isPending && run.variables?.phase === failure.retry?.id} onRetry={(a) => start(a)} />}
+          <ProjectPart m={m} />
           <Finish m={m} onRun={(a) => start(a)} />
           <StartParts m={m} onRun={(a) => start(a)} />
           <TrialRun m={m} />

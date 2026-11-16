@@ -324,6 +324,7 @@ export function nodeSummary(type: string, config: Record<string, unknown>, def?:
   if (type === "graphql.request") return short(c.operationName || c.url || "GraphQL");
   if (type === "redis.command") return `${String(c.operation ?? "get").toUpperCase()} ${short(c.key)}`;
   if (type === "postgres.query") return short(c.sql) || "SQL";
+  if (type === "mysql.query" || type === "mssql.query") return c.operation === "procedure" ? (short(c.procedure) || "Stored procedure") : (short(c.sql) || "SQL");
   if (type === "transform.map") { const n = mappingOf(c.mapping).rules.length; return n === 1 ? "1 mapping rule" : `${n} mapping rules`; }
   if (type === "transform.expr") return short(c.expr);
   if (type === "logic.choice") { const n = Array.isArray(c.conditions) ? c.conditions.length : 0; return n === 1 ? "1 condition" : `${n} conditions`; }

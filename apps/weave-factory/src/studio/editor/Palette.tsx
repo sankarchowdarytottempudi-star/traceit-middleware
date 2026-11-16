@@ -13,7 +13,7 @@ export function Palette({ catalog, onAdd, autoFocus }: { catalog: Catalog; onAdd
   const [q, setQ] = useState("");
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const hit = (d: NodeTypeDef) => !needle || `${d.label} ${d.description} ${d.type}`.toLowerCase().includes(needle);
+    const hit = (d: NodeTypeDef) => !needle || `${d.label} ${d.description} ${d.type} ${(d.keywords ?? []).join(" ")}`.toLowerCase().includes(needle);
     const cats = Array.from(new Set([...CATEGORY_ORDER, ...catalog.nodeTypes.map((d) => d.category)]));
     return cats.map((c) => ({ id: c, label: CATEGORY_LABEL[c] ?? c, items: catalog.nodeTypes.filter((d) => d.category === c && hit(d)) })).filter((g) => g.items.length);
   }, [catalog.nodeTypes, q]);

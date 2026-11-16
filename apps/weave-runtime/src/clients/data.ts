@@ -3,6 +3,7 @@
 import { createClient } from "redis";
 import pg from "pg";
 import type { ClusterDns } from "./dns.js";
+import { SqlClients, connectTimeoutMs, poolMaxOf } from "./sqldb.js";
 
 export interface ResolvedConnection {
   id: string; name: string; type: string; updatedAt: string;
@@ -14,7 +15,9 @@ type RedisClient = ReturnType<typeof createClient>;
 export class DataClients {
   private redis = new Map<string, { stamp: string; client: Promise<RedisClient> }>();
   private pools = new Map<string, { stamp: string; pool: Promise<pg.Pool> }>();
-  constructor(private dns: ClusterDns) {}
+  /** MySQL and SQL Server pools (Database (MySQL) / Database (SQL Server) steps). */
+  readonly sql: SqlClients;
+  constructor(private dns: ClusterDns) { this.sql = new SqlClients(dns); }
 
   async redisFor(c: ResolvedConnection): Promise<RedisClient> {
     const hit = this.redis.get(c.id);
@@ -42,7 +45,7 @@ export class DataClients {
     const hit = this.pools.get(c.id);
     if (hit && hit.stamp === c.updatedAt) return hit.pool;
     if (hit) void hit.pool.then((x) => x.end()).catch(() => undefined);
-    const p = this.openPg(c);
+    const p = this.openPg(c, poolMaxOf(c));
     this.pools.set(c.id, { stamp: c.updatedAt, pool: p });
     p.catch(() => { if (this.pools.get(c.id)?.pool === p) this.pools.delete(c.id); });
     return p;
@@ -53,8 +56,9 @@ export class DataClients {
     const ip = await this.dns.resolve(host);
     const pool = new pg.Pool({
       host: ip, port: Number(c.config.port || 5432), database: String(c.config.database || ""), user: String(c.config.user || ""),
-      password: c.secrets.password || undefined, ssl: c.config.ssl ? { rejectUnauthorized: false, servername: host } : undefined,
-      max, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30_000, statement_timeout: 60_000,
+      password: c.secrets.password || undefined,
+      ssl: c.config.ssl ? { rejectUnauthorized: c.config.sslVerify === true, servername: host, ...(String(c.config.caCert ?? "").trim() ? { ca: String(c.config.caCert) } : {}) } : undefined,
+      max, connectionTimeoutMillis: connectTimeoutMs(c), idleTimeoutMillis: 30_000, statement_timeout: 60_000,
     });
     pool.on("error", () => undefined);
     return pool;
@@ -62,6 +66,7 @@ export class DataClients {
   async closeAll() {
     for (const r of this.redis.values()) await r.client.then((x) => x.quit()).catch(() => undefined);
     for (const p of this.pools.values()) await p.pool.then((x) => x.end()).catch(() => undefined);
+    await this.sql.closeAll();
     this.redis.clear(); this.pools.clear();
   }
 }

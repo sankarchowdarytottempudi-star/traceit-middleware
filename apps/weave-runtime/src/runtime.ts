@@ -13,6 +13,7 @@ import { Store, newId, type StoredConnection } from "./store.js";
 import { ClusterDns } from "./clients/dns.js";
 import { HttpClient, readBody } from "./clients/http.js";
 import { DataClients, type ResolvedConnection } from "./clients/data.js";
+import { ENGINE_LABEL, explain as explainSql } from "./clients/sqldb.js";
 import { Engine, lowerKeys, type FlowResponse, type RuntimeRequest } from "./engine/engine.js";
 import { authHeaders, joinUrl, matchRoutes, triggerRoutes, type TriggerRoute } from "./engine/nodes.js";
 import { buildCatalog, templateGraph } from "./catalog.js";
@@ -540,6 +541,23 @@ export class Runtime {
       if (conn.type === "postgres") {
         const pool = await this.data.openPg(conn, 1);
         try { const r = await pool.query("select current_database() as db, version() as v"); return { ok: true, ms: Date.now() - started, detail: `Connected to database "${String(r.rows[0]?.db)}" (${String(r.rows[0]?.v ?? "").split(",")[0]})` }; } finally { await pool.end().catch(() => undefined); }
+      }
+      if (conn.type === "mysql") {
+        const pool = await this.data.sql.openMysql(conn, 1).catch((e) => { throw explainSql("mysql", e, { secrets: secretValues, database: String(conn.config.database ?? "") }); });
+        try {
+          const [rows] = await pool.query({ sql: "select database() as db, version() as v", timeout: 10_000 });
+          const r = (rows as { db?: string; v?: string }[])[0] ?? {};
+          return { ok: true, ms: Date.now() - started, detail: `Connected to ${ENGINE_LABEL.mysql} ${String(r.v ?? "").split("-")[0]}${r.db ? `, database "${r.db}"` : ""}${conn.config.readOnly ? " (read-only)" : ""}` };
+        } catch (e) { throw explainSql("mysql", e, { secrets: secretValues, database: String(conn.config.database ?? "") }); }
+        finally { await pool.end().catch(() => undefined); }
+      }
+      if (conn.type === "mssql") {
+        const pool = await this.data.sql.openMssql(conn, 1).catch((e) => { throw explainSql("mssql", e, { secrets: secretValues, database: String(conn.config.database ?? "") }); });
+        try {
+          const r = (await pool.request().query("select db_name() as db, cast(serverproperty('ProductVersion') as nvarchar(64)) as v")).recordset[0] ?? {};
+          return { ok: true, ms: Date.now() - started, detail: `Connected to ${ENGINE_LABEL.mssql} ${String(r.v ?? "")}${r.db ? `, database "${r.db}"` : ""}${conn.config.readOnly ? " (read-only)" : ""}` };
+        } catch (e) { throw explainSql("mssql", e, { secrets: secretValues, database: String(conn.config.database ?? "") }); }
+        finally { await pool.close().catch(() => undefined); }
       }
       return { ok: false, ms: 0, detail: `Connections of type "${conn.type}" cannot be tested` };
     } catch (e) { return fail(e); }

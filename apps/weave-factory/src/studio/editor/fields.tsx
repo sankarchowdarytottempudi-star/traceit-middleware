@@ -4,10 +4,12 @@ import { createContext, useContext, useId, useMemo, useRef, useState, type React
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Braces, Plus, Shuffle, Trash2 } from "lucide-react";
-import type { FieldDef, FunctionDoc, Json, MappingSpec } from "@traceit/weave-flow";
+import type { Connection, FieldDef, FunctionDoc, Json, MappingSpec } from "@traceit/weave-flow";
 import { studioApi, type ExprContext } from "../api.ts";
 import { mappingOf, newId } from "../graph.ts";
 import { specStats } from "../mapping.ts";
+import { useCatalog } from "../catalog.ts";
+import { ConnectionDialog } from "./ConnectionDialog.tsx";
 import { nodeRef, VARIABLES } from "../runctx.ts";
 import { AutoTextArea, Badge, Button, cx, DataView, Field, IconButton, JsonEditor, Modal, Tabs, Toggle, useDebounced } from "../ui.tsx";
 import { txt } from "../../lib/text.ts";
@@ -185,22 +187,42 @@ function StringListEditor({ value, onChange, readOnly, placeholder }: { value: u
 }
 
 // ---------------------------------------------------------------- pickers
+const NEW_CONNECTION = "__new_connection__";
+/** A step's Connection dropdown: pick one, create one right here ("+ New … connection…"), or edit the chosen one. */
 function ConnectionPicker({ value, onChange, type, readOnly, id }: { value: unknown; onChange: (v: string | undefined) => void; type?: string; readOnly?: boolean; id?: string }) {
   const q = useQuery({ queryKey: ["studio", "connections"], queryFn: studioApi.connections, retry: 0, staleTime: 15_000 });
+  const catalog = useCatalog();
+  const [dialog, setDialog] = useState<null | "new" | Connection>(null);
   const all = q.data?.connections ?? [];
   const list = type ? all.filter((c) => c.type === type) : all;
   const cur = typeof value === "string" ? value : "";
-  const missing = !!cur && !q.isLoading && !all.some((c) => c.id === cur);
+  const current = all.find((c) => c.id === cur);
+  const missing = !!cur && !q.isLoading && !current;
+  const def = type ? catalog.connectionTypes.find((t) => t.type === type) : undefined;
+  const canCreate = !readOnly && !!def;
   return (
     <div className="mf-stack" style={{ gap: 6 }}>
-      <select id={id} className="mf-control" value={cur} disabled={readOnly} onChange={(e) => onChange(e.target.value || undefined)} data-field-kind="connection">
+      <select id={id} className="mf-control" value={cur} disabled={readOnly} data-field-kind="connection"
+        onChange={(e) => { if (e.target.value === NEW_CONNECTION) { setDialog("new"); return; } onChange(e.target.value || undefined); }}>
         <option value="">{q.isLoading ? "Loading connections…" : "No connection"}</option>
         {list.map((c) => <option key={c.id} value={c.id}>{txt(c.name)}</option>)}
         {missing && <option value={cur}>Unavailable connection ({cur})</option>}
+        {canCreate && <option value={NEW_CONNECTION}>+ New {txt(def!.label)} connection…</option>}
       </select>
-      {missing && !q.isError && <span className="mf-field-error">This connection no longer exists. Pick another one.</span>}
+      {missing && !q.isError && <span className="mf-field-error">This connection no longer exists. Pick another one or create a new one.</span>}
       {q.isError && <span className="mf-help">Connections cannot be listed right now.</span>}
-      {!readOnly && <span className="mf-help">{list.length === 0 && !q.isLoading && !q.isError ? "No connection of this kind yet. " : ""}<Link to="/studio/connections" target="_blank" rel="noreferrer">Manage connections</Link></span>}
+      {!readOnly && (
+        <span className="mf-help" style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+          {list.length === 0 && !q.isLoading && !q.isError && <span>No {def ? txt(def.label) : "such"} connection yet.</span>}
+          {canCreate && <Button size="sm" variant="ghost" icon={Plus} onClick={() => setDialog("new")} data-action="new-connection-here">New connection</Button>}
+          {current && def && <Button size="sm" variant="ghost" onClick={() => setDialog(current)} data-action="edit-connection-here">Edit connection</Button>}
+          <Link to="/studio/connections" target="_blank" rel="noreferrer">Manage connections</Link>
+        </span>
+      )}
+      {dialog && (
+        <ConnectionDialog existing={dialog === "new" ? null : dialog} types={catalog.connectionTypes} fixedType={type}
+          onSaved={(c) => { if (dialog === "new") onChange(c.id); }} onClose={() => setDialog(null)} />
+      )}
     </div>
   );
 }

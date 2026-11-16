@@ -96,7 +96,7 @@ function checkField(node: FlowNode, f: FieldDef, v: unknown, ctx: ValidateCtx, i
     }
     case "stringlist":
       if (!Array.isArray(v)) { err(`${f.label} must be a list`); break; }
-      if (node.type === "postgres.query" && f.key === "params") (v as unknown[]).forEach((p, i) => { if (typeof p === "string") exprErr(checkExpr(p), `Parameter $${i + 1}`); });
+      if ((node.type === "postgres.query" || node.type === "mysql.query" || node.type === "mssql.query") && f.key === "params") (v as unknown[]).forEach((p, i) => { if (typeof p === "string") exprErr(checkExpr(p), `Parameter $${i + 1}`); });
       break;
     case "number": if (typeof v !== "number" && !(typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)))) err(`${f.label} must be a number`); break;
     case "select": if (f.options && !f.options.some((o) => o.value === v)) err(`${f.label}: "${String(v)}" is not one of the choices`); break;

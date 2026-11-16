@@ -6,6 +6,7 @@ import { readBody, type HttpResult } from "../clients/http.js";
 import type { ResolvedConnection } from "../clients/data.js";
 import { FlowError, type NodeCtx, type NodeHandler, type NodeResult, type RuntimeRequest, type Scope, lowerKeys } from "./engine.js";
 import { redact } from "../redact.js";
+import { mssqlQuery, mysqlQuery } from "./sqlnodes.js";
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
   if (signal?.aborted) { reject(Object.assign(new Error("Cancelled: the flow timed out"), { code: "ETIMEDOUT" })); return; }
@@ -24,7 +25,7 @@ export function kvList(v: unknown): { key: string; value: unknown }[] {
 const asText = (v: unknown) => (v === undefined || v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v));
 
 // ---------------------------------------------------------------- connections
-function connectionOf(c: NodeCtx, id: unknown, type: string, required: boolean): ResolvedConnection | undefined {
+export function connectionOf(c: NodeCtx, id: unknown, type: string, required: boolean): ResolvedConnection | undefined {
   if (id === undefined || id === null || id === "") {
     if (required) throw new FlowError(`Choose a ${type} connection for this step`, { status: 500 });
     return undefined;
@@ -253,7 +254,14 @@ const postgresQuery: NodeHandler = async (c) => {
   for (const p of Array.isArray(cfg.params) ? cfg.params : []) { const v = typeof p === "string" ? await evalExpr(p, es) : p; params.push(v === undefined ? null : v && typeof v === "object" ? JSON.stringify(v) : v); }
   try {
     const pool = await c.run.deps.data.pgFor(conn);
-    const res = await pool.query(String(cfg.sql), params);
+    let res;
+    if (conn.config.readOnly === true) {
+      // read-only connection: the statement runs in a read-only transaction, so the database refuses changes
+      const client = await pool.connect();
+      try { await client.query("BEGIN READ ONLY"); res = await client.query(String(cfg.sql), params); await client.query("COMMIT"); }
+      catch (e) { await client.query("ROLLBACK").catch(() => undefined); throw e; }
+      finally { client.release(); }
+    } else res = await pool.query(String(cfg.sql), params);
     const rows = (Array.isArray(res) ? res[res.length - 1].rows : res.rows) ?? [];
     const count = (Array.isArray(res) ? res[res.length - 1].rowCount : res.rowCount) ?? rows.length;
     return { result: cfg.resultMode === "first" ? rows[0] ?? null : cfg.resultMode === "count" ? count : rows };
@@ -472,7 +480,7 @@ const passthrough: NodeHandler = async (): Promise<NodeResult> => ({});
 
 export const HANDLERS: Record<string, NodeHandler> = {
   "trigger.http": passthrough, "trigger.schedule": passthrough, "trigger.manual": passthrough,
-  "http.request": httpRequest, "graphql.request": graphqlRequest, "redis.command": redisCommand, "postgres.query": postgresQuery, "flow.call": flowCall,
+  "http.request": httpRequest, "graphql.request": graphqlRequest, "redis.command": redisCommand, "postgres.query": postgresQuery, "mysql.query": mysqlQuery, "mssql.query": mssqlQuery, "flow.call": flowCall,
   "transform.map": transformMap, "transform.expr": transformExpr, "vars.set": varsSet, "xml.convert": xmlConvert,
   "logic.choice": choice, "logic.foreach": forEach, "logic.parallel": parallel, "logic.try": tryCatch, "logic.validate": validate, "logic.delay": delay, "logic.stop": stop,
   respond, log: logNode, note: passthrough,

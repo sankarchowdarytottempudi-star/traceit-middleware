@@ -150,6 +150,7 @@ export interface NodeTypeDef {
   fields: FieldDef[];
   defaults: Record<string, unknown>;
   docs?: string;                    // short markdown shown in the node panel
+  keywords?: string[];              // extra words the palette search matches (e.g. "mssql")
 }
 export interface ConnectionTypeDef {
   type: string; label: string; description: string; icon: string;

@@ -1,5 +1,5 @@
 import { at } from "./lib/base.ts";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Shell } from "./components/Shell.tsx";
 import { api } from "./api.ts";
@@ -7,6 +7,7 @@ import { WeaveLockup, WeaveMark, TAGLINE, COMPANY_LINE } from "./brand.tsx";
 import { useTheme } from "./theme.tsx";
 import { migrateRoutes } from "./migrate/routes.tsx";
 import { studioRoutes } from "./studio/routes.tsx";
+import { ReviewApp } from "./review/ReviewApp.tsx";
 
 function SignIn() {
   const { resolved } = useTheme();
@@ -24,6 +25,14 @@ function SignIn() {
 }
 
 export function App() {
+  // The Manual Review Workbench is its own page (shown in a CRM Web Tab) with its own Zoho sign-in.
+  // It is not in the navigation, and the server only serves it while its feature flag is on.
+  const { pathname } = useLocation();
+  if (pathname === "/review" || pathname.startsWith("/review/")) return <ReviewApp />;
+  return <FactoryApp />;
+}
+
+function FactoryApp() {
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, retry: false });
   if (me.isLoading) return <div className="mf" style={{ minHeight: "100vh", background: "var(--bg)" }} />;
   if (me.isError) return <SignIn />;

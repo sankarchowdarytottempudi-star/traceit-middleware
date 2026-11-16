@@ -1,0 +1,65 @@
+/* Manual Review Workbench. Product tokens only, so light and dark both follow the theme. */
+.rv *, .rv *::before, .rv *::after { box-sizing: border-box; }
+.rv { min-height: 100vh; background: var(--bg); color: var(--text); }
+.rv-top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.rv-top h1 { margin: 0; font-size: 16px; font-weight: 700; }
+.rv-top .rv-who { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; font-size: 13px; color: var(--muted); }
+.rv-main { padding: 16px; display: grid; gap: 16px; max-width: 1480px; margin: 0 auto; min-width: 0; }
+.rv-split { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .rv-split { grid-template-columns: minmax(0, 1fr); } .rv-split.rv-has-case > .rv-queue { display: none; } .rv-split:not(.rv-has-case) > .rv-casecol { display: none; } }
+.rv-queue { display: grid; gap: 10px; min-width: 0; }
+.rv-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.rv-filters select { flex: 1 1 140px; width: auto; }
+.rv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rv-item { display: grid; gap: 6px; width: 100%; text-align: left; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+.rv-item:hover { border-color: var(--accent); }
+.rv-item:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.rv-item[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accentSoft); }
+.rv-item-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rv-item-title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.rv-meta { display: flex; gap: 6px 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.rv-casecol { display: grid; gap: 16px; min-width: 0; }
+.rv-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.rv-compare-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.rv-compare { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.rv-compare th, .rv-compare td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; min-width: 150px; }
+.rv-compare thead th { background: var(--surface2); font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.rv-compare th[scope="row"] { position: sticky; left: 0; z-index: 1; background: var(--surface2); min-width: 104px; width: 104px; font-weight: 600; color: var(--muted); font-size: 12.5px; }
+.rv-compare .rv-incoming { background: var(--accentSoft); }
+.rv-val { font-weight: 600; overflow-wrap: anywhere; }
+.rv-norm { display: block; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.rv-mark { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--surface3); color: var(--muted); }
+.rv-mark-ok { color: var(--ok); } .rv-mark-bad { color: var(--bad); } .rv-mark-warn { color: var(--warn); }
+.rv-colhead { display: grid; gap: 4px; }
+.rv-colhead strong { color: var(--text); font-size: 13.5px; }
+.rv-link { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.rv-actions { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.rv-choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); cursor: pointer; }
+.rv-choice:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accentSoft); }
+.rv-choice input { margin-top: 3px; accent-color: var(--accent); width: 18px; height: 18px; flex: none; }
+.rv-choice span { display: grid; gap: 2px; }
+.rv-choice small { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.rv-form { display: grid; gap: 12px; }
+.rv-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.rv-changes { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.rv-hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rv-hist li { display: grid; gap: 2px; padding: 8px 10px; border-left: 3px solid var(--border); }
+.rv-hist time { font-size: 12px; color: var(--muted); }
+.rv-codes { display: flex; gap: 6px; flex-wrap: wrap; }
+.rv-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 1px 7px; border-radius: 6px; background: var(--surface3); color: var(--text); }
+.rv-signin { min-height: calc(100vh - 60px); display: grid; place-items: center; padding: 16px; }
+.rv-card { display: grid; gap: 14px; max-width: 460px; width: 100%; padding: 28px 22px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); text-align: center; }
+.rv-card h2 { margin: 0; font-size: 20px; }
+.rv-card p { margin: 0; color: var(--muted); line-height: 1.5; }
+.rv-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rv-grid2 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+/* long badges (SLA wording) wrap instead of running off a phone screen */
+.rv .mf-mg-pill { white-space: normal; max-width: 100%; overflow-wrap: anywhere; line-height: 1.4; padding-top: 3px; padding-bottom: 3px; }
+.rv .mf-mg-kv dd { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .rv-top { position: static; } }
+/* grid children may shrink below their content, so the comparison scrolls inside its own box */
+.rv-main > *, .rv-split > *, .rv-casecol > *, .rv-grid2 > * { min-width: 0; }
+.rv-compare-wrap { max-width: 100%; }
+/* hidden screen-reader text stays inside the scrolling box instead of widening the page */
+.rv-compare-wrap, .rv-compare td, .rv-compare th { position: relative; }
+.rv-compare th[scope="row"] { position: sticky; }

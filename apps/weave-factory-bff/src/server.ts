@@ -15,6 +15,8 @@ import { registerParts } from "./migrate/parts.js";
 import { registerServers } from "./servers/routes.js";
 import { registerVersions, flowVersionRecorder } from "./versions/routes.js";
 import { registerChanges } from "./changes/routes.js";
+import { registerReview, isReviewPath, reviewPageHeaders } from "./review/routes.js";
+import { loadReviewConfig } from "./review/config.js";
 
 function resolveSpaDir(): string | null {
   if (process.env.SPA_DIR && existsSync(process.env.SPA_DIR)) return process.env.SPA_DIR;
@@ -62,6 +64,8 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   registerStudio(app, studioCfg, (req) => app.userFor(req), flowVersionRecorder(cfg, studioCfg));
   registerVersions(app, cfg);
   registerChanges(app, cfg);
+  const reviewCfg = loadReviewConfig();
+  registerReview(app, cfg, store, { rc: reviewCfg });
   app.setErrorHandler((err, _req, reply) => {
     const status = (err as any).statusCode ?? 500;
     reply.code(status).type("application/problem+json").send({ type: "about:blank", title: err.message || "Error", status });
@@ -81,8 +85,16 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
       }
       return html;
     };
-    const sendPage = (req: FastifyRequest, reply: FastifyReply) =>
-      reply.header("cache-control", "no-cache, no-store, must-revalidate").type("text/html; charset=utf-8").send(page(req));
+    const sendPage = (req: FastifyRequest, reply: FastifyReply) => {
+      // The Identity Review Workbench (/review) is embedded in Zoho CRM as a Web Tab: it is the
+      // only page that may be framed, and only by the Zoho domains configured; behind its flag.
+      if (isReviewPath(req.url ?? "")) {
+        if (!reviewCfg.enabled) return reply.code(404).type("text/plain").send("Not found");
+        for (const [k, v] of Object.entries(reviewPageHeaders(reviewCfg))) reply.header(k, v);
+        return reply.type("text/html; charset=utf-8").send(page(req));
+      }
+      return reply.header("cache-control", "no-cache, no-store, must-revalidate").type("text/html; charset=utf-8").send(page(req));
+    };
     app.get("/", sendPage);
     app.get("/index.html", sendPage);
     await app.register(fstatic, {

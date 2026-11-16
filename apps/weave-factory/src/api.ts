@@ -52,7 +52,8 @@ export interface ParityFlow { name: string; kind?: string; trigger?: string; sta
 export interface ParityMap { ok: boolean; error?: string; api?: string; complete?: boolean; flowCount?: number; flowsWithGaps?: number; summary?: string;
   totals?: { calls?: ParityTotals; fields?: ParityTotals; conditions?: ParityTotals; tables?: ParityTotals };
   flows?: ParityFlow[]; connections?: { config: string; kind?: string; settingsKey?: string; set?: boolean }[]; examples?: { operation: string; file?: string }[] }
-export interface RuntimePropsResult { applied?: { property: string; setting: string }[]; unknown?: string[]; unchanged?: string[]; message?: string; changed?: boolean }
+export interface RuntimePropsResult { applied?: { property: string; setting: string }[]; unknown?: string[]; unchanged?: string[]; message?: string; changed?: boolean;
+  selectors?: { property: string; meaning?: string }[]; runtimeOnly?: string[]; waiting?: { property: string; reason?: string }[]; ignored?: string[] }
 /** The last trial run of the built service (closed network, stand-ins with made-up data). */
 export interface TrialReport { ran: boolean; reason?: string; at?: string; started?: boolean; startSeconds?: number; why?: string; passed?: boolean; summary?: string; faults?: string[];
   examples?: number; ownReplies?: boolean;
@@ -267,7 +268,7 @@ export const api = {
   importRepo: (id: string, body: { paths: string[]; workspace: string; environment?: string; build?: boolean }) => j<RepoImportResult>(`${F}/repos/${enc(id)}/import`, post(body)),
   removeRepo: (id: string) => j<{ ok: boolean }>(`${F}/repos/${enc(id)}`, { method: "DELETE" }),
   workspaces: () => j<{ workspaces: Workspace[] }>(`${F}/workspaces`),
-  addWorkspaceConfig: (body: { name: string; servers: Record<string, { host: string; port?: number; username?: string; password?: string; hostname?: string }> }) => j<WorkspaceConfig>(`${F}/workspace-configs`, post(body)),
+  addWorkspaceConfig: (body: { name: string; servers: Record<string, { host: string; port?: number; username?: string; password?: string }> }) => j<WorkspaceConfig>(`${F}/workspace-configs`, post(body)),
   deleteWorkspaceConfig: (id: string) => j<{ ok: boolean }>(`${F}/workspace-configs/${enc(id)}`, { method: "DELETE" }),
   checkServer: (id: string, tier: string) => j<{ started?: boolean; plan?: unknown; note?: string }>(`${F}/workspace-configs/${enc(id)}/check/${enc(tier)}`, post({})),
   environments: () => j<{ environments: Environment[] }>(`${F}/environments`),

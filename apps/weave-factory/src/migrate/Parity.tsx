@@ -42,7 +42,7 @@ function FlowRow({ f }: { f: ParityFlow }) {
   return (
     <details className="mf-mg-card" data-testid="parity-flow" data-flow={f.name} style={{ padding: "10px 12px" }}>
       <summary className="mf-mg-row" style={{ gap: 8, cursor: "pointer" }}>
-        <Pill tone={f.status === "complete" ? "ok" : "bad"}>{f.status === "complete" ? "complete" : `${missing.length} missing`}</Pill>
+        <Pill tone={f.status === "complete" ? "ok" : f.status === "dead" ? "muted" : "bad"} title={f.status === "dead" ? "Nothing in the old application uses this flow (its call is commented out), so the new service does not need it." : undefined}>{f.status === "complete" ? "complete" : f.status === "dead" ? "unused in the old app" : `${missing.length} missing`}</Pill>
         <span className="mf-mono mf-mg-wrap" style={{ fontWeight: 600, fontSize: 13 }}>{txt(f.name)}</span>
         <span className="mf-mg-small mf-mg-muted">{txt(f.kind)}{f.trigger ? ` · starts: ${txt(f.trigger)}` : ""}{fields.length ? ` · fields ${found}/${fields.length}` : ""}</span>
       </summary>
@@ -184,7 +184,7 @@ export function RuntimeProps({ m, onRun }: { m: Migration; onRun: (a: "deploy") 
           The uploaded code cannot contain them. Paste them here so the new service uses the same values: one property per line, as <span className="mf-mono">name=value</span>, <span className="mf-mono">name: value</span> or name and value separated by a tab.
         </p>
         <Field label="Properties of the running application" hint="Values go into this service's settings on this server. They are not shown again after applying and never leave this server.">
-          <textarea className="mf-mg-input mf-mono" data-testid="runtime-text" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder={"scheduler.mode=delta\nscheduler.frequency=60"} spellCheck={false} autoComplete="off" />
+          <textarea className="mf-mg-input mf-mono" data-testid="runtime-text" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder={"property.name=value\nanother.property: value"} spellCheck={false} autoComplete="off" />
         </Field>
         <span className="mf-mg-actions"><Btn small kind="primary" disabled={!text.trim() || !!m.busy} busy={apply.isPending} onClick={() => apply.mutate(text)}>Apply</Btn></span>
         {apply.isError && <Notice tone="bad">{errText(apply.error)}</Notice>}
@@ -192,6 +192,9 @@ export function RuntimeProps({ m, onRun }: { m: Migration; onRun: (a: "deploy") 
           <div className="mf-mg-stack" style={{ gap: 6 }} data-testid="runtime-result">
             {(r.applied ?? []).length > 0 && <Notice tone="ok"><strong>Applied ({(r.applied ?? []).length}):</strong> {(r.applied ?? []).map((a) => `${txt(a.property)} → ${txt(a.setting)}`).join(", ")}</Notice>}
             {(r.unchanged ?? []).length > 0 && <span className="mf-mg-small mf-mg-muted mf-mg-wrap">Already the same ({(r.unchanged ?? []).length}): {(r.unchanged ?? []).map((x) => txt(x)).join(", ")}</span>}
+            {(r.selectors ?? []).length > 0 && <span className="mf-mg-small mf-mg-wrap" data-testid="runtime-selectors"><strong>Choose the settings file ({(r.selectors ?? []).length}):</strong> {(r.selectors ?? []).map((x) => `${txt(x.property)} (${txt(x.meaning)})`).join(", ")}</span>}
+            {(r.runtimeOnly ?? []).length > 0 && <span className="mf-mg-small mf-mg-muted mf-mg-wrap" data-testid="runtime-only">Only for the Mule runtime, not needed by the new service ({(r.runtimeOnly ?? []).length}): {(r.runtimeOnly ?? []).map((x) => txt(x)).join(", ")}</span>}
+            {(r.waiting ?? []).length > 0 && <Notice tone="warn"><span data-testid="runtime-waiting"><strong>Kept for later ({(r.waiting ?? []).length}):</strong> {(r.waiting ?? []).map((x) => `${txt(x.property)}: ${txt(x.reason)}`).join("; ")}</span></Notice>}
             {(r.unknown ?? []).length > 0 && <Notice tone="warn"><strong>Not used by the new service ({(r.unknown ?? []).length}):</strong> {(r.unknown ?? []).map((x) => txt(x)).join(", ")}</Notice>}
             {changed && (
               <Notice tone="warn">

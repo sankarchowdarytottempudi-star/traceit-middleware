@@ -1,4 +1,5 @@
 // One running API: what it is, its operations, connectors, mappings, configuration, logs and traffic.
+import { ChangeRequests } from "../changes/ChangeRequests.tsx";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
@@ -10,8 +11,8 @@ import { Btn, Code, Dialog, Empty, Failed, Field, Head, HealthPill, KV, LayerPil
 import { MigratedExecutionsList } from "../studio/editor/MigratedExecutions.tsx";
 import { Landscape } from "./EstateList.tsx";
 
-type Tab = "overview" | "operations" | "connectors" | "mappings" | "config" | "executions" | "logs" | "traffic";
-const TABS: Tab[] = ["overview", "operations", "connectors", "mappings", "config", "executions", "logs", "traffic"];
+type Tab = "overview" | "operations" | "connectors" | "mappings" | "config" | "executions" | "logs" | "traffic" | "changes";
+const TABS: Tab[] = ["overview", "operations", "connectors", "mappings", "config", "executions", "logs", "traffic", "changes"];
 
 function CopyBtn({ value, label }: { value: string; label: string }) {
   const [done, setDone] = useState(false);
@@ -537,6 +538,7 @@ export function EstateDetail() {
     { id: "executions", label: "Executions" },
     { id: "logs", label: "Logs" },
     { id: "traffic", label: "Traffic" },
+    { id: "changes", label: "Request a change" },
   ];
   const notFound = det.isError && (det.error as ApiError).status === 404;
   return (
@@ -561,6 +563,7 @@ export function EstateDetail() {
             {tab === "executions" && <MigratedExecutionsList api={name} openId={sp.get("execution")} onOpen={(id) => { const n = new URLSearchParams(sp); if (id) n.set("execution", id); else n.delete("execution"); setSp(n, { replace: true }); }} />}
             {tab === "logs" && <Logs name={name} />}
             {tab === "traffic" && <Traffic name={name} />}
+            {tab === "changes" && <ChangeRequests api={name} />}
           </div>
         </>
       )}

@@ -12,6 +12,7 @@ import { registerStudio } from "./studio.js";
 import { registerEstate } from "./estate/routes.js";
 import { registerMigrate } from "./migrate/routes.js";
 import { registerServers } from "./servers/routes.js";
+import { registerChanges } from "./changes/routes.js";
 
 function resolveSpaDir(): string | null {
   if (process.env.SPA_DIR && existsSync(process.env.SPA_DIR)) return process.env.SPA_DIR;
@@ -53,6 +54,7 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   registerRoutes(app, cfg);
   registerMigrate(app, cfg);
   registerServers(app, cfg);
+  registerChanges(app, cfg);
   registerEstate(app, cfg, creds);
   registerStudio(app, { runtimeUrl: cfg.RUNTIME_URL, internalKey: cfg.RUNTIME_INTERNAL_KEY || "" }, (req) => app.userFor(req));
   app.setErrorHandler((err, _req, reply) => {

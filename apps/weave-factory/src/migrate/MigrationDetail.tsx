@@ -10,6 +10,7 @@ import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, KV, LinkBtn, Loa
 import { Markdown } from "./markdown.tsx";
 import { Finish } from "./Finish.tsx";
 import { StartParts, TrialRun } from "./Starts.tsx";
+import { ChangeRequests } from "../changes/ChangeRequests.tsx";
 import { ParityPanel, RuntimeProps } from "./Parity.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
@@ -374,6 +375,7 @@ export function MigrationDetail() {
           <Finish m={m} onRun={(a) => start(a)} />
           <StartParts m={m} onRun={(a) => start(a)} />
           <TrialRun m={m} />
+          {m.apiName && m.serviceDir ? <ChangeRequests api={txt(m.apiName)} migrationId={m.id} /> : null}
           <ParityPanel m={m} />
           <RuntimeProps m={m} onRun={(a) => start(a)} />
           <Panel title="What you can do next">

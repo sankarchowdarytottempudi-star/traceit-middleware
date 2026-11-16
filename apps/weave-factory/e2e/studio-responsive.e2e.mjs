@@ -175,6 +175,12 @@ try {
       const clipped = await page.evaluate(clippedControls);
       if (clipped.length) bad(where, `cut off by the edge of the screen: ${clipped.join("; ")}`);
       if (contrast) {
+        // measure the settled page: dialogs and panels fade in (opacity), and text measured mid-fade
+        // looks faint although its colours are fine — wait for running animations first (at most 3 s)
+        await page.evaluate(() => Promise.race([
+          Promise.all(document.getAnimations().filter((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity).map((a) => a.finished.catch(() => {}))),
+          new Promise((r) => setTimeout(r, 3000)),
+        ])).catch(() => {});
         const unreadable = await page.evaluate(lowContrast, 2.6);
         if (unreadable.length) bad(where, `hard to read: ${unreadable.join("; ")}`);
       }

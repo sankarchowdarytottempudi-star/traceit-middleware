@@ -203,6 +203,23 @@ describe("migration routes", () => {
 });
 
 describe("finish this migration", () => {
+  it("switches a part that starts by itself and fills its empty settings, nothing else", () => {
+    expect(decisionOf({ id: "start:interfaceFlow", action: "switch", on: true, confirm: true, extra: 1 }))
+      .toEqual({ ok: true, decision: { id: "start:interfaceFlow", action: "switch", on: true, confirm: true } });
+    // only a plain true confirms, and switching off needs no confirmation
+    expect(decisionOf({ id: "start:interfaceFlow", action: "switch", on: true, confirm: "yes" }))
+      .toEqual({ ok: true, decision: { id: "start:interfaceFlow", action: "switch", on: true } });
+    expect(decisionOf({ id: "start:interfaceFlow", action: "switch", on: false, confirm: true }))
+      .toEqual({ ok: true, decision: { id: "start:interfaceFlow", action: "switch", on: false } });
+    expect(decisionOf({ id: "start:interfaceFlow", action: "switch", on: "true" })).toMatchObject({ ok: false });
+    expect(decisionOf({ id: "start:active-MQFlow", action: "setting", key: "password", value: " s3cret \"x" }))
+      .toEqual({ ok: true, decision: { id: "start:active-MQFlow", action: "setting", key: "password", value: " s3cret \"x" } });
+    expect(decisionOf({ id: "start:active-MQFlow", action: "setting", key: "pass word", value: "x" })).toMatchObject({ ok: false });
+    expect(decisionOf({ id: "start:active-MQFlow", action: "setting", key: "password", value: "a\nb" })).toMatchObject({ ok: false });
+    expect(decisionOf({ id: "start:active-MQFlow", action: "setting", key: "password", value: "x".repeat(501) })).toMatchObject({ ok: false });
+    expect(decisionOf({ id: "start:active-MQFlow", action: "forward", backend: "x", method: "GET", path: "/" })).toMatchObject({ ok: false });
+  });
+
   it("accepts the four decisions and forwards only their own fields", () => {
     expect(decisionOf({ id: "op:GET /items/{itemId}", action: "forward", backend: "catalogue", method: "get", path: " /items/{itemId} ", extra: "x" }))
       .toEqual({ ok: true, decision: { id: "op:GET /items/{itemId}", action: "forward", backend: "catalogue", method: "GET", path: "/items/{itemId}" } });

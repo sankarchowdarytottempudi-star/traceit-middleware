@@ -9,6 +9,7 @@ import { ago, baseName, clock, dateTime, failureView, isSpec, ms, nextActions, o
 import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, KV, LinkBtn, Loading, Notice, Panel, Pill, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
 import { Markdown } from "./markdown.tsx";
 import { Finish } from "./Finish.tsx";
+import { StartParts, TrialRun } from "./Starts.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
 const TABS: Tab[] = ["progress", "documents", "checks", "feedback"];
@@ -337,7 +338,7 @@ export function MigrationDetail() {
     <>
       <Head area="Migrations" areaTo="/migrations" back={{ to: "/migrations", label: "All migrations" }} title={txt(m.name) || txt(m.apiName) || m.id}
         subtitle={<span className="mf-mg-row" style={{ gap: 8 }}>
-          <Pill tone={outcomeTone(outcome)}>{outcome}</Pill>{m.busy && <Pill tone="accent"><Loader2 size={12} className="mf-spin" aria-hidden="true" />A step is running</Pill>}
+          <Pill tone={outcomeTone(outcome)}>{outcome}</Pill>{num(p.partsOff) > 0 && <Pill tone="warn" title="Parts that start by themselves (timer, queue, topic) and are switched off: the service does not do that work yet.">{num(p.partsOff)} part{num(p.partsOff) === 1 ? "" : "s"} switched off</Pill>}{m.busy && <Pill tone="accent"><Loader2 size={12} className="mf-spin" aria-hidden="true" />A step is running</Pill>}
           {m.apiName ? <span className="mf-mono mf-mg-small">{txt(m.apiName)}</span> : null}{m.workspace ? <span className="mf-mg-small">{txt(m.workspace)}</span> : null}
         </span>}
         actions={<>
@@ -370,6 +371,8 @@ export function MigrationDetail() {
         <div className="mf-mg-stack">
           {failure && !m.busy && <WhatNow v={failure} disabled={!!m.busy} busy={run.isPending && run.variables?.phase === failure.retry?.id} onRetry={(a) => start(a)} />}
           <Finish m={m} onRun={(a) => start(a)} />
+          <StartParts m={m} onRun={(a) => start(a)} />
+          <TrialRun m={m} />
           <Panel title="What you can do next">
             {m.busy ? <Notice><span className="mf-mg-row" style={{ gap: 8 }}><Loader2 size={14} className="mf-spin" aria-hidden="true" />A step is running. This screen updates by itself; the activity below shows what is happening.</span></Notice> : null}
             <div className="mf-mg-stack" style={{ gap: 10 }}>

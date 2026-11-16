@@ -41,7 +41,17 @@ export interface StepFailure { phase?: string; phaseKey?: string; step?: string;
 export interface PhaseStep { key: string; title: string; status: string; detail?: string; help?: StepHelp | null; }
 export interface Phase { key: string; title: string; mode: string; status: string; percent: number; weight?: number; detail?: string; startedAt?: string | null; finishedAt?: string | null; steps: PhaseStep[]; }
 export interface StepRef { phase?: string; phaseKey?: string; step?: string; stepKey?: string; status?: string; }
-export interface Progress { overallPercent: number; majorPhase: string; majorPhaseKey?: string | null; currentStep?: StepRef | string | null; nextStep?: StepRef | string | null; done: boolean; outcome: string; failure?: StepFailure | null; }
+export interface Progress { overallPercent: number; majorPhase: string; majorPhaseKey?: string | null; currentStep?: StepRef | string | null; nextStep?: StepRef | string | null; done: boolean; outcome: string; failure?: StepFailure | null;
+  /** Parts that start by themselves (timer, queue, topic) that are switched off in the service's settings. */
+  partsOff?: number; starts?: { name: string; starts?: string; switch?: string | null; on?: boolean | null }[] }
+/** The last trial run of the built service (closed network, stand-ins with made-up data). */
+export interface TrialReport { ran: boolean; reason?: string; at?: string; started?: boolean; startSeconds?: number; why?: string; passed?: boolean; summary?: string; faults?: string[];
+  examples?: number; ownReplies?: boolean;
+  operations?: { op: string; case?: string; status?: number | null; result: string; calls?: string[]; note?: string }[];
+  parts?: { name: string; starts?: string; result: string; calls?: string[]; said?: string; note?: string }[] }
+/** A part of the service that starts by itself, with its switch in the service's settings. */
+export interface StartPart { name: string; starts?: string; kind?: string; switch?: string | null; on?: boolean | null;
+  empty?: { key: string; secret?: boolean; secretSet?: boolean }[]; setHere?: { key: string; secret?: boolean; secretSet?: boolean }[] }
 export interface LogEntry { t?: string; level?: string; line?: string; }
 export interface Migration {
   id: string; name?: string; apiName?: string | null; workspace?: string; technology?: string; targetTech?: string; sourceType?: string; sourceFile?: string;
@@ -52,6 +62,7 @@ export interface Migration {
   verifiedEnv?: string; verifiedAt?: string; verifyMs?: number;
   optimization?: { beforeMs?: number; afterMs?: number; actions?: string[]; meetsTarget?: boolean; at?: string };
   testNodePort?: number | string; testBasePath?: string; discoveredEnvs?: { name?: string; candidates?: string[] }[];
+  trial?: TrialReport;
 }
 /** "Finish this migration": what is left of a generated service and what the old application did there. */
 export interface SourceCall { method: string; path: string; config: string; backend?: string }
@@ -67,7 +78,8 @@ export interface OpenItem {
 export interface ClosedItem { id: string; kind?: string; title: string; how: string; detail?: string; t?: string; canReopen?: boolean }
 export interface OpenItems { api: string; exists: boolean; ready: boolean; summary?: string; items: OpenItem[]; closed: ClosedItem[]; backends: string[]; needsBuild?: boolean; pending?: string[]; busy?: boolean; installed?: boolean;
   /** The tool can add an API this service does not know yet while a call is passed on. */
-  canAddBackend?: boolean }
+  canAddBackend?: boolean;
+  starts?: StartPart[] }
 export type Decision =
   | { id: string; action: "forward"; backend: string; method: string; path: string; confirm?: true }
   | { id: string; action: "forward"; newBackend: { name: string; url: string }; method: string; path: string; confirm?: true }
@@ -75,7 +87,9 @@ export type Decision =
   | { id: string; action: "address"; url: string }
   | { id: string; action: "address"; from: string }
   | { id: string; action: "note"; note: string }
-  | { id: string; action: "reopen" };
+  | { id: string; action: "reopen" }
+  | { id: string; action: "switch"; on: boolean; confirm?: true }
+  | { id: string; action: "setting"; key: string; value: string };
 export interface ResolveResult { ok: boolean; message: string; changed: boolean; openItems: OpenItems }
 export interface PhaseDef { key: string; title: string; weight: number; mode: string; steps: { key: string; title: string }[]; }
 export interface Lesson { id: string; scope: string; technology?: string | null; summary: string; mistakes?: string[]; apiName?: string; workspace?: string; status?: string; createdAt?: string; phase?: string; docType?: string; migrationId?: string; rating?: number | null; appliedIn?: string[]; }

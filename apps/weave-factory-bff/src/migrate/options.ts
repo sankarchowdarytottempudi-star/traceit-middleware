@@ -83,13 +83,32 @@ export type Decision =
   | { id: string; action: "address"; url: string }
   | { id: string; action: "address"; from: string }
   | { id: string; action: "note"; note: string }
-  | { id: string; action: "reopen" };
+  | { id: string; action: "reopen" }
+  | { id: string; action: "switch"; on: boolean; confirm?: true }
+  | { id: string; action: "setting"; key: string; value: string };
 export const FORWARD_PATH = /^\/[A-Za-z0-9_\-./{}~%:]*$/;
 export function decisionOf(body: unknown): { ok: true; decision: Decision } | { ok: false; error: string } {
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const s = (k: string, max: number) => (typeof b[k] === "string" ? (b[k] as string).trim().slice(0, max) : "");
   const id = s("id", 400), action = s("action", 20);
-  if (!/^(op|entry|backend|code):.+/.test(id)) return { ok: false, error: "Choose an item first." };
+  if (!/^(op|entry|backend|code|start):.+/.test(id)) return { ok: false, error: "Choose an item first." };
+  if (id.startsWith("start:")) {
+    // a part of the service that starts by itself (timer, queue, topic): switch it, or fill one of
+    // its empty settings. The value goes to the tool, which writes it into the service's settings;
+    // it never comes back and is never logged.
+    if (action === "switch") {
+      if (typeof b.on !== "boolean") return { ok: false, error: "Say whether the part is switched on or off." };
+      return { ok: true, decision: { id, action, on: b.on, ...(b.on && b.confirm === true ? { confirm: true as const } : {}) } };
+    }
+    if (action === "setting") {
+      const key = s("key", 60);
+      const value = typeof b.value === "string" ? b.value : "";
+      if (!/^[A-Za-z_]\w*$/.test(key)) return { ok: false, error: "Choose the setting first." };
+      if (!value.trim() || value.length > 500 || /[\r\n]/.test(value)) return { ok: false, error: "Enter a value of one line, at most 500 characters." };
+      return { ok: true, decision: { id, action, key, value } };
+    }
+    return { ok: false, error: "This cannot be done for this part." };
+  }
   if (action === "forward") {
     const backend = s("backend", 80), method = s("method", 10).toUpperCase(), path = s("path", 400);
     // "the API I pass this on to does the rest of the old work": only a plain true counts

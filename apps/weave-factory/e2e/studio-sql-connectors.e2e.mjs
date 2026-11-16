@@ -65,6 +65,8 @@ try {
   await dlg.waitFor();
   s.check(await page.locator("#ws-conn-type").isDisabled() && (await page.locator("#ws-conn-type").inputValue()) === "mysql", "the dialog is for a MySQL connection (kind fixed)");
   s.check((await field(dlg, "port").locator("input").inputValue()) === "3306", "the port defaults to 3306");
+  s.check((await page.locator("#ws-conn-name").getAttribute("placeholder"))?.startsWith("e.g. "), "the name field shows an example, not a value");
+  s.check((await field(dlg, "host").innerText()).includes("localhost means the server itself"), "the host field explains that localhost is the Weave server");
   await page.locator("#ws-conn-name").fill(made.name);
   await field(dlg, "host").locator("input").fill("db.example.invalid");
   await field(dlg, "database").locator("input").fill("app");

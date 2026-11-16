@@ -295,7 +295,7 @@ export const BUILTIN_CONNECTION_TYPES: ConnectionTypeDef[] = [
     ] },
   { type: "postgres", label: "PostgreSQL", icon: "Table", description: "Relational database.",
     fields: [
-      { key: "host", label: "Host", kind: "text", required: true },
+      { key: "host", label: "Host", kind: "text", required: true, placeholder: "e.g. db.internal.example.com", help: "Seen from the Weave server — localhost means the server itself." },
       { key: "port", label: "Port", kind: "number", default: 5432 },
       { key: "database", label: "Database", kind: "text", required: true },
       { key: "user", label: "User", kind: "text", required: true },
@@ -309,7 +309,7 @@ export const BUILTIN_CONNECTION_TYPES: ConnectionTypeDef[] = [
     ] },
   { type: "mysql", label: "MySQL", icon: "Table", description: "MySQL or MariaDB database.",
     fields: [
-      { key: "host", label: "Host", kind: "text", required: true },
+      { key: "host", label: "Host", kind: "text", required: true, placeholder: "e.g. db.internal.example.com", help: "Seen from the Weave server — localhost means the server itself." },
       { key: "port", label: "Port", kind: "number", default: 3306 },
       { key: "database", label: "Database", kind: "text", required: true },
       { key: "user", label: "User", kind: "text", required: true },
@@ -323,7 +323,7 @@ export const BUILTIN_CONNECTION_TYPES: ConnectionTypeDef[] = [
     ] },
   { type: "mssql", label: "SQL Server", icon: "Table", description: "Microsoft SQL Server or Azure SQL database.",
     fields: [
-      { key: "host", label: "Host", kind: "text", required: true },
+      { key: "host", label: "Host", kind: "text", required: true, placeholder: "e.g. db.internal.example.com", help: "Seen from the Weave server — localhost means the server itself." },
       { key: "port", label: "Port", kind: "number", default: 1433 },
       { key: "instance", label: "Instance name", kind: "text", group: "Advanced", help: "Only for a named instance (then the port is found by the SQL Browser)." },
       { key: "database", label: "Database", kind: "text", required: true },

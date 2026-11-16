@@ -6,6 +6,7 @@ import { readBody, type HttpResult } from "../clients/http.js";
 import type { ResolvedConnection } from "../clients/data.js";
 import { FlowError, type NodeCtx, type NodeHandler, type NodeResult, type RuntimeRequest, type Scope, lowerKeys } from "./engine.js";
 import { redact } from "../redact.js";
+import { connectProblem, whereOf } from "../clients/sqldb.js";
 import { mssqlQuery, mysqlQuery } from "./sqlnodes.js";
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -266,7 +267,9 @@ const postgresQuery: NodeHandler = async (c) => {
     const count = (Array.isArray(res) ? res[res.length - 1].rowCount : res.rowCount) ?? rows.length;
     return { result: cfg.resultMode === "first" ? rows[0] ?? null : cfg.resultMode === "count" ? count : rows };
   } catch (e) {
-    throw new FlowError(`Database query failed: ${(e as Error).message}`, { status: 502, detail: { code: (e as { code?: string }).code ?? null } });
+    const reach = connectProblem("Postgres", e, whereOf(conn, 5432));
+    if (reach) throw new FlowError(`Postgres "${conn.name}": ${String(redact(reach.message, Object.values(conn.secrets)))}`, { status: 502, detail: { code: reach.code, kind: reach.kind } });
+    throw new FlowError(`Database query failed: ${String(redact((e as Error).message, Object.values(conn.secrets)))}`, { status: 502, detail: { code: (e as { code?: string }).code ?? null } });
   }
 };
 

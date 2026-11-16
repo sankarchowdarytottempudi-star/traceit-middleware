@@ -3,7 +3,7 @@ import { BUILTIN_NODE_TYPES, BUILTIN_CONNECTION_TYPES } from "@traceit/weave-flo
 import { HANDLERS } from "../src/engine/nodes.js";
 import type { ResolvedConnection } from "../src/clients/data.js";
 import {
-  SqlClients, SqlProblem, explain, firstWord, hasMultipleStatements, isWriteStatement, mysqlCall, mysqlShape, parseOutputs, paramValue,
+  SqlClients, SqlProblem, connectProblem, errorCodes, explain, firstWord, hasMultipleStatements, isWriteStatement, mysqlCall, mysqlShape, parseOutputs, paramValue,
   plainRows, plainValue, runMssql, runMysql, stripLiterals, type SqlRun,
 } from "../src/clients/sqldb.js";
 
@@ -101,6 +101,50 @@ describe("errors in plain words, never a secret", () => {
     expect(explain("mssql", { code: "EREQUEST", number: 2627, message: "Violation of PRIMARY KEY constraint" }).kind).toBe("constraint");
     expect(explain("mssql", { code: "ESOCKET", message: "Failed to connect" }).kind).toBe("connect");
     expect(explain("mssql", { code: "ECANCEL" }, { timeoutSeconds: 2 }).kind).toBe("timeout");
+  });
+});
+
+describe("cannot reach the database: plain words, where it looked, never a secret", () => {
+  // what Node gives for "localhost": it tries ::1 and 127.0.0.1 and wraps both refusals in an AggregateError
+  const aggregate = () => Object.assign(new AggregateError([
+    Object.assign(new Error("connect ECONNREFUSED ::1:3306"), { code: "ECONNREFUSED", address: "::1", port: 3306 }),
+    Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:3306"), { code: "ECONNREFUSED", address: "127.0.0.1", port: 3306 }),
+  ], ""), { code: "ECONNREFUSED" });
+  it("unwraps an AggregateError into its codes", () => {
+    expect(errorCodes(aggregate())).toEqual(["ECONNREFUSED"]);
+    expect(errorCodes(new AggregateError([Object.assign(new Error("x"), { code: "ETIMEDOUT" })], ""))).toEqual(["ETIMEDOUT"]);
+  });
+  it("localhost refused: says nothing listens there and explains what localhost means on the server", () => {
+    const p = explain("mysql", aggregate(), { host: "localhost", port: 3306, secrets: ["s3cret-pass"] });
+    expect(p.kind).toBe("connect"); expect(p.code).toBe("ECONNREFUSED");
+    expect(p.message).toContain("Nothing is listening at localhost:3306.");
+    expect(p.message).toContain("localhost' means the server, not your computer");
+    expect(p.message).toContain("ssh -N -R 13306:localhost:3306");
+    expect(p.message).not.toContain("AggregateError");
+    expect(p.message).not.toContain("s3cret-pass");
+  });
+  it("a network host refused: no localhost hint", () => {
+    const p = explain("mssql", { code: "ESOCKET", originalError: { code: "ECONNREFUSED" }, cause: { code: "ECONNREFUSED" } }, { host: "db.example.test", port: 1433 });
+    expect(p.message).toContain("Nothing is listening at db.example.test:1433.");
+    expect(p.message).not.toContain("tunnel");
+  });
+  it("unknown host, timeout, no route, TLS", () => {
+    expect(explain("mysql", { code: "ENOTFOUND" }, { host: "nope.example.test", port: 3306 }).message).toBe("The host name nope.example.test is not known on the Weave server.");
+    expect(explain("mysql", { code: "ETIMEDOUT" }, { host: "10.1.2.3", port: 3306, connectTimeoutSeconds: 5 }).message).toBe("No answer from 10.1.2.3:3306 within 5 s — a firewall may block it.");
+    expect(explain("mssql", { code: "ETIMEOUT", message: "Failed to connect to db in 15000ms" }, { host: "db.example.test", port: 1433, connectTimeoutSeconds: 15 }).kind).toBe("connect");
+    expect(explain("mysql", { code: "EHOSTUNREACH" }, { host: "10.9.9.9", port: 3306 }).message).toContain("no network route to 10.9.9.9:3306");
+    const t = explain("mysql", { code: "DEPTH_ZERO_SELF_SIGNED_CERT" }, { host: "db.example.test", port: 3306 });
+    expect(t.kind).toBe("tls"); expect(t.message).toContain("TLS certificate could not be verified (DEPTH_ZERO_SELF_SIGNED_CERT)");
+  });
+  it("Postgres uses the same words", () => {
+    const p = connectProblem("Postgres", aggregate(), { host: "127.0.0.1", port: 5432 });
+    expect(p?.message).toContain("Nothing is listening at 127.0.0.1:5432.");
+    expect(p?.message).toContain("means the server, not your computer");
+    expect(connectProblem("Postgres", { code: "23505" }, { host: "x" })).toBeNull();
+  });
+  it("login failed and unknown database stay one sentence with the database's code", () => {
+    expect(explain("mysql", { code: "ER_BAD_DB_ERROR", errno: 1049 }, { database: "shop" }).message).toBe('The database "shop" does not exist on the server (MySQL error 1049 ER_BAD_DB_ERROR)');
+    expect(explain("mssql", { code: "ELOGIN", number: 18456 }).message).toContain("Login failed: the user name or password is wrong");
   });
 });
 

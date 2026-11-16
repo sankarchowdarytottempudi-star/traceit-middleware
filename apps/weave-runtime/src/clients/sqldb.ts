@@ -107,9 +107,42 @@ export function paramValue(v: unknown): unknown {
 }
 
 // ---------------------------------------------------------------- errors
+const CONNECT_CODES = ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "ECONNRESET", "ESOCKET", "EINSTLOOKUP", "ETIMEDOUT", "ETIMEOUT"];
+const TLS_CODES = /CERT|SELF_SIGNED|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER|ALTNAME|HANDSHAKE|EPROTO|SSL|TLS/i;
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
+/** The codes of an error, including the ones inside an AggregateError (Node tries ::1 and 127.0.0.1 for "localhost"). */
+export function errorCodes(e: unknown): string[] {
+  const out: string[] = [];
+  const add = (x: unknown) => { const c = (x as { code?: unknown } | null)?.code; if (typeof c === "string" && c && !out.includes(c)) out.push(c); };
+  add(e);
+  const inner = (e as { errors?: unknown[] } | null)?.errors;
+  if (Array.isArray(inner)) inner.forEach(add);
+  const cause = (e as { cause?: unknown } | null)?.cause;
+  if (cause) { add(cause); const ic = (cause as { errors?: unknown[] }).errors; if (Array.isArray(ic)) ic.forEach(add); }
+  return out;
+}
+/** A connection that could not be opened, in plain words. `null` when the error is not about reaching the server. */
+export function connectProblem(label: string, e: unknown, where: { host?: string; port?: number | string; timeoutSeconds?: number } = {}): SqlProblem | null {
+  const codes = errorCodes(e);
+  const host = String(where.host ?? "").trim();
+  const at = host ? `${host}${where.port ? `:${where.port}` : ""}` : `the ${label} server`;
+  const local = LOCAL_HOSTS.has(host.toLowerCase());
+  const localHint = local
+    ? ` The flow runs on the Weave server, so '${host}' means the server, not your computer. To use a database on your computer, open a tunnel (ssh -N -R 13306:localhost:${where.port || 3306} <server>) and use host 127.0.0.1 port 13306, or use the database's network address.`
+    : "";
+  const code = codes[0] ?? null;
+  const tls = codes.find((c) => TLS_CODES.test(c));
+  if (tls) return new SqlProblem(`The ${label} server's TLS certificate could not be verified (${tls}). Check the host name, add the server's CA under "Own CA", or switch off certificate checking only for a test database.`, "tls", tls);
+  if (codes.includes("ECONNREFUSED")) return new SqlProblem(`Nothing is listening at ${at}.${localHint || " Check the host and port, and that the database accepts connections from the Weave server."}`, "connect", "ECONNREFUSED");
+  if (codes.includes("ENOTFOUND") || codes.includes("EAI_AGAIN") || codes.includes("EINSTLOOKUP")) return new SqlProblem(`The host name ${host || "given"} is not known on the Weave server.`, "connect", code);
+  if (codes.includes("ETIMEDOUT") || codes.includes("ETIMEOUT")) return new SqlProblem(`No answer from ${at} within ${where.timeoutSeconds ?? "the allowed"} s — a firewall may block it.${localHint}`, "connect", code);
+  if (codes.includes("EHOSTUNREACH") || codes.includes("ENETUNREACH")) return new SqlProblem(`The Weave server has no network route to ${at}.`, "connect", code);
+  if (codes.includes("ECONNRESET") || codes.includes("ESOCKET")) return new SqlProblem(`${at} closed the connection straight away — it may expect TLS (or not), or not be a ${label} server.`, "connect", code);
+  return null;
+}
 const scrub = (msg: string, secrets: string[]) => secrets.filter((s) => s && s.length >= 3).reduce((m, s) => m.split(s).join("***"), msg);
 /** Any driver error as a SqlProblem in plain words, never showing a secret. */
-export function explain(engine: SqlEngine, e: unknown, opts: { secrets?: string[]; timeoutSeconds?: number; timedOut?: boolean; database?: string } = {}): SqlProblem {
+export function explain(engine: SqlEngine, e: unknown, opts: { secrets?: string[]; timeoutSeconds?: number; timedOut?: boolean; database?: string; host?: string; port?: number | string; connectTimeoutSeconds?: number } = {}): SqlProblem {
   if (e instanceof SqlProblem) return e;
   const err = (e ?? {}) as { code?: string; errno?: number; number?: number; sqlMessage?: string; message?: string; originalError?: { info?: { number?: number; message?: string } } };
   const label = ENGINE_LABEL[engine];
@@ -120,8 +153,9 @@ export function explain(engine: SqlEngine, e: unknown, opts: { secrets?: string[
   const c = String(err.code || "");
   if (opts.timedOut || c === "PROTOCOL_SEQUENCE_TIMEOUT" || c === "ECANCEL" || (engine === "mssql" && c === "ETIMEOUT" && !/connect/i.test(raw)))
     return new SqlProblem(`The query did not finish within ${opts.timeoutSeconds ?? "the allowed"} seconds and was stopped`, "timeout", code);
-  if (["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "ECONNRESET", "ESOCKET", "EINSTLOOKUP", "ETIMEDOUT"].includes(c) || (engine === "mssql" && c === "ETIMEOUT"))
-    return new SqlProblem(`Cannot connect to the ${label} server: ${raw}`, "connect", code);
+  const reach = connectProblem(label, e, { host: opts.host, port: opts.port, timeoutSeconds: opts.connectTimeoutSeconds });
+  if (reach) { reach.message = scrub(reach.message, opts.secrets ?? []); return reach; }
+  if (CONNECT_CODES.includes(c)) return new SqlProblem(`Cannot connect to the ${label} server (${c}).`, "connect", code);
   if (engine === "mysql") {
     if (num === 1045 || num === 1044 || c === "ER_ACCESS_DENIED_ERROR") return new SqlProblem(`Login failed: the user name or password is wrong, or this user may not use the database${tag}`, "login", code);
     if (num === 1049) return new SqlProblem(`The database${opts.database ? ` "${opts.database}"` : ""} does not exist on the server${tag}`, "database", code);
@@ -143,6 +177,8 @@ export function explain(engine: SqlEngine, e: unknown, opts: { secrets?: string[
 interface Drivers { mysql: typeof mysql; mssql: typeof mssql }
 const poolMax = (c: ResolvedConnection) => Math.min(Math.max(Math.floor(Number(c.config.poolMax) || 5), 1), 20);
 export const connectTimeoutMs = (c: ResolvedConnection) => Math.min(Math.max(Number(c.config.connectTimeoutSeconds) || 5, 1), 60) * 1000;
+/** Host, port and connect timeout of a connection, for error messages (never the password). */
+export const whereOf = (c: ResolvedConnection, defaultPort: number) => ({ host: String(c.config.host ?? ""), port: Number(c.config.port || defaultPort), connectTimeoutSeconds: Math.round(connectTimeoutMs(c) / 1000) });
 export const poolMaxOf = (c: ResolvedConnection) => Math.min(Math.max(Math.floor(Number(c.config.poolMax) || 5), 1), 20);
 const caOf = (c: ResolvedConnection) => { const s = String(c.config.caCert ?? "").trim(); return s ? s : undefined; };
 
@@ -248,7 +284,7 @@ export function mysqlShape(res: unknown): { rows: unknown[]; rowCount: number; i
 export async function runMysql(clients: SqlClients, conn: ResolvedConnection, r: SqlRun): Promise<SqlResult> {
   preflight(r);
   let pool: mysql.Pool;
-  try { pool = await clients.mysqlFor(conn, r.allowMultiple); } catch (e) { throw explain("mysql", e, { secrets: r.secrets, database: r.database }); }
+  try { pool = await clients.mysqlFor(conn, r.allowMultiple); } catch (e) { throw explain("mysql", e, { secrets: r.secrets, database: r.database, ...whereOf(conn, 3306) }); }
   let cx: mysql.PoolConnection | undefined;
   try {
     cx = await pool.getConnection();
@@ -261,7 +297,7 @@ export async function runMysql(clients: SqlClients, conn: ResolvedConnection, r:
     return { rows, rowCount: shaped.rowCount, truncated, ...(shaped.insertId !== undefined ? { insertId: plainValue(shaped.insertId) } : {}) };
   } catch (e) {
     if (cx && r.readOnly) await cx.query("ROLLBACK").catch(() => undefined);
-    throw explain("mysql", e, { secrets: r.secrets, timeoutSeconds: Math.round(r.timeoutMs / 1000), database: r.database });
+    throw explain("mysql", e, { secrets: r.secrets, timeoutSeconds: Math.round(r.timeoutMs / 1000), database: r.database, ...whereOf(conn, 3306) });
   } finally { cx?.release(); }
 }
 
@@ -290,7 +326,7 @@ export async function runMssql(clients: SqlClients, conn: ResolvedConnection, r:
   preflight(r);
   const outputs = r.mode === "procedure" ? r.outputs : [];
   let pool: mssql.ConnectionPool;
-  try { pool = await clients.mssqlFor(conn); } catch (e) { throw explain("mssql", e, { secrets: r.secrets, database: r.database }); }
+  try { pool = await clients.mssqlFor(conn); } catch (e) { throw explain("mssql", e, { secrets: r.secrets, database: r.database, ...whereOf(conn, 1433) }); }
   let tx: mssql.Transaction | undefined; let timedOut = false; let timer: NodeJS.Timeout | undefined;
   try {
     const d = clients.drivers.mssql;
@@ -313,6 +349,6 @@ export async function runMssql(clients: SqlClients, conn: ResolvedConnection, r:
       ...(r.mode === "procedure" ? { returnValue: (res as { returnValue?: unknown }).returnValue ?? null } : {}) };
   } catch (e) {
     if (tx) await tx.rollback().catch(() => undefined);
-    throw explain("mssql", e, { secrets: r.secrets, timeoutSeconds: Math.round(r.timeoutMs / 1000), timedOut, database: r.database });
+    throw explain("mssql", e, { secrets: r.secrets, timeoutSeconds: Math.round(r.timeoutMs / 1000), timedOut, database: r.database, ...whereOf(conn, 1433) });
   } finally { if (timer) clearTimeout(timer); }
 }

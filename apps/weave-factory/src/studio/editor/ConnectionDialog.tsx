@@ -71,7 +71,7 @@ export function ConnectionDialog({ existing, types, onClose, fixedType, onSaved 
       </>}>
       <div className="mf-stack" style={{ gap: 14 }} data-testid="connection-form">
         <div className="mf-formgrid">
-          <Field label="Name" required htmlFor="ws-conn-name"><input id="ws-conn-name" className="mf-control" autoFocus={!existing} value={name} onChange={(e) => setName(e.target.value)} placeholder="Reservations system" maxLength={120} /></Field>
+          <Field label="Name" required htmlFor="ws-conn-name"><input id="ws-conn-name" className="mf-control" autoFocus={!existing} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Local test database" maxLength={120} /></Field>
           <Field label="Kind" htmlFor="ws-conn-type">
             <select id="ws-conn-type" className="mf-control" value={type} disabled={!!existing || !!fixedType} onChange={(e) => { setType(e.target.value); setConfig(defaultsOf(types.find((t) => t.type === e.target.value))); setSecrets({}); setTested(undefined); }}>
               {types.map((t) => <option key={t.type} value={t.type}>{txt(t.label)}</option>)}

@@ -184,7 +184,7 @@ export function compileWords(req: WordsRequest): WordsOutcome {
     if (s === undefined) return undefined;
     const q = /^#(\d+)#$/.exec(s);
     if (q) return quotes[Number(q[1])];
-    if (/^[_\-.,\/|:;+*~@]{1,3}$/.test(s)) return s;
+    if (/^[_\-.,/|:;+*~@]{1,3}$/.test(s)) return s;
     return SEP_WORDS.find(([re]) => re.test(s))?.[1];
   };
   const showSep = (s: string) => (s === " " ? "a space" : s === "" ? "nothing" : str(s));
@@ -206,7 +206,7 @@ export function compileWords(req: WordsRequest): WordsOutcome {
     const left = work.replace(/[@#]\d+[@#]/g, " ").split(/[^A-Za-z]+/).filter((w) => w.length > 1 && !FILLER.has(w.toLowerCase()));
     const turned = left.filter((w) => MEANING.has(w.toLowerCase()));
     if (turned.length) return fail(`The word "${turned[0]}" changes what this sentence means, and the rest of it was not understood well enough to be sure of the result. Say it another way, or write an expression.`);
-    const stray = (work.replace(/@\d+@/g, " ").match(/#\d+#|\d+(?:\.\d+)?|[_\-\/|+*~@=<>%&]+/g) ?? []).map((s) => { const q = /^#(\d+)#$/.exec(s); return q ? str(quotes[Number(q[1])]) : s; });
+    const stray = (work.replace(/@\d+@/g, " ").match(/#\d+#|\d+(?:\.\d+)?|[_\-/|+*~@=<>%&]+/g) ?? []).map((s) => { const q = /^#(\d+)#$/.exec(s); return q ? str(quotes[Number(q[1])]) : s; });
     const unsure = guessed || left.length > 0 || stray.length > 0 || picked.some((p) => !p.exact);
     for (const s of steps) understood.push(s);
     if (left.length || stray.length) understood.push(`Not used: "${[...left, ...stray].join(" ")}". Check the result.`);
@@ -473,7 +473,7 @@ export function compileWords(req: WordsRequest): WordsOutcome {
   // ---- taking a part away. Each phrase below also exists further down as "picking a part",
   // where it means the opposite, so the sentences that take something away are read first.
   let took = false;
-  work = work.replace(/\bwith\s+no\b/gi, "without").replace(/\btak\w*\s+((?:(?:all|the|any|every)\s+)*(?:[a-z]+|[_\-.,\/|:;@]))\s+(?:out|away)\s+(?:of|from)\b/i, "remove $1 from");
+  work = work.replace(/\bwith\s+no\b/gi, "without").replace(/\btak\w*\s+((?:(?:all|the|any|every)\s+)*(?:[a-z]+|[_\-.,/|:;@]))\s+(?:out|away)\s+(?:of|from)\b/i, "remove $1 from");
   work = work.replace(/\b(?:remov\w*|delet\w*|drop\w*|strip\w*|eras\w*|discard\w*|ignor\w*|cut\w*|trim\w*)\s+(?:everything|every\s+thing|anything|all|the\s+rest|all\s+the\s+rest)\s+(?:except|but|other\s+than|apart\s+from|besides)(?:\s+for)?\b/i, " only ").replace(/\s+/g, " ").trim();
   {
     // "... and remove the rest", "... and drop what comes after": they repeat what is kept
@@ -721,7 +721,7 @@ export function compileWords(req: WordsRequest): WordsOutcome {
     const left = work.replace(/[@#]\d+[@#]/g, " ").split(/[^A-Za-z]+/).filter((w) => w.length > 1 && !FILLER.has(w.toLowerCase()));
     if (left.length) return fail(`${picked.map((p) => p.path).join(" and ")} was recognised, but not what to do with it ("${left.join(" ")}"). Try one of the phrasings below, or write an expression.`);
     const loose = work.replace(/@\d+@/g, " ");
-    if (/#\d+#|\d|[_\-\/|+*~@=<>%&]/.test(loose)) {
+    if (/#\d+#|\d|[_\-/|+*~@=<>%&]/.test(loose)) {
       const shown = loose.replace(/#(\d+)#/g, (_t, i: string) => str(quotes[Number(i)])).replace(/\s+/g, " ").trim();
       return fail(`${picked.map((p) => p.path).join(" and ")} was recognised, but not what to do with it ("${shown}"). Try one of the phrasings below, or write an expression.`);
     }

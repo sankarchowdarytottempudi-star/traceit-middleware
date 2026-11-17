@@ -208,7 +208,7 @@ export function buildFlow(api: ApiModel, o: FlowOptions): Flow {
         continue;
       }
       if (s.kind === "loop") {
-        const item = /foreach\s+[\w:<>\[\]?|]+\s+'?(\w+)\s+in\s+(.+)$/.exec(s.header);
+        const item = /foreach\s+[\w:<>[\]?|]+\s+'?(\w+)\s+in\s+(.+)$/.exec(s.header);
         const n = add("logic.foreach", item ? `For each ${words(item[1])}` : "Repeat", x, row0, { items: "$", concurrency: 1, collect: true, __loop: s.header }, s.src,
           [...pending, `Original loop: ${s.header}`].join("\n"));
         pending = [];

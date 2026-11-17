@@ -92,7 +92,7 @@ export function appendEntries(flow: Flow, map: ParityMap | null | undefined, sta
 
   /** The tree of sub-flows under `parent`, depth-first, each flow once per entry (no loops). */
   const tree = (f: ParityFlow, parent: FlowNode, depth: number, seen: Set<string>): number => {
-    let y = parent.position.y / DY, rows = 0;
+    const y = parent.position.y / DY; let rows = 0;
     for (const u of f.uses || []) {
       const child = byName.get(u);
       if (!child || seen.has(u)) continue;

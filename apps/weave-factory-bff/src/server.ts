@@ -68,8 +68,9 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   registerChanges(app, cfg);
   const reviewCfg = loadReviewConfig();
   registerReview(app, cfg, store, { rc: reviewCfg });
-  app.setErrorHandler((err, _req, reply) => {
-    const status = (err as any).statusCode ?? 500;
+  app.setErrorHandler((error, _req, reply) => {
+    const err = error as { statusCode?: number; message?: string };
+    const status = err.statusCode ?? 500;
     reply.code(status).type("application/problem+json").send({ type: "about:blank", title: err.message || "Error", status });
   });
   const spa = resolveSpaDir();
@@ -102,10 +103,10 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
     await app.register(fstatic, {
       root: spa,
       index: false,
-      cacheControl: false, // we set cache-control ourselves in setHeaders
-      setHeaders(res, p) {
-        if (p.endsWith("index.html")) res.setHeader("cache-control", "no-cache, no-store, must-revalidate");
-        else if (p.includes("/assets/")) res.setHeader("cache-control", "public, max-age=31536000, immutable");
+      cacheControl: false, // we set cache-control ourselves in setHeaders (@fastify/static >=9 passes the Fastify reply)
+      setHeaders(reply, p) {
+        if (p.endsWith("index.html")) reply.header("cache-control", "no-cache, no-store, must-revalidate");
+        else if (p.includes("/assets/")) reply.header("cache-control", "public, max-age=31536000, immutable");
       },
     });
     app.setNotFoundHandler((req, reply) => {

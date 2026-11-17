@@ -172,7 +172,7 @@ export function decisionOf(body: unknown): { ok: true; decision: Decision } | { 
  * lines, as copied from the runtime screen). Only the text travels on; its values are never logged
  * or returned. */
 export const RUNTIME_LIMIT = 200 * 1024;
-const PROP_LINE = /^\s*[A-Za-z0-9_][\w.\-\[\]]*\s*(=|:|\t)\s*\S/;
+const PROP_LINE = /^\s*[A-Za-z0-9_][\w.\-[\]]*\s*(=|:|\t)\s*\S/;
 export function runtimePropertiesOf(body: unknown): { ok: true; text: string } | { ok: false; error: string } {
   const b = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
   const text = typeof b.text === "string" ? b.text : "";
@@ -221,7 +221,7 @@ export function mergeWorkspaces(groups: any[], configs: any[], envs: any[], migr
 export interface RepoInput { name: string; url: string; branch: string; username: string; token: string }
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const tokenProblem = (t: string) => (t.length > 4000 || /[\r\n\0]/.test(t) ? "The access token is not in a form a git server accepts." : "");
-const branchProblem = (b: string) => (b && (!/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(b) || b.includes("..")) ? "A branch name has letters, digits, - _ . and / only." : "");
+const branchProblem = (b: string) => (b && (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(b) || b.includes("..")) ? "A branch name has letters, digits, - _ . and / only." : "");
 export function repoOf(body: unknown): { ok: true; repo: RepoInput } | { ok: false; error: string } {
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const name = str(b.name, 80).replace(/\s+/g, " "), url = str(b.url, 500), branch = str(b.branch, 120), username = str(b.username, 120);

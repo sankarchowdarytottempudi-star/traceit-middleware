@@ -215,13 +215,11 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
     if (tab !== "canvas" || bp === "phone") return;
     const t = window.setTimeout(() => canvasApi.current?.open(), 140);
     return () => window.clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testOpen]);
   useEffect(() => {
     if (!desktop || !panelNode || tab !== "canvas") return;
     const t = window.setTimeout(() => canvasApi.current?.ensureVisible(panelNode), 140);
     return () => window.clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelNode, desktop]);
   const testNode = useCallback((id: string) => { setNodeTarget(id); setTestOpen(true); if (!desktop) setOpenNode(null); }, [desktop]);
   const openMapper = useCallback((nodeId: string, fieldKey: string) => setMapper({ nodeId, fieldKey }), []);

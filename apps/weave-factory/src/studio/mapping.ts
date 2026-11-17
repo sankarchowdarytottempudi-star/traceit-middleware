@@ -50,7 +50,7 @@ export function looksLikeProse(text: string): boolean {
   if (!t) return false;
   const words = t.split(/\s+/).filter((w) => /^[A-Za-z][A-Za-z'.,()_-]*$/.test(w));
   if (words.length < 3) return false;
-  if (/^\s*[$({\["']/.test(t) && !/\s[a-z]+\s[a-z]+\s/i.test(t)) return false;
+  if (/^\s*[$({["']/.test(t) && !/\s[a-z]+\s[a-z]+\s/i.test(t)) return false;
   // real expressions are dense in operators and function calls
   const ops = (t.match(/\$[A-Za-z]+\(|[&|=<>*+?:]{1,2}|\bfunction\b/g) ?? []).length;
   return words.length >= 3 && ops <= 1;

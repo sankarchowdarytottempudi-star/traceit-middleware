@@ -172,7 +172,7 @@ export function JsonEditor({ value, onChange, minRows = 3, maxRows = 14, placeho
     setText(value === undefined ? "" : pretty(value));
     setErr(null);
     onTextState?.({ valid: true, text: value === undefined ? "" : pretty(value) });
-  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [value]);
   const apply = (t: string) => {
     setText(t);
     if (!t.trim()) { setErr(null); last.current = undefined; onChange(undefined); onTextState?.({ valid: true, text: t }); return; }

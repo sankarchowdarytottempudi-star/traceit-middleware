@@ -15,21 +15,21 @@
   "dependencies": {
     "@traceit/weave-flow": "workspace:*",
     "croner": "9.0.0",
-    "fast-xml-parser": "4.5.0",
-    "fastify": "5.1.0",
-    "jsonata": "2.0.5",
+    "fast-xml-parser": "5.12.1",
+    "fastify": "5.12.8",
+    "jsonata": "2.2.2",
     "mssql": "12.7.13",
     "mysql2": "3.24.6",
     "pg": "8.13.1",
     "redis": "4.7.0",
-    "yaml": "2.6.1"
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@types/mssql": "12.3.0",
     "@types/node": "22.9.0",
     "@types/pg": "8.11.10",
-    "tsx": "4.19.2",
+    "tsx": "4.23.15",
     "typescript": "5.6.3",
-    "vitest": "2.1.5"
+    "vitest": "4.1.12"
   }
 }

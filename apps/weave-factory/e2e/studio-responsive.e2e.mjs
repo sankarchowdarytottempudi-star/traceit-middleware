@@ -11,7 +11,6 @@
 // the test panel, the mapper, the deploy dialog, the overflow menu, and dragging / pinching the canvas
 // with fingers. With --shots every view is saved as <width>-<theme>-<name>.png.
 // It creates one flow (named e2e-...) through the UI and deletes it again.
-import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createFlow, deleteFlowFromEditor, parseArgs, runTest, saveFlow, Session, stamp, sweep } from "./studio-lib.mjs";
@@ -26,7 +25,7 @@ const themes = (arg("--themes") || "light,dark").split(",").filter((t) => t === 
 const PREFIX = `e2e-${stamp()}`;
 
 const s = new Session({ ...opts, shots: "" });
-const setup = await s.start();
+await s.start();
 let flowId = null;
 let current = null; // the page being checked, for a picture when the script itself trips
 const problems = [];

@@ -386,7 +386,7 @@ function parseTopLevel(pkg: BalPackage, f: BalFile) {
       }
       continue;
     }
-    if ((mm = /^(?:public\s+)?const\s+(?:[\w:<>\[\]?|]+\s+)?([A-Za-z_]\w*)\s*=\s*/.exec(head))) {
+    if ((mm = /^(?:public\s+)?const\s+(?:[\w:<>[\]?|]+\s+)?([A-Za-z_]\w*)\s*=\s*/.exec(head))) {
       pkg.consts.set(`${f.module}:${mm[1]}`, { name: mm[1], raw: f.text.slice(s + mm[0].length, r.end - 1).trim(), file: f, start: r.start, end: r.end });
       continue;
     }

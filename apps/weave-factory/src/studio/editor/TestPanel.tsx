@@ -64,8 +64,8 @@ export function TestPanel({ flowId, nodeTarget, onNodeTarget, onShowNode, onClos
   // a different trigger: start from its stored sample
   useEffect(() => {
     setDraft({ ...draftFromSample(cfg.sampleRequest, methods, listenerPath), payload: (cfg.samplePayload ?? cfg.payload) as Json | undefined });
-  }, [trigger?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!methods.includes(draft.method)) setDraft((d) => ({ ...d, method: methods[0] })); }, [methods]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trigger?.id]);
+  useEffect(() => { if (!methods.includes(draft.method)) setDraft((d) => ({ ...d, method: methods[0] })); }, [methods]);
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
 
   const key = `weave-samples:${flowId}:${trigger?.id ?? ""}`;
@@ -108,7 +108,7 @@ export function TestPanel({ flowId, nodeTarget, onNodeTarget, onShowNode, onClos
     const c = contextForNode(run, traces, nodeTarget, sample, nodes);
     setPinned({ payload: c?.payload ?? (isHttp ? ((draft.body ?? null) as Json) : ((draft.payload ?? null) as Json)), vars: c?.vars ?? {}, request: c?.request ?? sample ?? undefined, ...(c?.item !== undefined ? { item: c.item, index: c.index } : {}) });
     setStepResult(null);
-  }, [nodeTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nodeTarget]);
   const testNode = useMutation({
     mutationFn: () => studioApi.testNode(flowId, nodeTarget!, { draft: store.toFlow(), context: { payload: pinned.payload, vars: pinned.vars, request: pinned.request, item: pinned.item, index: pinned.index } }),
     onMutate: () => setFailure(null),

@@ -11,7 +11,7 @@
 // 4. executions and logs; then take everything offline and delete it again
 //
 // Only read-only calls are made to the backend. Everything created is named "e2e-<stamp>-...".
-import { Session, parseArgs, stamp, field, setField, selectField, openGroup, confirm, createFlow, addStep, selectNode, nodeOf, saveFlow, runTest, deleteFlowFromEditor, sweep, toastText } from "./studio-lib.mjs";
+import { Session, parseArgs, stamp, field, setField, selectField, openGroup, confirm, createFlow, addStep, selectNode, saveFlow, runTest, deleteFlowFromEditor, sweep, toastText } from "./studio-lib.mjs";
 
 const opts = parseArgs();
 const BACKEND = process.env.WEAVE_E2E_BACKEND || "http://seaware-sys-api.wso2.svc";

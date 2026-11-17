@@ -10,7 +10,7 @@ export function JobLine({ job, what, onEnd }: { job: Job; what: string; onEnd?: 
   const q = useQuery({ queryKey: ["job", job.id], queryFn: () => sapi.job(job.id), initialData: job,
     refetchInterval: (s) => (s.state.data?.state === "running" ? 3000 : false) });
   const j = q.data ?? job;
-  useEffect(() => { if (j.state !== "running") onEnd?.(j); }, [j.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (j.state !== "running") onEnd?.(j); }, [j.state]);
   if (j.state === "running") return <Notice><span className="mf-mg-row" style={{ gap: 8 }} data-testid="job-running"><Loader2 size={14} className="mf-spin" aria-hidden="true" />{what} is running. This updates by itself.</span></Notice>;
   const r = j.result ?? {};
   return (

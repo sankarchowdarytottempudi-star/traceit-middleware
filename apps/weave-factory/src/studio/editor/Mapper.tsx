@@ -58,13 +58,13 @@ function InstructionEditor({ rule, onChange, sample, examples, readOnly, stale, 
     if (readOnly || !t || latest.current.compiled?.expr || (latest.current.instruction ?? "") !== debounced) return;
     if (info?.forText === debounced || compile.isPending) return;
     compile.mutate(debounced);
-  }, [debounced]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [debounced]);
   // The stored reading failed on the sample, or the server had to read the words again: fetch the current reading once.
   useEffect(() => {
     const t = (latest.current.instruction ?? "").trim();
     if (!stale || readOnly || !t || !latest.current.compiled?.expr || info?.forText === latest.current.instruction || compile.isPending) return;
     compile.mutate(latest.current.instruction ?? "");
-  }, [stale]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stale]);
   const c = rule.compiled;
   const current = info && info.forText === text ? info : null;
   const notUnderstood = !c?.expr && !!current?.res && !current.res.compiled;

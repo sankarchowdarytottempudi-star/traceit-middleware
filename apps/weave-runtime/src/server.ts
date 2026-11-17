@@ -57,7 +57,7 @@ export interface RunningServer { app: FastifyInstance; rt: Runtime; close(): Pro
 export async function buildApp(cfg: Config, rt: Runtime): Promise<{ app: FastifyInstance; handler: http.RequestListener }> {
   let handler: http.RequestListener = () => undefined;
   const app = Fastify({
-    logger: false, bodyLimit: 20 * 1024 * 1024, ignoreTrailingSlash: true, maxParamLength: 500,
+    logger: false, bodyLimit: 20 * 1024 * 1024, routerOptions: { ignoreTrailingSlash: true, maxParamLength: 500 },
     serverFactory: (h: http.RequestListener) => { handler = h; return http.createServer(h); },
   }) as unknown as FastifyInstance;
   app.removeAllContentTypeParsers();

@@ -72,7 +72,7 @@ export function walkResource(ctx: WalkContext, res: BalResource): WalkResult {
   };
 
   function evalExpr(raw: string, sc: Scope, depth = 0): Bound {
-    let t = raw.trim().replace(/^check\s+/, "").replace(/^<[^>]+>\s*/, "").trim();
+    const t = raw.trim().replace(/^check\s+/, "").replace(/^<[^>]+>\s*/, "").trim();
     const text = squash(t);
     if (depth > 6 || !t) return { text, keys: [] };
     const lit = /^"((?:[^"\\]|\\.)*)"$/.exec(t);
@@ -209,7 +209,7 @@ export function walkResource(ctx: WalkContext, res: BalResource): WalkResult {
     if (/notifier\s*\.\s*notify/.test(mText)) state.features.add("Error notification");
     for (const h of oText.matchAll(/(?:headerOf|getHeader|\bheader)\s*\(\s*(?:\w+\s*,\s*)?"([^"]+)"/g)) state.headersRead.add(h[1]);
 
-    const decl = /^\s*(?:final\s+)?(?!return\b)[\w:<>\[\]?|&,' ]+?\s+'?([A-Za-z_]\w*)\s*=(?!=)\s*/.exec(mText);
+    const decl = /^\s*(?:final\s+)?(?!return\b)[\w:<>[\]?|&,' ]+?\s+'?([A-Za-z_]\w*)\s*=(?!=)\s*/.exec(mText);
     const declName = decl ? decl[1] : "";
     const idx = /^\s*([A-Za-z_]\w*)\s*\[/.exec(mText);
     if (idx) {

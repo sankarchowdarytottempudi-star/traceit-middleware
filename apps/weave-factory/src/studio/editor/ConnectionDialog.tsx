@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, XCircle } from "lucide-react";
-import type { Connection, ConnectionTypeDef, SaveConnectionRequest } from "@traceit/weave-flow";
+import { secretLooksLabelled, zohoMismatch, type Connection, type ConnectionTypeDef, type SaveConnectionRequest } from "@traceit/weave-flow";
 import { errorText, isUnavailable, studioApi, type ConnectionTestResult } from "../api.ts";
 import { fieldVisible } from "../catalog.ts";
 import { Button, Callout, Collapsible, cx, Field, fmtDuration, Modal, toast } from "../ui.tsx";
@@ -29,7 +29,7 @@ export function ConnectionDialog({ existing, types, onClose, fixedType, onSaved,
   const [type, setType] = useState(existing?.type ?? fixedType ?? types[0]?.type ?? "http");
   const def = types.find((t) => t.type === type);
   const [name, setName] = useState(existing?.name ?? initialName ?? "");
-  const [config, setConfig] = useState<Record<string, unknown>>(() => existing?.config ?? { ...defaultsOf(types.find((t) => t.type === (existing?.type ?? fixedType ?? types[0]?.type))), ...(initialConfig ?? {}) });
+  const [config, setConfig] = useState<Record<string, unknown>>(() => existing ? { ...existing.config, ...(initialConfig ?? {}) } : { ...defaultsOf(types.find((t) => t.type === (fixedType ?? types[0]?.type))), ...(initialConfig ?? {}) });
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [tested, setTested] = useState<TestState | undefined>();
   const [problem, setProblem] = useState<string | null>(null);
@@ -43,6 +43,9 @@ export function ConnectionDialog({ existing, types, onClose, fixedType, onSaved,
     for (const f of visible) if (f.secret && secrets[f.key]) sec[f.key] = secrets[f.key];
     return { name: name.trim(), type, config: cfg, ...(Object.keys(sec).length ? { secrets: sec } : {}) };
   };
+  // pasted values that still carry their label ("Client Secret: 1000.…"): say which field, never the value
+  const labelled = visible.filter((f) => (f.secret ? secretLooksLabelled(secrets[f.key]) : typeof config[f.key] === "string" && /client|token|key|secret/i.test(f.key) && secretLooksLabelled(String(config[f.key])))).map((f) => f.label);
+  const centre = config.authType === "oauth2refresh" || config.authType === "oauth2cc" ? zohoMismatch(String(config.tokenUrl ?? ""), String(config.baseUrl ?? "")) : null;
   const missing = visible.filter((f) => f.required && !f.secret && (config[f.key] === undefined || config[f.key] === "")).map((f) => f.label);
   const save = useMutation({
     mutationFn: () => (existing ? studioApi.updateConnection(existing.id, request()) : studioApi.createConnection(request())),
@@ -83,6 +86,8 @@ export function ConnectionDialog({ existing, types, onClose, fixedType, onSaved,
         {main.map(row)}
         {groups.map((g) => <Collapsible key={g.name} title={txt(g.name)} count={g.fields.length}>{g.fields.map(row)}</Collapsible>)}
         {visible.some((f) => f.secret) && <p className="mf-help" style={{ margin: 0 }}>Passwords, tokens and keys are stored on this server only. They are never shown again, never written to logs and never leave it{existing ? "; leave a field empty to keep what is stored" : ""}.</p>}
+        {labelled.length > 0 && <Callout tone="warn" title="Paste only the value">{labelled.join(", ")} {labelled.length === 1 ? "starts" : "start"} with a label such as "Client Secret:" or "Refresh Token:". Remove the label and keep only the value.</Callout>}
+        {centre && <Callout tone="warn" title="Two different Zoho data centres">{centre}</Callout>}
         {missing.length > 0 && <p className="mf-help" style={{ margin: 0 }}>Still needed: {missing.join(", ")}.</p>}
         <TestOutcome r={tested} />
         {problem && <Callout tone="bad" title="Not saved">{problem}</Callout>}

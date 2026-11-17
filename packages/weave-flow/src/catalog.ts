@@ -17,6 +17,8 @@ const RETRY: FieldDef[] = [
   { key: "timeoutMs", label: "Timeout (ms)", kind: "number", group: "Advanced", default: 30000 },
   { key: "retries", label: "Retries", kind: "number", group: "Advanced", default: 0 },
   { key: "retryDelayMs", label: "Retry delay (ms)", kind: "number", group: "Advanced", default: 500 },
+  { key: "retryDelaysMs", label: "Wait before each retry (ms)", kind: "text", group: "Advanced", placeholder: "1000, 3000",
+    help: "Optional back-off: one wait per retry, in order (the last one repeats). Empty: Retry delay before every retry. Retries happen on timeouts, 5xx and 429 only." },
 ];
 const FORWARD: FieldDef = {
   key: "forwardHeaders", label: "Forward incoming headers", kind: "stringlist", group: "Headers",
@@ -263,16 +265,20 @@ export const BUILTIN_NODE_TYPES: NodeTypeDef[] = [
 
 const AUTH_FIELDS: FieldDef[] = [
   { key: "authType", label: "Authentication", kind: "select", default: "none",
-    options: [{ value: "none", label: "None" }, { value: "basic", label: "Basic" }, { value: "bearer", label: "Bearer token" }, { value: "apiKey", label: "API key header" }, { value: "oauth2cc", label: "OAuth2 client credentials" }] },
+    options: [{ value: "none", label: "None" }, { value: "basic", label: "Basic" }, { value: "bearer", label: "Bearer token" }, { value: "apiKey", label: "API key header" }, { value: "oauth2cc", label: "OAuth2 client credentials" }, { value: "oauth2refresh", label: "OAuth2 refresh token (e.g. Zoho Self Client)" }] },
   { key: "username", label: "Username", kind: "text", showIf: { key: "authType", equals: "basic" } },
   { key: "password", label: "Password", kind: "text", secret: true, showIf: { key: "authType", equals: "basic" } },
   { key: "token", label: "Token", kind: "text", secret: true, showIf: { key: "authType", equals: "bearer" } },
   { key: "apiKeyHeader", label: "Header name", kind: "text", showIf: { key: "authType", equals: "apiKey" }, placeholder: "X-API-Key" },
   { key: "apiKey", label: "API key", kind: "text", secret: true, showIf: { key: "authType", equals: "apiKey" } },
-  { key: "tokenUrl", label: "Token URL", kind: "text", showIf: { key: "authType", equals: "oauth2cc" } },
-  { key: "clientId", label: "Client ID", kind: "text", showIf: { key: "authType", equals: "oauth2cc" } },
-  { key: "clientSecret", label: "Client secret", kind: "text", secret: true, showIf: { key: "authType", equals: "oauth2cc" } },
-  { key: "scope", label: "Scope", kind: "text", showIf: { key: "authType", equals: "oauth2cc" } },
+  { key: "tokenUrl", label: "Token URL", kind: "text", showIf: { key: "authType", in: ["oauth2cc", "oauth2refresh"] } },
+  { key: "clientId", label: "Client ID", kind: "text", showIf: { key: "authType", in: ["oauth2cc", "oauth2refresh"] } },
+  { key: "clientSecret", label: "Client secret", kind: "text", secret: true, showIf: { key: "authType", in: ["oauth2cc", "oauth2refresh"] } },
+  { key: "refreshToken", label: "Refresh token", kind: "text", secret: true, showIf: { key: "authType", equals: "oauth2refresh" }, help: "Kept encrypted on this server. A new access token is fetched with it before the old one expires, and once more when the API answers 401." },
+  { key: "scope", label: "Scope", kind: "text", showIf: { key: "authType", in: ["oauth2cc", "oauth2refresh"] }, help: "Optional." },
+  { key: "clientAuth", label: "Send client credentials as", kind: "select", default: "body", showIf: { key: "authType", equals: "oauth2refresh" },
+    options: [{ value: "body", label: "Form body (Zoho)" }, { value: "basic", label: "Basic header" }] },
+  { key: "tokenPrefix", label: "Token prefix", kind: "text", default: "Bearer", showIf: { key: "authType", equals: "oauth2refresh" }, placeholder: "Bearer", help: "The word before the token in the Authorization header, e.g. Zoho-oauthtoken for Zoho." },
 ];
 export const BUILTIN_CONNECTION_TYPES: ConnectionTypeDef[] = [
   { type: "http", label: "HTTP / REST / GraphQL", icon: "Globe", description: "A base URL with authentication and default headers.",

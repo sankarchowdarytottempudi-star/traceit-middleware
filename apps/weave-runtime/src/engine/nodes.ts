@@ -64,15 +64,53 @@ export async function authHeaders(conn: ResolvedConnection, http: NodeCtx["run"]
       secrets?.add(j.access_token);
       return { authorization: `Bearer ${j.access_token}` };
     }
+    case "oauth2refresh": {
+      // refresh-token grant (Zoho Self Client and similar): the access token is cached until shortly before it expires
+      const key = `${conn.id}|${conn.updatedAt}`;
+      const prefix = String(cfg.tokenPrefix || "Bearer").trim() || "Bearer";
+      const hit = tokenCache.get(key);
+      if (hit && hit.until > Date.now()) { secrets?.add(hit.token); return { authorization: `${prefix} ${hit.token}` }; }
+      if (!cfg.tokenUrl) throw new FlowError(`Connection "${conn.name}" has no token URL`, { status: 500 });
+      if (!sec.refreshToken) throw new FlowError(`Connection "${conn.name}" has no refresh token`, { status: 500 });
+      secrets?.add(String(sec.refreshToken)); if (sec.clientSecret) secrets?.add(String(sec.clientSecret));
+      const form = new URLSearchParams({ grant_type: "refresh_token", refresh_token: String(sec.refreshToken) });
+      const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded", accept: "application/json" };
+      if (cfg.clientAuth === "basic") { const basic = Buffer.from(`${cfg.clientId ?? ""}:${sec.clientSecret ?? ""}`).toString("base64"); secrets?.add(basic); headers.authorization = `Basic ${basic}`; }
+      else { form.set("client_id", String(cfg.clientId ?? "")); form.set("client_secret", String(sec.clientSecret ?? "")); }
+      if (cfg.scope) form.set("scope", String(cfg.scope));
+      const r = await http.request({ method: "POST", url: String(cfg.tokenUrl), headers, body: form.toString(), timeoutMs: 15_000, tlsVerify: cfg.tlsVerify !== false });
+      let j: { access_token?: string; expires_in?: number; error?: unknown } = {};
+      try { j = JSON.parse(r.body.toString("utf8")); } catch { /* handled below */ }
+      // only the error code is shown (invalid_client, invalid_code, …), never anything else from the body
+      const code = typeof j.error === "string" && /^[a-z0-9_.-]{1,40}$/i.test(j.error) ? `, ${j.error}` : "";
+      if (r.status >= 400 || !j.access_token) throw new FlowError(`Could not refresh the token for connection "${conn.name}" (HTTP ${r.status}${code})${code ? tokenHint(String(j.error)) : ""}`, { status: 502 });
+      tokenCache.set(key, { token: j.access_token, until: Date.now() + Math.max(30, (j.expires_in ?? 3600) - 60) * 1000 });
+      secrets?.add(j.access_token);
+      return { authorization: `${prefix} ${j.access_token}` };
+    }
     default: return {};
   }
 }
+function tokenHint(code: string): string {
+  if (/invalid_client/i.test(code)) return ". The client id or client secret is not accepted (or belongs to another data centre).";
+  if (/invalid_code|invalid_grant/i.test(code)) return ". The refresh token is not accepted: it may be revoked, mistyped, or from another data centre.";
+  if (/access_denied|scope/i.test(code)) return ". The scopes are not allowed for this client.";
+  return "";
+}
+/** Forgets a cached access token (the API said 401), so the next call fetches a new one. */
+export function forgetToken(conn: ResolvedConnection) { tokenCache.delete(`${conn.id}|${conn.updatedAt}`); }
 
 // ---------------------------------------------------------------- HTTP
 interface HttpSpec {
   conn?: ResolvedConnection; method: string; url: string;
   query: { key: string; value: unknown }[]; headers: Record<string, string>;
   body?: string | Buffer; timeoutMs: number; retries: number; retryDelayMs: number; failOnStatus: boolean; responseMode: string;
+  retryDelaysMs?: number[];
+}
+/** "1000, 3000" -> [1000, 3000]; anything unreadable is left out. */
+export function delayList(v: unknown): number[] {
+  const parts = Array.isArray(v) ? v : typeof v === "string" ? v.split(/[,;\s]+/) : [];
+  return parts.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n >= 0).map((n) => Math.min(60_000, Math.round(n)));
 }
 export function joinUrl(base: string | undefined, path: string): string {
   if (/^https?:\/\//i.test(path)) return path;
@@ -89,6 +127,7 @@ async function doHttp(c: NodeCtx, s: HttpSpec): Promise<{ status: number; header
   c.step.meta = { ...(c.step.meta ?? {}), http: { method: s.method, url: shown } };
   const attempts = 1 + Math.max(0, Math.min(10, Math.floor(s.retries)));
   let lastErr: FlowError | undefined;
+  let refreshed = false;
   for (let i = 1; i <= attempts; i++) {
     let res: HttpResult | undefined;
     try {
@@ -102,11 +141,18 @@ async function doHttp(c: NodeCtx, s: HttpSpec): Promise<{ status: number; header
       c.step.meta = { ...(c.step.meta ?? {}), http: { method: s.method, url: shown, status: res.status } };
       let body: unknown;
       try { body = readBody(res, s.responseMode); } catch (e) { throw new FlowError(`${s.method} ${shown}: ${(e as Error).message}`, { status: 502, detail: { status: res.status } }); }
+      // an expired access token: fetch a new one once and repeat the call once (not counted as a retry)
+      if (res.status === 401 && !refreshed && s.conn && s.conn.config.authType === "oauth2refresh") {
+        refreshed = true; forgetToken(s.conn);
+        Object.assign(s.headers, await authHeaders(s.conn, c.run.deps.http, c.run.secrets));
+        c.run.log("info", "The access token was refused; a new one was fetched and the call repeated", c.node.name);
+        i--; continue;
+      }
       if (!(s.failOnStatus && res.status >= 400)) return { status: res.status, headers: res.headers, body };
       lastErr = new FlowError(`${s.method} ${shown} answered ${res.status}`, { status: res.status >= 500 ? 502 : res.status, detail: { status: res.status, body: body as never } });
       if (res.status < 500 && res.status !== 429) break;
     }
-    if (i < attempts) { c.run.log("warn", `${lastErr!.message}; retrying (${i}/${attempts - 1})`, c.node.name); await sleep(Math.max(0, s.retryDelayMs), c.run.abort.signal); }
+    if (i < attempts) { c.run.log("warn", `${lastErr!.message}; retrying (${i}/${attempts - 1})`, c.node.name); const list = s.retryDelaysMs ?? []; await sleep(Math.max(0, list.length ? list[Math.min(i - 1, list.length - 1)] : s.retryDelayMs), c.run.abort.signal); }
   }
   throw lastErr!;
 }
@@ -147,7 +193,7 @@ const httpRequest: NodeHandler = async (c) => {
     default: break;
   }
   if (!headers.accept) headers.accept = "application/json, */*;q=0.8";
-  const res = await doHttp(c, { conn, method, url, query, headers, body, timeoutMs: numOr(cfg.timeoutMs, numOr(conn?.config.timeoutMs, 30_000)), retries: numOr(cfg.retries, 0), retryDelayMs: numOr(cfg.retryDelayMs, 500), failOnStatus: cfg.failOnStatus !== false, responseMode: String(cfg.responseMode || "auto") });
+  const res = await doHttp(c, { conn, method, url, query, headers, body, timeoutMs: numOr(cfg.timeoutMs, numOr(conn?.config.timeoutMs, 30_000)), retries: numOr(cfg.retries, 0), retryDelayMs: numOr(cfg.retryDelayMs, 500), retryDelaysMs: delayList(cfg.retryDelaysMs), failOnStatus: cfg.failOnStatus !== false, responseMode: String(cfg.responseMode || "auto") });
   return { result: cfg.output === "full" ? { status: res.status, headers: res.headers, body: res.body } : res.body };
 };
 function tryJson(s: string): unknown { try { return JSON.parse(s); } catch { return s; } }

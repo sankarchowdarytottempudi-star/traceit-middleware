@@ -1,0 +1,501 @@
+Newsletter Subscription to Zoho CRM Leads – WSO2 Integration Requirement
+17 Nov 2026 · Prepared by the integration owner · Version 1.0 (draft for WSO2 team review)
+1. Background
+Guests can subscribe to the newsletter from several channels. Each time a guest enters an email address:
+1.  The subscription must be stored in the Zoho CRM Leads module.
+2.  The lead must carry a clear Newsletter tag and source, so it can be included in all future communications.
+3.  The lead must record which channel the subscription came from: Web, Mobile, Agent Booking or Agency.
+4.  The guest must receive an automated confirmation email saying they have subscribed.
+The WSO2 team will build and host the API that receives the subscription from the front end, transforms it, writes it to Zoho CRM and returns the agreed response.
+2. Scope
+In scope for the WSO2 team
+• Expose one REST API: POST /newsletter/v1/subscribe (through WSO2 API Manager, with mediation in WSO2 Micro Integrator or the APIM mediation layer).
+• Read and validate the channel from the request header.
+• Validate and transform the request body (including building the Mobile field).
+• Create or update the lead in Zoho CRM (no duplicates), set Lead Source, channel and the Newsletter tag.
+• Manage Zoho OAuth tokens (refresh, cache, secure storage).
+• Return the agreed success response, or a standard error response.
+• Logging, error handling, retries and monitoring.
+Out of scope for the WSO2 team
+• Front-end screens and the subscription form.
+• The confirmation email content and template (owned by the Zoho CRM admin, see Section 8).
+• Zoho CRM field and picklist setup (owned by the Zoho CRM admin, see Section 9). The WSO2 team should confirm the setup is in place before testing.
+3. End-to-end flow
+1.  Guest enters details on Web, Mobile app, Agent Booking screen or Agency portal.
+2.  Front end (or its backend) calls the WSO2 API with the channel header and the JSON body.
+3.  WSO2 validates the header and body. If anything is invalid, it returns 400 and stops.
+4.  WSO2 builds Mobile = country code + space + contact number.
+5.  WSO2 removes empty fields and sets fixed values (Lead Source = Newsletter, channel, tag).
+6.  WSO2 gets a valid Zoho access token (from cache, or refreshes it).
+7.  WSO2 calls the Zoho CRM upsert API on the Leads module, using Email as the duplicate check.
+8.  WSO2 makes sure the Newsletter tag is on the lead (in the same call, or with the add-tags API).
+9.  Zoho CRM workflow rule sends the confirmation email to the guest.
+10.  WSO2 returns the agreed response to the front end.
+4. API contract
+4.1 Endpoint
+Item
+Value
+Method
+POST
+Path
+/newsletter/v1/subscribe
+Content type
+application/json
+Authentication (front end to WSO2)
+WSO2 APIM OAuth2 or API key. Zoho credentials are never sent to or seen by the front end.
+Environments
+UAT and Production, each with its own Zoho credentials
+4.2 Request headers
+Header
+Mandatory
+Allowed values
+Notes
+X-Channel
+Yes
+WEB, MOBILE, AGENT_BOOKING, AGENCY
+Case-insensitive. Missing or any other value returns 400.
+Content-Type
+Yes
+application/json
+
+Authorization or API key header
+Yes
+As issued by WSO2 APIM
+
+X-Correlation-ID
+No
+Any unique string
+If not sent, WSO2 generates one and returns it in the response header.
+4.3 Request body (from the front end)
+{
+  "data": {
+    "Email": "newsletter.guest@example.invalid",
+    "First_Name": "test",
+    "Last_Name": "guest",
+    "country code": "+966",
+    "contact": "5123456789",
+    "Industry": "",
+    "Lead_Source": "",
+    "No_of_Employees": "",
+    "Country": "",
+    "Currency": ""
+  }
+}
+Note: the sample shared earlier was missing a comma after the contact value. The front-end team must send valid JSON as shown above.
+4.4 Success response (to the front end)
+HTTP 200 OK
+{
+  "data": {
+    "Email": "newsletter.guest@example.invalid",
+    "First_Name": "test",
+    "Last_Name": "guest",
+    "Mobile": "+966 512345678",
+    "Industry": "",
+    "Lead_Source": "",
+    "No_of_Employees": "",
+    "Country": "",
+    "Currency": ""
+  }
+}
+Rules for the response:
+• country code and contact are not returned. They are replaced by one field, Mobile.
+• All other fields are returned with the same names, in the same order.
+• Return 200 for both a new lead and an existing lead that was updated, so the front end handles one success case.
+• See open question Q2 on whether Lead_Source should return "Newsletter" instead of the empty value.
+4.5 Error response
+{
+  "error": {
+    "code": "INVALID_CHANNEL",
+    "message": "X-Channel header is missing or not one of WEB, MOBILE, AGENT_BOOKING, AGENCY",
+    "correlationId": "7f3c2a1e-..."
+  }
+}
+HTTP status
+Error code
+When
+400
+INVALID_CHANNEL
+X-Channel missing or not an allowed value
+400
+INVALID_REQUEST
+Body is not valid JSON or data object is missing
+400
+INVALID_EMAIL
+Email missing or not a valid format
+400
+INVALID_MOBILE
+Country code or contact number fails the rules in Section 5
+400
+MISSING_FIELD
+A mandatory field is empty (message names the field)
+401 / 403
+UNAUTHORIZED
+Front-end credentials missing or invalid (WSO2 APIM standard)
+429
+RATE_LIMITED
+Caller exceeds the WSO2 throttling limit
+502
+CRM_ERROR
+Zoho CRM returned an error after retries
+504
+CRM_TIMEOUT
+Zoho CRM did not respond in time after retries
+Zoho error details must be logged but not passed back to the front end as raw text.
+5. Field mapping and validation
+5.1 Mapping
+Front-end field
+Mandatory
+Zoho CRM Leads field (API name)
+Response field
+Rule
+Email
+Yes
+Email
+Email
+Trim spaces, convert to lower case, valid email format, max 100 characters. Used as the duplicate check.
+First_Name
+No
+First_Name
+First_Name
+Trim. Max 40 characters.
+Last_Name
+Yes
+Last_Name
+Last_Name
+Trim. Max 80 characters. Zoho requires this field.
+country code
+Yes
+part of Mobile
+part of Mobile
+Must start with + followed by 1 to 4 digits.
+contact
+Yes
+part of Mobile
+part of Mobile
+Digits only after cleaning (see 5.2).
+(built by WSO2)
+–
+Mobile
+Mobile
+CRM: country code + cleaned contact, no space, e.g. +912345678901. Response: with one space, e.g. +966 512345678.
+Industry
+No
+Industry
+Industry
+Send to Zoho only if not empty. Must match a Zoho picklist value.
+Lead_Source
+No
+Lead_Source
+Lead_Source
+Always set to Newsletter by WSO2, whatever the front end sends.
+No_of_Employees
+No
+No_of_Employees
+No_of_Employees
+Send only if not empty. Must be a whole number (Zoho rejects "").
+Country
+No
+Country
+Country
+Send only if not empty.
+Currency
+No
+Currency
+Currency
+Send only if not empty. Must be a currency code enabled in Zoho (e.g. SAR).
+X-Channel header
+Yes
+Submission_Channel (existing field)
+not returned
+WEB → Web, MOBILE → Mobile App, AGENT_BOOKING → Agent Booking, AGENCY → Agency
+(fixed by WSO2)
+–
+Marketing_Opt_In
+not returned
+Always true
+(fixed by WSO2)
+–
+Description
+not returned
+Newsletter subscription via {channel}
+(fixed by WSO2)
+–
+Tag Newsletter
+not returned
+Always added. Existing tags on the lead must be kept.
+(fixed by WSO2)
+–
+Company
+not returned
+Individual Guest while Company stays mandatory in Zoho (Q4)
+Important: empty strings must be left out of the Zoho request. Sending "" for number, currency or picklist fields makes Zoho reject the record.
+5.2 Mobile number rules
+1.  Remove spaces, dashes, brackets and dots from contact.
+2.  Remove one leading 0 if present (e.g. 0512345678 becomes 512345678).
+3.  Remove the country code if the guest typed it inside contact (e.g. 912345678901 with code +966 becomes 512345678).
+4.  For +966 (Saudi Arabia): the result must be exactly 9 digits starting with 5. Otherwise return 400 INVALID_MOBILE.
+5.  For other country codes: total length (country code digits + number) must be 8 to 15 digits (E.164).
+6.  Never cut digits off to make a number fit. A wrong number is rejected, not shortened.
+Data issue to confirm: the sample request has contact = 5123456789 (10 digits), but the expected response shows +966 512345678 (9 digits, last digit dropped). Saudi mobile numbers are 9 digits after +966, so the sample request most likely has a typo. Under the rules above, the 10-digit sample would be rejected with INVALID_MOBILE. See Q1.
+6. Zoho CRM integration details
+The Zoho org is on the India data centre, uses API v8, and already has Submission_Channel and Marketing_Opt_In fields on Leads. Details and a sample curl were received from the owner on 17 Nov 2026.
+Credentials: the Client ID and Client Secret are deliberately not written in this doc. They are shared with the WSO2 team only through a secure channel and loaded into the WSO2 Secure Vault.
+Item
+Value / requirement
+API base URL
+https://www.zohoapis.in (India data centre)
+Accounts (token) URL
+https://accounts.zoho.in
+API console
+https://api-console.zoho.in
+API version
+v8
+Sample call received
+POST https://www.zohoapis.in/crm/v8/Leads (plain insert). The pasted curl had extra characters after /Leads from a link; the correct URL ends at /Leads.
+Operation WSO2 must use
+POST https://www.zohoapis.in/crm/v8/Leads/upsert with "duplicate_check_fields": ["Email"]. Plain insert creates a new lead each time the same guest subscribes.
+Auth header
+Authorization: Zoho-oauthtoken {access_token}
+OAuth client type
+Self Client (addendum, 17 Nov 2026). No redirect URI is needed.
+Scopes (confirmed)
+ZohoCRM.modules.leads.ALL,ZohoCRM.settings.fields.READ
+Step 1 – grant code
+In the Zoho API Console (India) → Self Client → Generate Code tab → paste the scopes above → pick a time duration (10 minutes) → add a description → Create → copy the code.
+Step 2 – access token
+Within the time duration, POST https://accounts.zoho.in/oauth/v2/token with grant_type=authorization_code, client_id, client_secret, code. The reply has an access_token (valid 1 hour) and a refresh_token (does not expire).
+Step 3 – keep it working
+An access token alone stops working after 1 hour. WSO2 stores the refresh_token in Secure Vault and gets a new access token with POST https://accounts.zoho.in/oauth/v2/token with grant_type=refresh_token, client_id, client_secret, refresh_token. Cache it; refresh before expiry, or once on 401 INVALID_TOKEN, then retry the call once.
+Tag
+"Tag": [{"name": "Newsletter"}] inside the record. The separate add-tags API is not used (the confirmed scopes do not include a tags scope). Existing tags on the lead must be kept.
+Workflow
+"trigger": ["workflow"] (already in the sample) so the confirmation email rule fires
+Field check
+ZohoCRM.settings.fields.READ lets WSO2 read the Leads field list (GET /crm/v8/settings/fields?module=Leads) to confirm the picklist values for Lead_Source and Submission_Channel before go-live.
+Environment
+Confirm whether these credentials are for the UAT (sandbox) or Production org. The other environment needs its own Self Client tokens (Q11).
+6.1 Leads fields seen in the sample curl
+Zoho field (API name)
+Sample value
+Value WSO2 sends for a newsletter subscription
+Lead_Source
+Facebook
+Newsletter (picklist value to be added by the CRM admin)
+Submission_Channel
+Facebook
+From X-Channel: Web, Mobile App, Agent Booking or Agency
+Marketing_Opt_In
+true
+true. The guest actively subscribed.
+Company
+ABC Enterprises
+Individual Guest, unless the CRM admin makes Company optional (Q4)
+Mobile
++912345678901
+Built from country code + contact. See storage format below.
+Description
+free text
+Newsletter subscription via {channel}, e.g. Newsletter subscription via Web
+Country
+India
+Front-end value, only if not empty
+City, State, Inquiry_Message, Facebook_Lead_Received_Date, leadchain0__Social_Lead_ID
+Facebook lead data
+Not sent
+Mobile storage format: existing CRM records store mobile in E.164 with no space (+912345678901). Recommendation: WSO2 stores +912345678901 (no space) in Zoho so search, duplicate checks and SMS tools match existing data. The API response to the front end still returns +966 512345678 with a space, as agreed in Section 4.4 (Q10).
+6.2 Zoho request built by WSO2 (sample guest)
+curl --location 'https://www.zohoapis.in/crm/v8/Leads/upsert' \
+--header 'Authorization: Zoho-oauthtoken {access_token}' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "data": [
+    {
+      "Email": "newsletter.guest@example.invalid",
+      "First_Name": "test",
+      "Last_Name": "guest",
+      "Mobile": "+912345678901",
+      "Company": "Individual Guest",
+      "Lead_Source": "Newsletter",
+      "Submission_Channel": "Web",
+      "Marketing_Opt_In": true,
+      "Description": "Newsletter subscription via Web",
+      "Tag": [ { "name": "Newsletter" } ]
+    }
+  ],
+  "duplicate_check_fields": [ "Email" ],
+  "trigger": [ "workflow" ]
+}'
+Zoho returns "action": "insert" for a new lead or "action": "update" for an existing one, with "status": "success" and the record id. WSO2 logs the action and record ID, then returns the Section 4.4 response.
+7. Duplicate and repeat subscriptions
+Case
+Expected behaviour
+New email
+Create lead, set Newsletter tag, channel and Lead Source. Confirmation email sent. Return 200.
+Email already a lead
+Update the same lead (name, mobile if sent), add Newsletter tag if missing. Return 200. No second lead.
+Same email from a different channel
+Update the lead. Channel field shows the latest channel (see Q5 if first channel must be kept).
+Email already a Contact in Zoho (existing guest)
+To be decided, see Q6.
+8. Confirmation email
+Recommended approach: the email is sent by a Zoho CRM workflow rule, not by WSO2.
+• Rule on the Leads module: when a lead is created or edited and Tag contains Newsletter (or Lead Source = Newsletter), send the "Newsletter subscription confirmed" email template to the lead's Email.
+• Benefits: the email template can be changed by the CRM team without a WSO2 release, and every subscription stored in CRM gets the email.
+• The WSO2 team only needs to pass "trigger": ["workflow"] in the upsert call.
+• To decide: should a repeat subscription send the email again? (Q7)
+9. Zoho CRM setup needed before WSO2 testing (CRM admin)
+1.  Add Newsletter as a value in the Lead Source picklist.
+2.  Add Web, Mobile App, Agent Booking, Agency as values in the existing Submission Channel field (API name Submission_Channel), if it is a picklist.
+3.  Create the tag Newsletter in the Leads module.
+4.  Make Company non-mandatory in the Leads layout, or confirm the default Individual Guest (Q4).
+5.  Create the confirmation email template and the workflow rule (Section 8). The rule must check Lead Source = Newsletter, so Facebook and other leads sent with the workflow trigger do not get the newsletter email.
+6.  Make sure Email is set as a unique / duplicate-check field for Leads.
+7.  Self Client is used (no redirect URI). The WSO2 team generates the grant code and tokens with the confirmed scopes ZohoCRM.modules.leads.ALL,ZohoCRM.settings.fields.READ, following Section 6 steps 1 to 3. Repeat for the second environment.
+10. Non-functional requirements
+Area
+Requirement
+Response time
+95% of calls answered within 3 seconds (Zoho call included)
+Zoho timeout
+10 seconds per call
+Retries
+Up to 2 retries with back-off (1 s, then 3 s) on Zoho 5xx, 429 or timeout. No retry on 4xx data errors.
+Throttling
+WSO2 APIM limit per caller (suggested 60 requests per minute per IP / app) to stop form spam and protect Zoho API credits
+Security
+HTTPS only. CORS allowed only for the approved web domains. No Zoho credentials outside WSO2.
+Privacy
+Email and mobile must be masked in logs (e.g. tl***@gmail.com, +966 51*****81). Follow Saudi PDPL for personal data.
+Logging
+Log correlation ID, channel, result (created / updated / failed), Zoho record ID and response time for every call
+Monitoring and alerts
+Alert when the error rate is above 5% in 15 minutes, or when the Zoho token refresh fails
+Failed calls
+Calls that still fail after retries are written to an error queue or table for re-processing, so no subscription is lost
+11. Test cases (minimum)
+#
+Scenario
+Expected result
+1
+Valid request, X-Channel: WEB, new email
+200, lead created, Newsletter tag, channel Web, Lead Source Newsletter, email received
+2
+Same for MOBILE, AGENT_BOOKING, AGENCY
+200, correct channel value in CRM
+3
+X-Channel missing
+400 INVALID_CHANNEL, nothing written to CRM
+4
+X-Channel: FACEBOOK
+400 INVALID_CHANNEL
+5
+Same email sent twice
+200 both times, only one lead in CRM
+6
+Invalid email (abc@)
+400 INVALID_EMAIL
+7
++966 with 0512345678
+200, Mobile stored as +966 512345678
+8
++966 with 10 digits 5123456789
+400 INVALID_MOBILE (no truncation)
+9
+Empty Last_Name
+400 MISSING_FIELD
+10
+All optional fields empty
+200, empty fields not sent to Zoho, no Zoho error
+11
+No_of_Employees: "abc"
+400 INVALID_REQUEST
+12
+Zoho access token expired
+Token refreshed automatically, 200
+13
+Zoho down / timeout
+Retried, then 504 CRM_TIMEOUT, record in error queue
+14
+Lead already has other tags
+Newsletter added, other tags kept
+15
+Response shape
+Matches Section 4.4 exactly: Mobile present, country code and contact absent
+12. Open questions and pending inputs
+#
+Question / input
+Owner
+Status
+Q1
+Sample contact has 10 digits but expected Mobile has 9. Confirm it is a typo and that numbers must never be truncated.
+the owner / front-end team
+Open
+Q2
+Should the response return Lead_Source: "Newsletter" (value stored in CRM) instead of the empty value sent by the front end?
+the owner
+Open
+Q3
+Can the front end rename country code to Country_Code (no space in JSON keys)? WSO2 can support either; one name must be agreed.
+Front-end team
+Open
+Q4
+Zoho Leads needs Company (the sample curl sends it). Make it optional, or WSO2 sends Individual Guest?
+CRM admin
+Open
+Q5
+For repeat subscriptions from another channel: keep the first channel, the latest, or both?
+the owner
+Open
+Q6
+If the email already exists as a Contact (existing guest), still create a lead, or tag the Contact instead?
+the owner / CRM admin
+Open
+Q7
+Should a repeat subscription send the confirmation email again?
+the owner
+Open
+Q8
+Consent: Marketing_Opt_In exists and WSO2 sets it to true. Does PDPL also need the opt-in date and time stored?
+the owner / legal
+Partly resolved
+Q9
+Is an unsubscribe API needed in this phase?
+the owner
+Open
+Q10
+Store Mobile in CRM without a space (+912345678901, matching existing records) while the response shows +966 512345678?
+the owner
+Open (recommended: yes)
+Q11
+Are the received credentials for the UAT (sandbox) or Production Zoho org?
+the owner
+Open
+P1
+Zoho Client ID and Client Secret (India data centre)
+the owner
+Received 17 Nov 2026 (shared securely, not in this doc)
+P2
+Sample Zoho curl for Leads insert
+the owner
+Received 17 Nov 2026 (v8 insert, see Section 6)
+P3
+Self Client access + refresh token (scopes ZohoCRM.modules.leads.ALL,ZohoCRM.settings.fields.READ), generated by the WSO2 team per Section 6
+the owner / CRM admin
+Pending
+P4
+Credentials for the second environment
+the owner / CRM admin
+Pending
+13. Deliverables from the WSO2 team
+1.  API definition (OpenAPI 3.0) published in WSO2 API Manager for UAT and Production.
+2.  Mediation / integration flow (Micro Integrator project or APIM mediation sequence) in the source repository.
+3.  Secure Vault setup for the Zoho credentials.
+4.  Postman collection covering all test cases in Section 11.
+5.  Test results from UAT, including screenshots of the created leads in Zoho CRM.
+6.  Short run book: how to rotate the Zoho refresh token, read the logs, and re-process failed calls.
+14. Acceptance criteria
+• A subscription from each of the four channels creates (or updates) exactly one lead in Zoho CRM with Lead Source = Newsletter, the Newsletter tag and the correct channel.
+• The guest receives the confirmation email.
+• The front end gets the response in the exact format in Section 4.4.
+• Invalid requests are rejected with the right error code and nothing is written to CRM.
+• No Zoho credentials or raw personal data appear in logs or front-end code.

@@ -1,5 +1,5 @@
 // Flow validation. Errors block deploy; warnings are advice. Nothing here executes the flow.
-import type { ConnectorDef, FieldDef, Flow, FlowNode, MappingSpec, NodeTypeDef, ValidationIssue } from "@traceit/weave-flow";
+import type { ConnectorDef, FieldDef, Flow, FlowEdge, FlowNode, MappingSpec, NodeTypeDef, ValidationIssue } from "@traceit/weave-flow";
 import { Cron } from "croner";
 import { checkDeep, checkExpr, checkTemplate } from "./expr.js";
 import { nodeTypeDef } from "./catalog.js";
@@ -198,6 +198,9 @@ export function validateFlow(flow: Flow, ctx: ValidateCtx): ValidationIssue[] {
   }
   for (const t of triggers) if (!(outgoing.get(t.id) ?? []).length) warn(`${t.name}: nothing is connected after this trigger`, t.id);
 
+  // an answer or mapping that reads a name nothing produced ("lead" when no step makes it) is a warning
+  unknownNames(flow, nodes, edges, byId, warn);
+
   const gw = flow.settings?.gateway;
   if (gw?.publish) {
     const context = String(gw.context || "/" + flow.slug);
@@ -208,4 +211,53 @@ export function validateFlow(flow: Flow, ctx: ValidateCtx): ValidationIssue[] {
     if (gw.security === "none") warn("Gateway security is off: anyone who can reach the gateway can call this API");
   }
   return issues;
+}
+
+
+// ---------------------------------------------------------------- names nothing produced
+const JSONATA_WORDS = new Set(["and", "or", "in", "true", "false", "null", "function"]);
+/** Top-level names an expression reads from the payload: lead in `{ "lead": lead }`, email in `email & "x"`. */
+export function bareNames(expr: string): string[] {
+  const noStrings = String(expr).replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`/g, " ").replace(/\/(?:[^/\\\n]|\\.)+\/[a-z]*/g, " ");
+  const out = new Set<string>();
+  for (const m of noStrings.matchAll(/(?<![\w$.\]])([A-Za-z_][A-Za-z0-9_]*)(?!\s*\()(?![\w])/g)) {
+    const name = m[1];
+    if (JSONATA_WORDS.has(name)) continue;
+    const after = noStrings.slice((m.index ?? 0) + name.length).trimStart();
+    if (after.startsWith(":") && !after.startsWith(":=")) continue;   // an object key written without quotes
+    out.add(name);
+  }
+  return [...out];
+}
+const PAYLOAD_TYPES = /^(?:http\.request|graphql\.request|connector:|transform\.(?:map|expr)|xml\.convert|flow\.call|postgres\.query|mysql\.query|mssql\.query|redis\.command)/;
+function unknownNames(flow: Flow, nodes: FlowNode[], edges: FlowEdge[], byId: Map<string, FlowNode>, warn: (m: string, nodeId?: string, field?: string) => void) {
+  const into = new Map<string, string[]>();
+  for (const e of edges) { const l = into.get(e.to) ?? []; l.push(e.from); into.set(e.to, l); }
+  for (const n of nodes) {
+    const checks: { field: string; expr: string }[] = [];
+    if (n.type === "respond" && typeof n.config?.body === "string") checks.push({ field: "body", expr: n.config.body as string });
+    if (n.type === "transform.map" && (n.config?.input ?? "$") === "$") {
+      const rules = ((n.config?.mapping as { rules?: { kind?: string; expr?: string; source?: string; enabled?: boolean }[] } | undefined)?.rules ?? []).filter((r) => r && r.enabled !== false);
+      for (const r of rules) { if (r.kind === "expr" && r.expr) checks.push({ field: "mapping", expr: r.expr }); if (r.kind === "direct" && r.source) checks.push({ field: "mapping", expr: r.source.split(/[.[]/)[0] }); }
+    }
+    if (!checks.length) continue;
+    // walk back to the trigger: a step that replaces the payload makes its shape unknown, so nothing is said
+    const seen = new Set<string>(); const stack = [...(into.get(n.id) ?? [])]; let trigger: FlowNode | undefined; let changed = false;
+    while (stack.length) {
+      const id = stack.pop()!; if (seen.has(id)) continue; seen.add(id);
+      const m = byId.get(id); if (!m) continue;
+      if (m.type.startsWith("trigger.")) { trigger = trigger ?? m; continue; }
+      if (m.type === "logic.foreach" || (PAYLOAD_TYPES.test(m.type) && (m.config?.resultTarget ?? (m.type === "redis.command" ? "variable" : "payload")) !== "variable")) { changed = true; break; }
+      stack.push(...(into.get(id) ?? []));
+    }
+    if (changed || !trigger) continue;
+    const sample = (trigger.config?.sampleRequest as { body?: unknown } | undefined)?.body ?? (trigger.config?.samplePayload as unknown);
+    if (!sample || typeof sample !== "object" || Array.isArray(sample)) continue;
+    const known = new Set(Object.keys(sample as object));
+    for (const c of checks) for (const name of bareNames(c.expr)) {
+      if (known.has(name)) continue;
+      warn(`${n.name}: "${name}" is not in the sample request and no step before it produces it, so it will be empty. If it is the answer of a call, use $vars.<the call's result name>.`, n.id, c.field);
+    }
+  }
+  void flow;
 }

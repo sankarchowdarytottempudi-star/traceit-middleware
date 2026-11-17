@@ -70,7 +70,8 @@ export const STEP_PHRASES: StepPhrase[] = [
 ];
 
 // ---------------------------------------------------------------- context and result
-export interface DescribeConnection { id: string; name: string; type: string; }
+/** authType and baseUrl are non-secret settings, used to tell whether a connection fits. */
+export interface DescribeConnection { id: string; name: string; type: string; authType?: string; baseUrl?: string; }
 export interface DescribeApiOperation { id: string; method: string; path: string; summary?: string; }
 /** A migrated API from the estate catalogue. */
 export interface DescribeApi { name: string; basePath?: string; baseUrl?: string; operations?: DescribeApiOperation[]; }
@@ -105,9 +106,10 @@ export interface MissingConnection {
   type: string;                    // connection type to create: "http" | "mysql" | "mssql" | "postgres"
   lines: number[]; nodeIds: string[];
   why: string;
-  suggested?: { baseUrl?: string };
+  suggested?: { baseUrl?: string; config?: Record<string, unknown> };
+  existingId?: string;             // the connection exists but does not fit: offer to edit it
 }
-export interface DescribedFlow { name: string; description?: string; nodes: FlowNode[]; edges: FlowEdge[]; }
+export interface DescribedFlow { name: string; description?: string; nodes: FlowNode[]; edges: FlowEdge[]; settings?: Record<string, unknown>; }
 export interface DescribeResult {
   flow: DescribedFlow;
   lines: DescribeLine[];
@@ -269,6 +271,7 @@ class Reader {
   aliases: { name: string; expr: string; fields: Set<string>; list?: string }[] = [];
   listSamples = new Map<string, Set<string>>();   // loop item names, innermost last
   lastCall: FlowNode | null = null;
+  genericCall: FlowNode | null = null;   // the last call whose result has a generic name (response, zohoResult)
   lastVar: string | null = null;
   inError = 0;
   triggers = 0;
@@ -958,7 +961,7 @@ class Reader {
     t = t.replace(/^(?:,\s*)?(?:with|containing|and|:)\s*/i, "").trim();
     let body = "$", label = "the current data";
     if (t) {
-      const b = this.body4answer(t);
+      const b = this.body4answer(t, L);
       if (!b) return null;
       body = b.expr; label = b.label;
     } else if (!statusSaid) return null;
@@ -966,7 +969,7 @@ class Reader {
     this.ok(L, `answer ${status} with ${label}`);
     return { tails: [], terminal: true };
   }
-  body4answer(t: string): { expr: string; label: string } | null {
+  body4answer(t: string, L = 0): { expr: string; label: string } | null {
     let m: RegExpExecArray | null;
     if (/^(?:nothing|no body|an empty body|empty)$/i.test(t)) return { expr: "null", label: "no body" };
     if ((m = /^(?:(?:a|the)\s+)?(message|error|text|reason|detail)\s+"([^"]*)"$/i.exec(t))) { const k = lc(m[1]) === "text" ? "message" : lc(m[1]); return { expr: `{ ${jstr(k)}: ${this.tplExpr(m[2])} }`, label: `{ "${k}": "${m[2]}" }` }; }
@@ -974,6 +977,25 @@ class Reader {
     if (q !== null) return { expr: `{ "message": ${this.tplExpr(q)} }`, label: `{ "message": "${q}" }` };
     if (/^[{[]/.test(t)) { try { JSON.parse(t); return { expr: t, label: "this JSON" }; } catch { return /\{\{|\$/.test(t) ? { expr: t, label: "this JSON" } : null; } }
     if (/^(?:the\s+)?error$/i.test(t)) return { expr: "{ \"error\": { \"message\": $error.message } }", label: "the error message" };
+    // a thing no earlier step produced ("Answer 200 with the lead" after "Call POST …"): never a silent reference
+    const said = splitOutside(t, /\s*,\s*(?:and\s+)?|\s+and\s+|\s*&\s*/i).map((p) => p.trim()).filter(Boolean);
+    const unknown = said.filter((p) => { const r = this.ref(p, false); return !!r?.payloadPath && !this.aliases.length && !this.payloadFields.has(r.payloadPath) && !this.payloadFields.has(r.payloadPath.split(".")[0]); });
+    if (unknown.length === 1 && said.length === 1 && this.genericCall) {
+      const call = this.genericCall;
+      const old = String(call.config.resultVar ?? "");
+      const thing = stripArticles(unknown[0]);
+      const wanted = this.varFor(thing);
+      const usedLater = this.nodes.some((n) => n !== call && JSON.stringify(n.config).includes(`$vars.${old}`));
+      const name = usedLater || !IDENT.test(wanted) ? old : wanted;
+      if (name !== old) {
+        call.config.resultVar = name; for (const [k, v] of this.vars) if (v === old) this.vars.delete(k);
+        for (const l of this.lines.values()) if (l.nodeIds.includes(call.id) && l.understood) l.understood = l.understood.replace(`kept as ${old}`, `kept as ${name}`);
+      }
+      this.remember(thing, name);
+      if (L) this.ok(L, `"${unknown[0]}" is the answer of "${call.name}" (kept as ${name})`);
+      return { expr: `$vars.${seg(name)}`, label: `the ${thing} (the answer of "${call.name}")` };
+    }
+    if (L) for (const u of unknown) this.warn(L, `Nothing earlier produces "${stripArticles(u)}", so it is read as a field of the incoming data. If it is the answer of a call, name it on the call line (for example "Create the ${stripArticles(u)} in …").`);
     const fields = this.fieldList(t);
     if (!fields) return null;
     if (fields.length === 1 && fields[0].whole) return { expr: fields[0].expr, label: fields[0].label };
@@ -1002,7 +1024,7 @@ class Reader {
     if (withText && !input) { this.fail(L, `"${short(withText, 60)}" is not a field this reader can find.`); return { tails }; }
     const varName = this.varFor(`${name} result`);
     const s = this.step(tails, "flow.call", `Run flow ${short(name, 40)}`, { flow: f?.id ?? "", entry: "manual", input: input?.expr ?? "$", resultTarget: "variable", resultVar: varName }, L);
-    this.lastCall = s.node; this.remember(`${name} result`, varName);
+    this.lastCall = s.node; this.genericCall = s.node; this.remember(`${name} result`, varName);
     if (f) this.ok(L, `run the flow "${f.name}" with ${input?.label ?? "the current data"}; its answer is kept as ${varName}`);
     else { this.ok(L, `run a flow named "${name}"`); this.warn(L, `There is no flow called "${name}" on this server yet; choose it on the step.`); }
     for (const mod of mods) this.modifier(mod, L);
@@ -1092,7 +1114,7 @@ class Reader {
         if (known && /^(?:id|.*Id)$/.test(p.key) && (p.key === "id" || norm(p.key) === norm(known + "id"))) { cfg[p.key] = `{{ $vars.${seg(known)}.id }}`; this.ok(L, `${p.label || p.key} = the id of the ${known} kept above`); }
       }
       const s = this.step(tails, `connector:${conn.id}:${op.id}`, title, cfg, L);
-      this.lastCall = s.node; this.remember(entityName, varName);
+      this.lastCall = s.node; this.genericCall = entity ? null : s.node; this.remember(entityName, varName);
       this.ok(L, `${conn.name}: ${op.name || op.id} (${op.method} ${op.path}); the answer is kept as ${varName}`);
       if (pick.alternatives.length) this.warn(L, `Also possible: ${pick.alternatives.join(", ")}. Pick another operation on the step if this is not the one.`);
       const missingParams = (op.params ?? []).filter((p) => p.required && cfg[p.key] === undefined && p.default === undefined).map((p) => p.label || p.key);
@@ -1148,7 +1170,7 @@ class Reader {
     const url = address.replace(/\{([^}]+)\}/g, (_a, p: string) => `{{ ${this.ref(p)?.expr ?? p} }}`);
     const varName = this.varFor(conn ? `${conn.name} result` : "response");
     const s = this.httpNode(method, url, conn?.id ?? "", fields, connName ? `${title} on ${connName}` : title, varName, L, tails);
-    this.lastCall = s.node; this.remember(conn ? `${conn.name} result` : "response", varName);
+    this.lastCall = s.node; this.genericCall = s.node; this.remember(conn ? `${conn.name} result` : "response", varName);
     this.ok(L, `${method} ${address}${conn ? ` on ${conn.name}` : ""}; the answer is kept as ${varName}`);
     if (!full && !conn) this.need(connName || "backend", "http", L, s.node.id, connName ? `There is no connection called "${connName}" yet.` : `"${address}" is a path, so the step needs a connection that supplies the address.`);
     return { tails: s.tails };
@@ -1240,7 +1262,7 @@ class Reader {
       const varName = this.varFor(entity);
       const cfg: Record<string, unknown> = { connection: conn?.id ?? "", ...(type === "postgres" ? {} : { operation: "query", maxRows: 1000, timeoutSeconds: 60 }), sql: sql ?? "", params, resultMode, resultTarget: "variable", resultVar: varName, ...extra };
       const s = this.step(tails, nodeType, title, cfg, L);
-      this.lastCall = s.node; this.remember(entity, varName);
+      this.lastCall = s.node; this.genericCall = null; this.remember(entity, varName);
       this.ok(L, `${understood || title} on ${DB_LABEL[type]}${conn ? ` (${conn.name})` : ""}: ${sql ?? String(extra.procedure ?? "")}; the result is kept as ${varName}`);
       if (!conn) {
         this.need(dbName, type, L, s.node.id, `There is no ${typeHint ? DB_LABEL[type] + " " : ""}database connection called "${dbName}" yet.`);

@@ -11,6 +11,7 @@
 //   4. every word must be accounted for. If something is left over the answer is "not understood",
 //      with what was understood and concrete rephrasings. It never guesses silently.
 import type { CompileInstructionRequest, CompiledInstruction } from "@traceit/weave-flow";
+import { readValueTable } from "@traceit/weave-flow";
 import type { HttpClient } from "../clients/http.js";
 import { checkExpr, FUNCTION_DOCS } from "../expr.js";
 
@@ -1501,6 +1502,21 @@ function buildObject(req: CompileInstructionRequest, raw: string): CompileOutcom
 }
 
 export function compileLocal(req: CompileInstructionRequest, opts: { suggest?: boolean } = {}): CompileOutcome {
+  // a table of codes ("WEB means Web, MOBILE means Mobile App (header x-channel)") is read by its own strict rule;
+  // when that rule cannot read it, the sentence is not understood (it is never guessed by the general rules)
+  // A table read from a request header goes to the strict table rule straight away. Other tables are read by
+  // the general rules first; when they cannot read one, the strict rule's answer (understood or not) is final.
+  const table = readValueTable(req.instruction ?? "");
+  const fromTable = (t: NonNullable<typeof table>): CompileOutcome => t.ok
+    ? { ok: true, compiled: { expr: t.expr, explanation: t.explanation, confidence: "exact", engine: "rules" }, understood: [t.source.kind === "header" ? `the request header ${t.source.name}` : `the field ${t.source.name}`], suggestions: [], fields: t.source.kind === "field" ? [t.source.name] : [] }
+    : { ok: false, compiled: null, understood: [], reason: t.reason, suggestions: opts.suggest === false ? [] : t.suggestions, fields: [] };
+  if (table?.ok && table.source.kind === "header") return fromTable(table);
+  const general = compileGeneral(req, opts);
+  if (table && !general.ok) return fromTable(table);
+  if (table && general.ok && general.compiled?.confidence === "guessed") return fromTable(table);
+  return general;
+}
+function compileGeneral(req: CompileInstructionRequest, opts: { suggest?: boolean } = {}): CompileOutcome {
   const raw = listCommas((req.instruction ?? "").replace(/\s+/g, " ").trim());
   const built = raw.length <= 600 ? buildObject(req, raw) : null;
   if (built) return built;

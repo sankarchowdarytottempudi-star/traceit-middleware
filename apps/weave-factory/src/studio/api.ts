@@ -7,7 +7,7 @@ import type {
   Execution, ExecutionSummary, Flow, FlowDeployment, FlowSummary, FlowVersion, HttpRequestSample, InvokeRequest,
   InvokeResponse, Json, LogLine, MappingPreviewResponse, MappingRule, MappingSpec, SaveConnectionRequest, StatsResponse,
   StepTrace, TestFlowRequest, TestNodeRequest, TestNodeResponse, ValidationIssue,
-  DescribeLine, DescribedFlow, MissingConnection, StepPhrase,
+  DescribeLine, DescribedFlow, DocumentInfo, MissingConnection, StepPhrase,
 } from "@traceit/weave-flow";
 
 export class ApiError extends Error {
@@ -97,6 +97,7 @@ export interface DescribePreview {
   engine: "rules" | "local-model";
   flow: DescribedFlow; lines: DescribeLine[]; missing: MissingConnection[]; notes: string[]; ok: boolean; entry: string[];
   issues: ValidationIssue[] | null; validationError?: string; modelText?: string;
+  mode?: "steps" | "document"; doc?: DocumentInfo;
 }
 export interface DescribeInfo { phrases: StepPhrase[]; model: { enabled: boolean; configured: boolean }; }
 

@@ -6,13 +6,16 @@
 // text as the same step lines, which then go through the very same reader, validator and preview. It is
 // off unless DESCRIBE_MODEL_ENABLED is set, and it never calls anything outside this server.
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { describeFlow, MAPPING_PHRASES, STEP_PHRASES, type DescribeApi, type DescribeContext, type DescribeResult, type ConnectorDef, type ValidationIssue } from "@traceit/weave-flow";
+import { describeFlow, looksLikeDocument, readDocument, MAPPING_PHRASES, STEP_PHRASES, type DocumentInfo, type DescribeApi, type DescribeContext, type DescribeResult, type ConnectorDef, type ValidationIssue } from "@traceit/weave-flow";
 import { compileWithFallback, runtimeRequest, type StudioConfig } from "../studio.js";
 import { compileWords } from "../studioWords.js";
 import { sidOf } from "../auth.js";
 
 export const MAX_TEXT = 20_000;
 export const MAX_LINES = 400;
+/** A whole requirement document (sections, tables, samples) may be much longer. */
+export const MAX_DOC_TEXT = 300_000;
+export const MAX_DOC_LINES = 3000;
 
 export interface DescribeConfig { modelEnabled: boolean; modelUrl: string; modelTimeoutMs: number; nodeHost: string; }
 export function loadDescribeConfig(env: NodeJS.ProcessEnv = process.env): DescribeConfig {
@@ -39,6 +42,8 @@ export interface DescribePreview {
   ok: boolean;
   entry: string[];                      // "add" mode: the first steps, to connect after a step on the canvas
   issues: ValidationIssue[] | null;     // the flow engine's validator; null when it could not be reached
+  mode?: "steps" | "document";          // document: a whole requirement document was read
+  doc?: DocumentInfo;                   // document mode: what was taken from it, decisions, conflicts, ...
   validationError?: string;
   modelText?: string;                   // the lines the local model wrote (local-model only)
 }
@@ -69,7 +74,7 @@ export async function describeContext(cfg: StudioConfig, user: string, text: str
     } catch { return []; }
   };
   const [connections, connectors, flows] = await Promise.all([
-    get<{ id: string; name: string; type: string }>("/v1/connections", "connections"),
+    get<{ id: string; name: string; type: string; config?: Record<string, unknown> }>("/v1/connections", "connections"),
     get<ConnectorDef>("/v1/connectors", "connectors"),
     get<{ id: string; name: string; slug?: string }>("/v1/flows", "flows"),
   ]);
@@ -91,7 +96,7 @@ export async function describeContext(cfg: StudioConfig, user: string, text: str
   }
   return {
     ctx: {
-      connections: connections.map((c) => ({ id: c.id, name: c.name, type: c.type })),
+      connections: connections.map((c) => ({ id: c.id, name: c.name, type: c.type, ...(typeof c.config?.authType === "string" ? { authType: c.config.authType } : {}), ...(typeof c.config?.baseUrl === "string" ? { baseUrl: c.config.baseUrl } : {}) })),
       connectors, apis, flows: flows.map((f) => ({ id: f.id, name: f.name, slug: f.slug })),
     },
     notes,
@@ -108,6 +113,7 @@ export function closestMapping(words: string): { phrase: string; example: string
 
 /** Reads the text, checks the mapping words with the full interpreter, and validates the draft. */
 export async function preview(cfg: StudioConfig, user: string, text: string, ctx: DescribeContext, send: Send = runtimeRequest, attach = false): Promise<Omit<DescribePreview, "engine">> {
+  if (looksLikeDocument(text)) return previewDocument(cfg, user, text, ctx, send);
   const result = describeFlow(text, ctx, { compileCondition: conditionByWords, compileValue: valueByWords, attach });
   // mapping words: the flow engine's interpreter first, then the fixed rules here (same as the Mapper)
   for (const ins of result.instructions) {
@@ -153,7 +159,31 @@ export async function preview(cfg: StudioConfig, user: string, text: string, ctx
     if (r.status < 300 && Array.isArray(j?.issues)) issues = j!.issues!;
     else validationError = j?.title ?? `The flow engine answered ${r.status}`;
   } catch (e) { validationError = `The flow engine could not be reached (${(e as Error).message}), so the draft was not checked yet.`; }
-  return { flow: result.flow, lines: result.lines, missing: result.missing, notes: result.notes, ok: result.ok, entry: result.entry, issues, ...(validationError ? { validationError } : {}) };
+  return { mode: "steps", flow: result.flow, lines: result.lines, missing: result.missing, notes: result.notes, ok: result.ok, entry: result.entry, issues, ...(validationError ? { validationError } : {}) };
+}
+
+async function validateDraft(cfg: StudioConfig, user: string, flow: { name: string; description?: string; nodes: unknown[]; edges: unknown[]; settings?: Record<string, unknown> }, send: Send): Promise<{ issues: ValidationIssue[] | null; validationError?: string }> {
+  const slug = slugOf(flow.name);
+  const given = flow.settings ?? {};
+  const draft = {
+    id: "draft-described", name: flow.name, slug, description: flow.description, tags: [], nodes: flow.nodes, edges: flow.edges,
+    settings: { basePath: `/${slug}/v1`, timeoutMs: 60000, logPayloads: true, ...given, gateway: { publish: true, security: "oauth2", version: "v1", ...((given.gateway as object | undefined) ?? {}) } },
+    revision: 1, createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString(),
+  };
+  try {
+    const r = await send(cfg, "POST", "/v1/flows/validate", { flow: draft }, user, 30_000);
+    const j = parse(r.text) as { issues?: ValidationIssue[]; title?: string } | null;
+    if (r.status < 300 && Array.isArray(j?.issues)) return { issues: j!.issues! };
+    return { issues: null, validationError: j?.title ?? `The flow engine answered ${r.status}` };
+  } catch (e) { return { issues: null, validationError: `The flow engine could not be reached (${(e as Error).message}), so the draft was not checked yet.` }; }
+}
+
+/** A whole requirement document: read by the document rules, then checked by the flow engine. Unread prose
+ *  never blocks; only real problems (doc.blocking, e.g. no endpoint) do. */
+export async function previewDocument(cfg: StudioConfig, user: string, text: string, ctx: DescribeContext, send: Send = runtimeRequest): Promise<Omit<DescribePreview, "engine">> {
+  const r = readDocument(text, ctx);
+  const v = await validateDraft(cfg, user, r.flow as never, send);
+  return { mode: "document", flow: r.flow, lines: [], missing: r.missing, notes: r.notes, ok: r.ok, entry: [], doc: r.doc, issues: v.issues, ...(v.validationError ? { validationError: v.validationError } : {}) };
 }
 
 /** What the local model is asked: rewrite the requirement as the step lines this server reads. */
@@ -206,8 +236,14 @@ export async function askModel(dc: DescribeConfig, text: string, ctx: DescribeCo
 function checkText(body: unknown): { text: string } | { error: string } {
   const text = (body as { text?: unknown } | null)?.text;
   if (typeof text !== "string" || !text.trim()) return { error: "Write the steps first, one per line." };
-  if (text.length > MAX_TEXT) return { error: `The description is longer than ${MAX_TEXT} characters. Split it into several flows.` };
-  if (text.split("\n").length > MAX_LINES) return { error: `The description has more than ${MAX_LINES} lines. Split it into several flows.` };
+  const doc = text.length <= MAX_DOC_TEXT && looksLikeDocument(text);
+  if (doc) {
+    if (text.split("\n").length > MAX_DOC_LINES) return { error: `The document has more than ${MAX_DOC_LINES} lines. Paste the part that describes one API (its sections, tables and samples).` };
+    return { text };
+  }
+  if (text.length > MAX_DOC_TEXT) return { error: `The text is longer than ${Math.round(MAX_DOC_TEXT / 1000)} KB. Paste the part that describes one API.` };
+  if (text.length > MAX_TEXT) return { error: `The description is longer than ${MAX_TEXT} characters and does not read like a requirement document (numbered sections, tables, samples). Split the steps into several flows.` };
+  if (text.split("\n").length > MAX_LINES) return { error: `The description has more than ${MAX_LINES} step lines and does not read like a requirement document (numbered sections, tables, samples). Split the steps into several flows.` };
   return { text };
 }
 

@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, BookOpen, CheckCircle2, CircleHelp, Cpu, Plus, XCircle } from "lucide-react";
-import { STEP_PHRASES, type ConnectionTypeDef, type DescribeLine, type FlowNode, type MissingConnection, type StepPhrase } from "@traceit/weave-flow";
+import { STEP_PHRASES, type ConnectionTypeDef, type DescribeLine, type DocumentInfo, type DocRef, type FlowNode, type MissingConnection, type StepPhrase } from "@traceit/weave-flow";
 import { errorText, isUnavailable, studioApi, type DescribePreview } from "../api.ts";
 import { accentOf, useCatalog } from "../catalog.ts";
 import { Badge, Button, Callout, Collapsible, cx, Field, Modal, toast } from "../ui.tsx";
@@ -107,11 +107,87 @@ function MiniCanvas({ preview, focus, onFocus, labelOf }: { preview: DescribePre
   );
 }
 
+const refText = (r: DocRef) => `${r.section || "Document"} · line ${r.line}`;
+const KIND: Record<string, string> = { endpoint: "Endpoint", security: "Security", "request-sample": "Request", "response-sample": "Response", "response-rule": "Response", rule: "Rule", header: "Header", error: "Error", mapping: "Mapping", target: "Target", "target-sample": "Target", nonfunctional: "Non-functional", tests: "Tests" };
+
+/** Document mode: what was taken from the document (each with its section, line and steps), the decisions
+ *  still to take, conflicts with the choice made, rules that need a hand-written step, scenarios, and the
+ *  prose that is not used for steps. Nothing here blocks Create except doc.blocking. */
+function DocumentSections({ doc, nodes, onFocus, focus }: { doc: DocumentInfo; nodes: FlowNode[]; onFocus: (ids: string[]) => void; focus: Set<string> }) {
+  const nameOf = (id: string) => nodes.find((n) => n.id === id)?.name ?? id;
+  const chips = (ids: string[]) => ids.length > 0 && (
+    <div className="ws-dsc-chips">{ids.map((id) => <button key={id} type="button" className={cx("ws-dsc-chip", focus.has(id) && "ws-dsc-chip-on")} data-chip-node={id} onMouseEnter={() => onFocus([id])} onMouseLeave={() => onFocus([])} onFocus={() => onFocus([id])} onBlur={() => onFocus([])}>{txt(nameOf(id))}</button>)}</div>
+  );
+  return (
+    <div className="ws-dsc-doc" data-testid="describe-document">
+      <Collapsible title="Taken from the document" count={doc.items.length} defaultOpen>
+        <ul className="ws-dsc-list" data-testid="doc-items">
+          {doc.items.map((it, k) => (
+            <li key={k} data-doc-item={it.kind} data-nodes={it.nodeIds.join(",")} onMouseEnter={() => onFocus(it.nodeIds)} onMouseLeave={() => onFocus([])}>
+              <div className="ws-dsc-said"><Badge>{KIND[it.kind] ?? it.kind}</Badge><b>{txt(it.title)}</b></div>
+              <div className="ws-dsc-understood">{txt(it.detail)}</div>
+              <div className="ws-dsc-ref">{refText(it.ref)}</div>
+              {chips(it.nodeIds)}
+            </li>
+          ))}
+        </ul>
+      </Collapsible>
+      <Collapsible title="Decisions needed" count={doc.decisions.length} defaultOpen>
+        <p className="mf-help" style={{ margin: 0 }}>Open points from the document. They do not block the draft; where one changes what was built, the choice made is shown.</p>
+        <ul className="ws-dsc-list" data-testid="doc-decisions">
+          {doc.decisions.map((d) => (
+            <li key={d.id} data-decision={d.id} onMouseEnter={() => onFocus(d.affects ? [d.affects] : [])} onMouseLeave={() => onFocus([])}>
+              <div className="ws-dsc-said"><Badge tone="warn">{txt(d.id)}</Badge><span>{txt(d.text)}</span></div>
+              <div className="ws-dsc-understood">{txt(d.status)}{d.owner ? ` · ${txt(d.owner)}` : ""}</div>
+              <div className="ws-dsc-choice">{d.choice ? <>Built as: {txt(d.choice)}</> : "Nothing built depends on it yet."}</div>
+              <div className="ws-dsc-ref">{refText(d.ref)}</div>
+            </li>
+          ))}
+        </ul>
+      </Collapsible>
+      {doc.conflicts.length > 0 && (
+        <Collapsible title="Conflicts in the document" count={doc.conflicts.length} defaultOpen>
+          <ul className="ws-dsc-list" data-testid="doc-conflicts">
+            {doc.conflicts.map((c, k) => (
+              <li key={k} data-conflict={k}>
+                <div className="ws-dsc-msg ws-dsc-warn"><AlertTriangle size={13} aria-hidden /><span>{txt(c.text)}</span></div>
+                <div className="ws-dsc-choice">Choice made: {txt(c.choice)}</div>
+                <div className="ws-dsc-ref">{c.refs.map(refText).join(" · ")}</div>
+              </li>
+            ))}
+          </ul>
+        </Collapsible>
+      )}
+      {doc.handWritten.length > 0 && (
+        <Collapsible title="Needs a hand-written step" count={doc.handWritten.length} defaultOpen>
+          <ul className="ws-dsc-list" data-testid="doc-handwritten">
+            {doc.handWritten.map((h, k) => <li key={k}><div><b>{txt(h.text)}</b></div><div className="ws-dsc-understood">{txt(h.why)}</div><div className="ws-dsc-ref">{refText(h.ref)}</div></li>)}
+          </ul>
+        </Collapsible>
+      )}
+      {doc.scenarios.length > 0 && (
+        <Collapsible title="Test scenarios from the document" count={doc.scenarios.length}>
+          <p className="mf-help" style={{ margin: 0 }}>Kept with the flow's listener (testScenarios), with made-up e-mail and numbers. Expected answer in brackets.</p>
+          <ul className="ws-dsc-list" data-testid="doc-scenarios">
+            {doc.scenarios.map((sc) => <li key={sc.id} data-scenario={sc.id} data-derived={sc.derived ? "yes" : "no"}><b>{txt(sc.id)}</b> {txt(sc.title)} <span className="ws-dsc-understood">({sc.expect.status || "?"}{sc.expect.code ? ` ${sc.expect.code}` : ""})</span>{!sc.derived && <Badge tone="warn">inputs not derived</Badge>}</li>)}
+          </ul>
+        </Collapsible>
+      )}
+      <Collapsible title="Not used for steps" count={doc.notUsed.length}>
+        <ul className="ws-dsc-list" data-testid="doc-notused">
+          {doc.notUsed.map((n, k) => <li key={k}><b>{txt(n.section)}</b> <span className="ws-dsc-understood">{txt(n.reason)}</span></li>)}
+        </ul>
+      </Collapsible>
+    </div>
+  );
+}
+
 export function DescribeDialog({ mode, onClose, onAdd }: { mode: "new" | "add"; onClose: () => void; onAdd?: (p: DescribePreview) => void }) {
   const catalog = useCatalog();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const info = useQuery({ queryKey: ["studio", "describe-info"], queryFn: studioApi.describeInfo, retry: 0, staleTime: 60_000 });
+  const conns = useQuery({ queryKey: ["studio", "connections"], queryFn: studioApi.connections, retry: 0, staleTime: 15_000 });
   const [text, setText] = useState("");
   const [ownText, setOwnText] = useState<string | null>(null);
   const [preview, setPreview] = useState<DescribePreview | null>(null);
@@ -120,6 +196,7 @@ export function DescribeDialog({ mode, onClose, onAdd }: { mode: "new" | "add"; 
   const [name, setName] = useState("");
   const [focusLine, setFocusLine] = useState<number | null>(null);
   const [focusNode, setFocusNode] = useState<string | null>(null);
+  const [focusIds, setFocusIds] = useState<string[]>([]);
   const [newConn, setNewConn] = useState<MissingConnection | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -135,7 +212,7 @@ export function DescribeDialog({ mode, onClose, onAdd }: { mode: "new" | "add"; 
     onError: (e) => setProblem(errorText(e)),
   });
   const create = useMutation({
-    mutationFn: () => studioApi.createFlow({ name: name.trim() || preview!.flow.name, description: preview!.flow.description, flow: { nodes: preview!.flow.nodes, edges: preview!.flow.edges, ...(preview!.flow.description ? { description: preview!.flow.description } : {}) }, origin: { kind: "blank", ref: "described" } }),
+    mutationFn: () => studioApi.createFlow({ name: name.trim() || preview!.flow.name, description: preview!.flow.description, flow: { nodes: preview!.flow.nodes, edges: preview!.flow.edges, ...(preview!.flow.settings ? { settings: preview!.flow.settings as never } : {}), ...(preview!.flow.description ? { description: preview!.flow.description } : {}) }, origin: { kind: "blank", ref: preview!.mode === "document" ? "document" : "described" } }),
     onSuccess: (f) => { void qc.invalidateQueries({ queryKey: ["studio", "flows"] }); toast("Draft flow created. It is not live until you deploy it."); onClose(); navigate(`/studio/flows/${encodeURIComponent(f.id)}`); },
     onError: (e) => setProblem(errorText(e)),
   });
@@ -150,11 +227,13 @@ export function DescribeDialog({ mode, onClose, onAdd }: { mode: "new" | "add"; 
     const s = new Set<string>();
     if (focusLine !== null) for (const id of preview?.lines.find((l) => l.line === focusLine)?.nodeIds ?? []) s.add(id);
     if (focusNode) s.add(focusNode);
+    for (const id of focusIds) s.add(id);
     return s;
-  }, [focusLine, focusNode, preview]);
+  }, [focusLine, focusNode, focusIds, preview]);
   const linesOfFocusNode = useMemo(() => new Set(focusNode ? (preview?.lines ?? []).filter((l) => l.nodeIds.includes(focusNode)).map((l) => l.line) : []), [focusNode, preview]);
   const busy = read.isPending || model.isPending;
-  const canAccept = !!preview && preview.flow.nodes.length > 0 && bad === 0;
+  const isDoc = preview?.mode === "document";
+  const canAccept = !!preview && preview.flow.nodes.length > 0 && (isDoc ? preview.ok && !(preview.doc?.blocking.length) : bad === 0);
   const useSuggestion = (line: number, example: string) => {
     const all = text.split("\n");
     const lead = /^\s*/.exec(all[line - 1] ?? "")?.[0] ?? "";
@@ -188,7 +267,7 @@ export function DescribeDialog({ mode, onClose, onAdd }: { mode: "new" | "add"; 
 
   return (
     <Modal title={mode === "new" ? "Describe the flow" : "Add steps from a description"} onClose={onClose} width={1180} footer={footer}
-      subtitle="Write what should happen, one step per line. It is read on this server by fixed rules; nothing is sent anywhere and nothing is saved until you accept.">
+      subtitle="Write what should happen, one step per line, or paste a whole requirement document. It is read on this server by fixed rules; nothing is sent anywhere and nothing is saved until you accept.">
       <div className="ws-dsc" data-testid="describe-dialog" data-stage={stage}>
         {stage === "write" && (
           <div className="ws-dsc-write">
@@ -203,21 +282,30 @@ export function DescribeDialog({ mode, onClose, onAdd }: { mode: "new" | "add"; 
         )}
         {stage === "preview" && preview && (
           <div className="ws-dsc-preview">
-            <div className="ws-dsc-summary" data-testid="describe-summary" data-bad={bad} data-warnings={warns} data-steps={preview.flow.nodes.length}>
+            {isDoc && preview.doc && (
+              <div className="ws-dsc-summary" data-testid="describe-doc-summary" data-steps={preview.flow.nodes.length} data-decisions={preview.doc.decisions.length} data-conflicts={preview.doc.conflicts.length} data-handwritten={preview.doc.handWritten.length} data-blocking={preview.doc.blocking.length}>
+                {preview.doc.blocking.length ? <XCircle size={16} className="ws-dsc-bad" aria-hidden /> : <CheckCircle2 size={16} className="ws-dsc-ok" aria-hidden />}
+                <span>Read as a <b>requirement document</b>: <b>{preview.flow.nodes.length} steps</b> · {preview.doc.items.length} items taken · {preview.doc.decisions.length} decisions needed · {preview.doc.conflicts.length} conflict{preview.doc.conflicts.length === 1 ? "" : "s"} · {preview.doc.handWritten.length} need a hand-written step · {preview.doc.scenarios.length} test scenarios</span>
+              </div>
+            )}
+            {isDoc && preview.doc && preview.doc.blocking.length > 0 && <Callout tone="bad" title="This stops the draft">{preview.doc.blocking.map((b) => <div key={b}>{txt(b)}</div>)}</Callout>}
+            {!isDoc && <div className="ws-dsc-summary" data-testid="describe-summary" data-bad={bad} data-warnings={warns} data-steps={preview.flow.nodes.length}>
               {bad > 0 ? <XCircle size={16} className="ws-dsc-bad" aria-hidden /> : <CheckCircle2 size={16} className="ws-dsc-ok" aria-hidden />}
               <span><b>{preview.flow.nodes.length} step{preview.flow.nodes.length === 1 ? "" : "s"}</b> from {lines.filter((l) => l.role !== "comment").length} line{lines.length === 1 ? "" : "s"}
                 {bad > 0 && <> · <b className="ws-dsc-bad">{bad} not understood</b></>}{warns > 0 && <> · {warns} to check</>}
                 {preview.engine === "local-model" && <> · drafted by the local model</>}</span>
-            </div>
+            </div>}
             {mode === "new" && <Field label="Flow name" htmlFor="ws-describe-name"><input id="ws-describe-name" className="mf-control" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} /></Field>}
             {preview.engine === "local-model" && ownText !== null && <Callout tone="info" title="The local model rewrote your text as these lines">They were read by the same rules as typed lines. <Button size="sm" onClick={() => { setText(ownText); setOwnText(null); setStage("write"); }}>Back to my own words</Button></Callout>}
             {preview.missing.length > 0 && (
-              <Callout tone="warn" title={`Connection${preview.missing.length === 1 ? "" : "s"} still missing`}>
+              <Callout tone="warn" title={preview.missing.every((m) => m.existingId) ? `Connection${preview.missing.length === 1 ? "" : "s"} to adjust` : `Connection${preview.missing.length === 1 ? "" : "s"} still missing`}>
                 <ul className="ws-dsc-missing" data-testid="describe-missing">
                   {preview.missing.map((m) => (
-                    <li key={m.key} data-missing={m.name} data-missing-type={m.type}>
-                      <span><b>{txt(m.name)}</b> ({types.find((t) => t.type === m.type)?.label ?? m.type}, line {m.lines.join(", ")}): {txt(m.why)}</span>
-                      <Button size="sm" icon={Plus} onClick={() => setNewConn(m)} data-action="describe-new-connection">New connection…</Button>
+                    <li key={m.key} data-missing={m.name} data-missing-type={m.type} data-missing-existing={m.existingId ? "yes" : "no"}>
+                      <span><b>{txt(m.name)}</b> ({types.find((t) => t.type === m.type)?.label ?? m.type}, line {m.lines.join(", ")}): {txt(m.why)}{m.suggested?.config && <> Pre-filled: {Object.entries(m.suggested.config).filter(([k]) => k !== "timeoutMs").map(([k, v]) => `${k} ${String(v)}`).join(" · ")}.</>}</span>
+                      {m.existingId
+                        ? <Button size="sm" onClick={() => setNewConn(m)} data-action="describe-edit-connection" disabled={!conns.data?.connections.some((c) => c.id === m.existingId)}>Edit connection…</Button>
+                        : <Button size="sm" icon={Plus} onClick={() => setNewConn(m)} data-action="describe-new-connection">New connection…</Button>}
                     </li>
                   ))}
                 </ul>
@@ -225,7 +313,8 @@ export function DescribeDialog({ mode, onClose, onAdd }: { mode: "new" | "add"; 
               </Callout>
             )}
             <div className="ws-dsc-cols">
-              <ol className="ws-dsc-lines" data-testid="describe-lines" aria-label="Your lines and what was understood">
+              {isDoc && preview.doc && <DocumentSections doc={preview.doc} nodes={preview.flow.nodes} onFocus={setFocusIds} focus={focus} />}
+              {!isDoc && <ol className="ws-dsc-lines" data-testid="describe-lines" aria-label="Your lines and what was understood">
                 {lines.map((l) => {
                   const st = STATUS[l.status];
                   return (
@@ -257,7 +346,7 @@ export function DescribeDialog({ mode, onClose, onAdd }: { mode: "new" | "add"; 
                     </li>
                   );
                 })}
-              </ol>
+              </ol>}
               <div className="ws-dsc-right">
                 {preview.flow.nodes.length > 0 ? <MiniCanvas preview={preview} focus={focus} onFocus={setFocusNode} labelOf={labelOf} /> : <Callout tone="warn">No step could be made from this text yet.</Callout>}
                 {preview.issues === null
@@ -281,8 +370,8 @@ export function DescribeDialog({ mode, onClose, onAdd }: { mode: "new" | "add"; 
         )}
       </div>
       {newConn && (
-        <ConnectionDialog existing={null} types={types} fixedType={types.some((t) => t.type === newConn.type) ? newConn.type : undefined}
-          initialName={newConn.name} initialConfig={newConn.suggested?.baseUrl ? { baseUrl: newConn.suggested.baseUrl } : undefined}
+        <ConnectionDialog existing={newConn.existingId ? conns.data?.connections.find((c) => c.id === newConn.existingId) ?? null : null} types={types} fixedType={types.some((t) => t.type === newConn.type) ? newConn.type : undefined}
+          initialName={newConn.name} initialConfig={newConn.suggested?.config ?? (newConn.suggested?.baseUrl ? { baseUrl: newConn.suggested.baseUrl } : undefined)}
           onClose={() => setNewConn(null)} onSaved={() => { setNewConn(null); read.mutate(undefined); }} />
       )}
     </Modal>

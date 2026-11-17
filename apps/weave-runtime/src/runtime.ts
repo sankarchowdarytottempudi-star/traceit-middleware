@@ -15,7 +15,7 @@ import { HttpClient, readBody } from "./clients/http.js";
 import { DataClients, type ResolvedConnection } from "./clients/data.js";
 import { ENGINE_LABEL, explain as explainSql, connectProblem, whereOf } from "./clients/sqldb.js";
 import { Engine, lowerKeys, type FlowResponse, type RuntimeRequest } from "./engine/engine.js";
-import { authHeaders, joinUrl, matchRoutes, triggerRoutes, type TriggerRoute } from "./engine/nodes.js";
+import { authHeaders, forgetToken, joinUrl, matchRoutes, triggerRoutes, type TriggerRoute } from "./engine/nodes.js";
 import { buildCatalog, templateGraph } from "./catalog.js";
 import { SLUG_RE, validateFlow, type ValidateCtx } from "./validate.js";
 import { applyMapping, diffJson, type InstructionCompiler } from "./mapping/apply.js";
@@ -477,8 +477,9 @@ export class Runtime {
     const secretKeys = new Set(def.fields.filter((f) => f.secret).map((f) => f.key));
     const config: Record<string, unknown> = {};
     const secrets: Record<string, string> = { ...(existing?.secrets ?? {}) };
-    const put = (k: string, v: unknown) => { if (v === null || v === "") delete secrets[k]; else if (v !== undefined) secrets[k] = this.box.encrypt(String(v)); };
-    for (const [k, v] of Object.entries(req.config ?? existing?.config ?? {})) { if (secretKeys.has(k)) put(k, v); else config[k] = v; }   // a secret sent in config is still stored encrypted
+    // pasted secrets often carry spaces or a line break: they are trimmed (an empty result clears the field)
+    const put = (k: string, v: unknown) => { const t = v === null || v === undefined ? v : String(v).trim(); if (t === null || t === "") delete secrets[k]; else if (t !== undefined) secrets[k] = this.box.encrypt(t); };
+    for (const [k, v] of Object.entries(req.config ?? existing?.config ?? {})) { if (secretKeys.has(k)) put(k, v); else config[k] = typeof v === "string" ? v.trim() : v; }   // a secret sent in config is still stored encrypted
     for (const [k, v] of Object.entries(req.secrets ?? {})) { if (!secretKeys.has(k)) throw new Problem(400, "Bad request", `"${k}" is not a secret field of a ${type} connection`); put(k, v); }
     for (const f of def.fields) if (f.required && !f.secret && (config[f.key] === undefined || config[f.key] === null || String(config[f.key]).trim() === "")) throw new Problem(400, "Bad request", `"${f.label}" is required`);
     const now = new Date().toISOString();
@@ -528,11 +529,13 @@ export class Runtime {
         const url = joinUrl(String(conn.config.baseUrl ?? ""), String(conn.config.healthPath ?? ""));
         const headers: Record<string, string> = { accept: "*/*" };
         for (const kv of Array.isArray(conn.config.defaultHeaders) ? (conn.config.defaultHeaders as { key?: string; value?: unknown }[]) : []) if (kv?.key && typeof kv.value === "string" && !kv.value.includes("{{")) headers[kv.key.toLowerCase()] = kv.value;
-        Object.assign(headers, await authHeaders(conn, this.http));
+        let tokenNote = "";
+        if (conn.config.authType === "oauth2refresh") { forgetToken(conn); Object.assign(headers, await authHeaders(conn, this.http, new Set(secretValues))); tokenNote = "Got an access token with the refresh token. "; }
+        else Object.assign(headers, await authHeaders(conn, this.http));
         const r = await this.http.request({ method: "GET", url, headers, timeoutMs: Math.min(Number(conn.config.timeoutMs) || 10_000, 15_000), tlsVerify: conn.config.tlsVerify !== false, maxBytes: 5 * 1024 * 1024 });
         const strict = !!conn.config.healthPath;
         const ok = strict ? r.status < 400 : r.status < 500;
-        return { ok, ms: r.ms, detail: ok ? `Reached ${url} (HTTP ${r.status})${!strict && r.status >= 400 ? ". The server answered, but with an error status for the base URL; set a health check path for a stricter test." : ""}` : `${url} answered HTTP ${r.status}` };
+        return { ok, ms: r.ms, detail: tokenNote + (ok ? `Reached ${url} (HTTP ${r.status})${!strict && r.status >= 400 ? ". The server answered, but with an error status for the base URL; set a health check path for a stricter test." : ""}` : `${url} answered HTTP ${r.status}`) };
       }
       if (conn.type === "redis") {
         const client = await this.data.openRedis(conn);

@@ -11,6 +11,8 @@ const s = new Session(opts);
 const page = await s.start();
 const settle = (ms = 400) => page.waitForTimeout(ms);
 const name = `${prefix}-describe-${stamp()}`;
+// a system name no connection on the server can have, so it is always offered as missing
+const SYS = `Crm${stamp()}`;
 const dialog = () => page.locator('[data-testid="describe-dialog"]');
 const line = (n) => page.locator(`[data-testid="describe-lines"] [data-line="${n}"]`);
 let flowId;
@@ -35,8 +37,8 @@ try {
   const text = [
     `${name}:`,
     "When POST /guests/check arrives",
-    "Look up the contact in Zoho by email",
-    "If not found, create the contact in Zoho with first name, last name, email",
+    `Look up the contact in ${SYS} by email`,
+    `If not found, create the contact in ${SYS} with first name, last name, email`,
     "Log \"guest checked\"",
     "Answer 201 with the contact id",
   ].join("\n");
@@ -61,12 +63,12 @@ try {
   await answerNode.hover();
   await settle(200);
   s.check(await line(6).evaluate((el) => el.classList.contains("ws-dsc-line-on")), "pointing at a step lights up its line");
-  s.step("2b. Zoho is not a connection here yet: it is listed with \"New connection…\"");
-  const missing = page.locator('[data-testid="describe-missing"] [data-missing="Zoho"]');
-  s.check(await missing.count() === 1, "the missing Zoho connection is listed, with the lines that need it");
+  s.step("2b. The CRM is not a connection here yet: it is listed with \"New connection…\"");
+  const missing = page.locator(`[data-testid="describe-missing"] [data-missing="${SYS}"]`);
+  s.check(await missing.count() === 1, "the missing CRM connection is listed, with the lines that need it");
   await missing.locator('[data-action="describe-new-connection"]').click();
   await page.locator('[data-testid="connection-form"]').waitFor();
-  s.check((await page.locator("#ws-conn-name").inputValue()) === "Zoho" && (await page.locator("#ws-conn-type").inputValue()) === "http", "the connection form opens with the name and the kind filled in");
+  s.check((await page.locator("#ws-conn-name").inputValue()) === SYS && (await page.locator("#ws-conn-type").inputValue()) === "http", "the connection form opens with the name and the kind filled in");
   await s.shot("new-connection");
   await page.getByRole("dialog").last().getByRole("button", { name: "Cancel", exact: true }).click();
   s.check(await page.locator('[data-testid="describe-issues"]').count() === 1, "the flow engine's check is shown");

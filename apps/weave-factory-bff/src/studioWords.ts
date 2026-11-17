@@ -4,6 +4,7 @@
 // runs. A sentence that is not recognised is reported as not understood, never guessed at
 // silently. Used by studio.ts only when the flow engine has no answer of its own.
 import { randomBytes } from "node:crypto";
+import { readValueTable } from "@traceit/weave-flow";
 
 export interface WordsRequest { instruction: string; target?: string; sampleSource?: unknown; desiredValue?: unknown; }
 export interface CompiledWords { expr: string; explanation: string; confidence: "exact" | "guessed"; engine: "rules"; }
@@ -96,6 +97,11 @@ export function suggestionsFor(field?: string, second?: string): string[] {
 }
 
 export function compileWords(req: WordsRequest): WordsOutcome {
+  // tables of codes: the same strict rule as the flow engine; what it cannot read is not understood, never guessed
+  const table = readValueTable(String(req?.instruction ?? ""));
+  if (table) return table.ok
+    ? { ok: true, compiled: { expr: table.expr, explanation: table.explanation, confidence: "exact", engine: "rules" }, understood: [table.source.kind === "header" ? `the request header ${table.source.name}` : `the field ${table.source.name}`], suggestions: [], fields: table.source.kind === "field" ? [table.source.name] : [] }
+    : { ok: false, compiled: null, understood: [], reason: table.reason, suggestions: table.suggestions, fields: [] };
   const raw = String(req?.instruction ?? "").replace(/\s+/g, " ").trim();
   const fields = sourceFields(req?.sampleSource);
   const hasSample = fields.length > 0;
@@ -702,6 +708,8 @@ export function compileWords(req: WordsRequest): WordsOutcome {
       (m = find(String.raw`\bdefault\w*\s*(?:to|is|of|value|=|:)?\s*(?:is\s+|of\s+)?${VAL}`)) ||
       (m = find(String.raw`\b(?:otherwise|else|or\s+else)\s+(?:use\s+)?${VAL}`)) ||
       (m = find(String.raw`\bor\s+${VAL}\s+(?:if|when)\s+(?:it\s+is\s+|it's\s+)?(?:empty|missing|blank|null|not\s+(?:there|present|given|set))`))) {
+    // an unquoted value longer than three words would be cut short: say so instead of guessing
+    if (!/^[#@]/.test(m[1]) && /^\s+[A-Za-z]/.test(work.slice((m.index ?? 0) + m[0].length).replace(/^\s*@\d+@/, ""))) return fail(`The value after "${m[0].trim().split(/\s+/)[0]}" has more than three words. Put it in quotes, for example: default "Not given by the guest" (field).`);
     const v = val(m[1]);
     if (v) { eat(m); cur = `( $v := ${cur}; ($exists($v) and $v != null and $v != "") ? $v : ${v.expr} )`; steps.push(`When there is no value, use ${v.say}.`); acted = true; }
   }

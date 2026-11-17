@@ -1,0 +1,60 @@
+/* "Describe the flow" dialog: the text, the "What you can write" list and the preview. */
+.ws-dsc { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.ws-dsc-write { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ws-dsc-text { min-height: 220px; resize: vertical; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
+.ws-dsc-help { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px 18px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); min-width: 0; }
+.ws-dsc-help > p { grid-column: 1 / -1; }
+.ws-dsc-help-group { min-width: 0; }
+.ws-dsc-help-group h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.ws-dsc-help-group ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ws-dsc-help-group li { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.ws-dsc-help-phrase { font-size: 13px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.ws-dsc-help-ex { margin: 0; padding: 6px 8px; max-width: 100%; border-radius: 7px; background: var(--surface); border: 1px solid var(--border); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; line-height: 1.5; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ws-dsc-preview { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ws-dsc-summary { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); flex-wrap: wrap; }
+.ws-dsc-ok { color: var(--ok); }
+.ws-dsc-bad { color: var(--bad); }
+.ws-dsc-warn { color: var(--warn); }
+.ws-dsc-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; align-items: start; min-width: 0; }
+.ws-dsc-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; position: sticky; top: 0; }
+.ws-dsc-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ws-dsc-line { display: flex; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); min-width: 0; }
+.ws-dsc-line-not-understood { border-color: var(--bad); background: var(--badSoft); }
+.ws-dsc-line-warning { border-color: var(--warn); }
+.ws-dsc-line-ignored { opacity: .7; }
+.ws-dsc-line-on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accentWash); }
+.ws-dsc-num { flex: 0 0 auto; min-width: 22px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--faint); padding-top: 2px; text-align: right; }
+.ws-dsc-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.ws-dsc-said { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.ws-dsc-said code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; flex: 1 1 200px; }
+.ws-dsc-understood { font-size: 12px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.ws-dsc-msg { display: flex; gap: 6px; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.ws-dsc-msg svg { flex: 0 0 auto; margin-top: 2px; }
+.ws-dsc-sugg { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
+.ws-dsc-sugg ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.ws-dsc-sugg li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; min-width: 0; }
+.ws-dsc-sugg li > span { min-width: 0; overflow-wrap: anywhere; }
+.ws-dsc-sugg code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; color: var(--muted); }
+.ws-dsc-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ws-dsc-chip { border: 1px solid var(--border); background: var(--surface2); color: var(--text); border-radius: 999px; padding: 1px 8px; font-size: 11.5px; cursor: default; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-dsc-chip-on { border-color: var(--accent); background: var(--accentWash); }
+.ws-dsc-missing { margin: 4px 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.ws-dsc-missing li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; overflow-wrap: anywhere; }
+.ws-dsc-missing li > span { min-width: 0; flex: 1 1 240px; }
+.ws-dsc-canvas { overflow: auto; max-width: 100%; max-height: 460px; border: 1px solid var(--border); border-radius: 12px; background: var(--ws-canvas, var(--surface2)); padding: 4px; }
+.ws-dsc-edges { position: absolute; inset: 0; pointer-events: none; }
+.ws-dsc-edges path { fill: none; stroke: var(--border2); stroke-width: 1.6; }
+.ws-dsc-edges text { font-size: 10px; fill: var(--muted); }
+.ws-dsc-edge-err path { stroke: var(--bad); stroke-dasharray: 4 3; }
+.ws-dsc-node { position: absolute; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 6px 10px 6px 12px; border: 1px solid var(--border); border-left: 4px solid var(--chip, var(--border2)); border-radius: 9px; background: var(--surface); color: var(--text); text-align: left; cursor: default; overflow: hidden; }
+.ws-dsc-node-on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accentWash); }
+.ws-dsc-node-type { font-size: 10.5px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-dsc-node-name { font-size: 12.5px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-dsc-node-lines { font-size: 10px; color: var(--faint); }
+.ws-dsc-issues { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .ws-dsc-cols { grid-template-columns: minmax(0, 1fr); }
+  .ws-dsc-right { position: static; }
+  .ws-dsc-help { grid-template-columns: minmax(0, 1fr); }
+  .ws-dsc-canvas { max-height: 340px; }
+}

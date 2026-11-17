@@ -3,7 +3,7 @@
 // snapshots. Components subscribe with useEditor(selector).
 import { createContext, useContext, useSyncExternalStore } from "react";
 import { applyEdgeChanges, applyNodeChanges, type EdgeChange, type NodeChange } from "@xyflow/react";
-import type { Execution, Flow, FlowSettings, NodeTypeDef, StepTrace, ValidationIssue } from "@traceit/weave-flow";
+import type { Execution, Flow, FlowEdge, FlowNode, FlowSettings, NodeTypeDef, StepTrace, ValidationIssue } from "@traceit/weave-flow";
 import {
   autoLayout, canConnect, copySelection, createNode, estimateHeight, flowToGraph, graphToDoc, graphToFlow, localIssues, makeEdge,
   mergeIssues, needsLayout, pasteClip, pruneEdges, firstFreePort, toWsNode, NODE_W, NOTE_TYPE,
@@ -315,6 +315,31 @@ export class EditorStore {
     if (!clip) return 0;
     const r = pasteClip(clip, this.state.nodes, this.state.edges, { x: 40, y: 72 });
     this.set({ nodes: r.nodes, edges: r.edges, selection: r.added });
+    this.commit();
+    return r.added.length;
+  }
+  /** Adds a ready-made group of steps (from "Describe the flow"): fresh ids and unique names, placed after the
+   *  selected step (and connected to it when `entry` names the first steps) or below the canvas. */
+  addGraph(nodes: FlowNode[], edges: FlowEdge[], entry: string[] = []): number {
+    if (this.state.readOnly || !nodes.length) return 0;
+    const cur = this.state.nodes;
+    const steps = cur.filter((n) => n.type === "step");
+    const sel = cur.filter((n) => n.selected && n.type === "step");
+    const anchor = sel.length === 1 ? sel[0] : undefined;
+    const minX = Math.min(...nodes.map((n) => n.position.x)), minY = Math.min(...nodes.map((n) => n.position.y));
+    const at = anchor ? { x: anchor.position.x + NODE_W + 68, y: anchor.position.y }
+      : steps.length ? { x: Math.min(...steps.map((n) => n.position.x)), y: Math.max(...steps.map((n) => n.position.y)) + 220 } : { x: minX, y: minY };
+    const r = pasteClip({ nodes, edges }, cur, this.state.edges, { x: at.x - minX, y: at.y - minY });
+    let nextEdges = r.edges;
+    if (anchor && entry.length) {
+      const map = new Map(nodes.map((n, i) => [n.id, r.added[i]]));
+      for (const e of entry) {
+        const to = map.get(e);
+        const port = firstFreePort(anchor, nextEdges, this.defOf(anchor.data.type));
+        if (to && port && canConnect(r.nodes, nextEdges, anchor.id, port, to, this.defOf).ok) nextEdges = [...nextEdges, makeEdge(anchor.id, port, to, nextEdges)];
+      }
+    }
+    this.set({ nodes: r.nodes, edges: nextEdges, selection: r.added });
     this.commit();
     return r.added.length;
   }

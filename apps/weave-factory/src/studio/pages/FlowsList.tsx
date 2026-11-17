@@ -2,7 +2,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, FileUp, LayoutGrid, List, MoreHorizontal, Plus, Search, Server, Trash2, Workflow } from "lucide-react";
+import { Copy, Download, FileUp, LayoutGrid, List, MoreHorizontal, PenLine, Plus, Search, Server, Trash2, Workflow } from "lucide-react";
 import type { Flow, FlowSummary } from "@traceit/weave-flow";
 import { errorText, isUnavailable, studioApi, type EstateApi } from "../api.ts";
 import { estateTotals } from "../migrated.ts";
@@ -12,6 +12,7 @@ import { txt } from "../../lib/text.ts";
 import { deploymentBadge } from "../editor/DeployDialog.tsx";
 import { Unreachable } from "../editor/Executions.tsx";
 import { statusLabel, statusTone } from "../editor/RunViews.tsx";
+import { DescribeDialog } from "../editor/DescribeDialog.tsx";
 
 const ORIGIN_LABEL: Record<string, string> = { template: "from a template", migrated: "migrated", clone: "copied from a migrated service" };
 const gatewayUrlOf = (f: FlowSummary) => (f.deployment?.status === "deployed" && f.deployment.gateway?.status === "published" ? f.deployment.gateway.url ?? "" : "");
@@ -189,6 +190,7 @@ export function FlowsListPage() {
   const [view, setView] = useState<"cards" | "table">(() => { try { return localStorage.getItem("weave-flows-view") === "table" ? "table" : "cards"; } catch { return "cards"; } });
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [describing, setDescribing] = useState(false);
   const setViewKept = (v: "cards" | "table") => { setView(v); try { localStorage.setItem("weave-flows-view", v); } catch { /* not kept */ } };
   const all = q.data?.flows ?? [];
   const flows = useMemo(() => {
@@ -200,7 +202,7 @@ export function FlowsListPage() {
   return (
     <div className="mf-stack ws-page" style={{ gap: 20 }}>
       <StudioHeader area="Build" title="Flows" subtitle="Design how data moves between your systems, test it step by step, and put it live on the gateway."
-        actions={<><Button icon={FileUp} onClick={() => setImporting(true)} data-action="import">Import</Button><Button variant="primary" icon={Plus} onClick={() => setCreating(true)} data-action="new-flow">New flow</Button></>} />
+        actions={<><Button icon={FileUp} onClick={() => setImporting(true)} data-action="import">Import</Button><Button icon={PenLine} onClick={() => setDescribing(true)} data-action="describe-flow" title="Write the steps in your own words, one per line; see the flow before it is created">Describe a flow</Button><Button variant="primary" icon={Plus} onClick={() => setCreating(true)} data-action="new-flow">New flow</Button></>} />
       {q.data && totals && (estateQ.data?.apis?.length ?? 0) > 0 && (
         <p className="mf-help ws-totals" style={{ margin: 0 }} data-testid="flows-totals" data-total={totals.total}>
           <strong>{totals.total} in total:</strong> {totals.text}. <a href="#migrated-services">Go to the migrated services</a>
@@ -209,7 +211,7 @@ export function FlowsListPage() {
       )}
       {q.isError && !q.data && <Unreachable error={q.error} what="Your flows" onRetry={() => void q.refetch()} />}
       {q.isLoading && <Spinner label="Loading flows…" />}
-      {q.data && all.length === 0 && <Empty icon={Workflow} title="No flows yet" hint="A flow receives a request (or runs on a schedule), calls your systems, reshapes the data and answers. Create your first one, or open a migrated service below to see a real example." action={<Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>New flow</Button>} />}
+      {q.data && all.length === 0 && <Empty icon={Workflow} title="No flows yet" hint="A flow receives a request (or runs on a schedule), calls your systems, reshapes the data and answers. Create your first one, or open a migrated service below to see a real example." action={<span className="mf-hstack" style={{ flexWrap: "wrap", justifyContent: "center" }}><Button icon={PenLine} onClick={() => setDescribing(true)}>Describe a flow</Button><Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>New flow</Button></span>} />}
       {all.length > 0 && (
         <section className="mf-stack" data-testid="flows">
           <h2 className="ws-h2">Built here ({all.length})</h2>
@@ -251,6 +253,7 @@ export function FlowsListPage() {
       <MigratedApis />
       {creating && <NewFlowDialog onClose={() => setCreating(false)} />}
       {importing && <ImportDialog onClose={() => setImporting(false)} />}
+      {describing && <DescribeDialog mode="new" onClose={() => setDescribing(false)} />}
     </div>
   );
 }

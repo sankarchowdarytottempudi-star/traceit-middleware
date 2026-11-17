@@ -7,6 +7,7 @@ import type {
   Execution, ExecutionSummary, Flow, FlowDeployment, FlowSummary, FlowVersion, HttpRequestSample, InvokeRequest,
   InvokeResponse, Json, LogLine, MappingPreviewResponse, MappingRule, MappingSpec, SaveConnectionRequest, StatsResponse,
   StepTrace, TestFlowRequest, TestNodeRequest, TestNodeResponse, ValidationIssue,
+  DescribeLine, DescribedFlow, MissingConnection, StepPhrase,
 } from "@traceit/weave-flow";
 
 export class ApiError extends Error {
@@ -91,6 +92,14 @@ export interface EstateApiDetail extends Omit<EstateApi, "operations" | "connect
 }
 export interface EstateLogLine { at?: string; level?: string; text: string; }
 
+// ---- "Describe the flow", served by the Factory BFF (read by fixed rules on the server; nothing is saved)
+export interface DescribePreview {
+  engine: "rules" | "local-model";
+  flow: DescribedFlow; lines: DescribeLine[]; missing: MissingConnection[]; notes: string[]; ok: boolean; entry: string[];
+  issues: ValidationIssue[] | null; validationError?: string; modelText?: string;
+}
+export interface DescribeInfo { phrases: StepPhrase[]; model: { enabled: boolean; configured: boolean }; }
+
 export const studioApi = {
   health: () => call<HealthResponse>("GET", `${S}/healthz`),
   catalog: () => call<CatalogResponse>("GET", `${S}/catalog`),
@@ -145,6 +154,9 @@ export const studioApi = {
   estateApi: (api: string) => call<EstateApiDetail>("GET", `${F}/estate/${enc(api)}`),
   estateFlow: (api: string, operation?: string) => call<Flow>("GET", `${F}/estate/${enc(api)}/flow${qs({ operation })}`),
   estateLogs: (api: string, p: { tail?: number; q?: string } = {}) => call<{ lines: EstateLogLine[] }>("GET", `${F}/estate/${enc(api)}/logs${qs(p)}`),
+  describeInfo: () => call<DescribeInfo>("GET", `${F}/describe`),
+  describePreview: (text: string, mode: "new" | "add" = "new") => call<DescribePreview>("POST", `${F}/describe/preview`, { text, mode }),
+  describeModel: (text: string, mode: "new" | "add" = "new") => call<DescribePreview>("POST", `${F}/describe/model`, { text, mode }),
   estateClone: (api: string, name: string) => call<{ flowId: string }>("POST", `${F}/estate/${enc(api)}/clone`, { name }),
 };
 

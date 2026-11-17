@@ -24,12 +24,12 @@ export function defaultsOf(def: ConnectionTypeDef | undefined): Record<string, u
 }
 
 /** Create or edit a connection. `fixedType` locks the kind (a step's own dropdown); `onSaved` gets the saved connection. */
-export function ConnectionDialog({ existing, types, onClose, fixedType, onSaved }: { existing: Connection | null; types: ConnectionTypeDef[]; onClose: () => void; fixedType?: string; onSaved?: (c: Connection) => void }) {
+export function ConnectionDialog({ existing, types, onClose, fixedType, onSaved, initialName, initialConfig }: { existing: Connection | null; types: ConnectionTypeDef[]; onClose: () => void; fixedType?: string; onSaved?: (c: Connection) => void; initialName?: string; initialConfig?: Record<string, unknown> }) {
   const qc = useQueryClient();
   const [type, setType] = useState(existing?.type ?? fixedType ?? types[0]?.type ?? "http");
   const def = types.find((t) => t.type === type);
-  const [name, setName] = useState(existing?.name ?? "");
-  const [config, setConfig] = useState<Record<string, unknown>>(() => existing?.config ?? defaultsOf(types.find((t) => t.type === (existing?.type ?? fixedType ?? types[0]?.type))));
+  const [name, setName] = useState(existing?.name ?? initialName ?? "");
+  const [config, setConfig] = useState<Record<string, unknown>>(() => existing?.config ?? { ...defaultsOf(types.find((t) => t.type === (existing?.type ?? fixedType ?? types[0]?.type))), ...(initialConfig ?? {}) });
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [tested, setTested] = useState<TestState | undefined>();
   const [problem, setProblem] = useState<string | null>(null);

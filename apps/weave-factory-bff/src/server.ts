@@ -17,6 +17,7 @@ import { registerVersions, flowVersionRecorder } from "./versions/routes.js";
 import { registerChanges } from "./changes/routes.js";
 import { registerReview, isReviewPath, reviewPageHeaders } from "./review/routes.js";
 import { loadReviewConfig } from "./review/config.js";
+import { registerDescribe } from "./describe/routes.js";
 
 function resolveSpaDir(): string | null {
   if (process.env.SPA_DIR && existsSync(process.env.SPA_DIR)) return process.env.SPA_DIR;
@@ -59,9 +60,10 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   registerMigrate(app, cfg);
   registerParts(app, cfg);
   registerServers(app, cfg);
-  registerEstate(app, cfg, creds);
+  const estate = registerEstate(app, cfg, creds);
   const studioCfg = { runtimeUrl: cfg.RUNTIME_URL, internalKey: cfg.RUNTIME_INTERNAL_KEY || "" };
   registerStudio(app, studioCfg, (req) => app.userFor(req), flowVersionRecorder(cfg, studioCfg));
+  registerDescribe(app, studioCfg, (req) => app.userFor(req), estate);
   registerVersions(app, cfg);
   registerChanges(app, cfg);
   const reviewCfg = loadReviewConfig();

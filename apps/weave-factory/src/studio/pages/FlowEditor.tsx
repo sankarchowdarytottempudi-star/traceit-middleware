@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, ArrowLeftRight, Copy, Download, FlaskConical, History, LayoutGrid, MoreHorizontal, Plug, Redo2, Rocket, Save, ScrollText, Settings, Trash2, Undo2, Workflow } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowLeftRight, Copy, Download, FlaskConical, History, LayoutGrid, MoreHorizontal, PenLine, Plug, Redo2, Rocket, Save, ScrollText, Settings, Trash2, Undo2, Workflow } from "lucide-react";
 import type { Execution, Flow, HttpRequestSample, Json } from "@traceit/weave-flow";
 import { ApiError, errorText, isUnavailable, studioApi } from "../api.ts";
 import { useCatalog, type Catalog } from "../catalog.ts";
@@ -20,6 +20,7 @@ import { NodePanel } from "../editor/NodePanel.tsx";
 import { Palette } from "../editor/Palette.tsx";
 import { ConnectionsTab, MappingsTab, SettingsTab, VersionsTab } from "../editor/tabs.tsx";
 import { TestPanel } from "../editor/TestPanel.tsx";
+import { DescribeDialog } from "../editor/DescribeDialog.tsx";
 
 type TabId = "canvas" | "mappings" | "connections" | "executions" | "logs" | "versions" | "settings";
 const TAB_IDS: TabId[] = ["canvas", "mappings", "connections", "executions", "logs", "versions", "settings"];
@@ -139,6 +140,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
   const [nodeTarget, setNodeTarget] = useState<string | null>(null);
   const [mapper, setMapper] = useState<{ nodeId: string; fieldKey: string } | null>(null);
   const [deployOpen, setDeployOpen] = useState(false);
+  const [describeOpen, setDescribeOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [conflict, setConflict] = useState(false);
   const desktop = bp === "desktop";
@@ -257,7 +259,8 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
       { id: "redo", label: "Redo", icon: Redo2, onSelect: store.redo, disabled: !canRedo },
       { id: "issues", label: issues.length ? `Problems (${issues.length})` : "No problems found", icon: AlertTriangle, onSelect: () => setIssuesOpen(true), disabled: !issues.length },
     ] : []),
-    { id: "tidy", label: "Tidy up the layout", icon: LayoutGrid, onSelect: tidy, divider: bp !== "desktop" },
+    { id: "describe", label: "Add steps from a description", icon: PenLine, onSelect: () => setDescribeOpen(true), divider: bp !== "desktop" },
+    { id: "tidy", label: "Tidy up the layout", icon: LayoutGrid, onSelect: tidy },
     { id: "dup", label: "Make a copy", icon: Copy, onSelect: () => duplicate.mutate() },
     { id: "export", label: "Export as a file", icon: Download, onSelect: () => downloadJson(`${base.slug || "flow"}.flow.json`, store.toFlow()) },
     { id: "delete", label: "Delete flow", icon: Trash2, danger: true, onSelect: () => void askDelete(), divider: true },
@@ -336,6 +339,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
       {test && bp === "phone" && tab === "canvas" && <Sheet title="Test" side="bottom" onClose={() => setTestOpen(false)}>{test}</Sheet>}
 
       {mapper && mapperNode && <MapperHost nodeId={mapper.nodeId} fieldKey={mapper.fieldKey} sample={sample} examples={catalog.instructionExamples} onClose={() => setMapper(null)} />}
+      {describeOpen && <DescribeDialog mode="add" onClose={() => setDescribeOpen(false)} onAdd={(p) => { const n = store.addGraph(p.flow.nodes, p.flow.edges, p.entry); setTab("canvas"); window.setTimeout(() => canvasApi.current?.fit(), 80); toast(`${n} step${n === 1 ? "" : "s"} added. Save to keep them.`); }} />}
       {deployOpen && <DeployDialog onClose={() => setDeployOpen(false)} save={save} onShowNode={showNode} onOpenExecution={(id) => setTab("executions", { execution: id })} />}
       {issuesOpen && (
         <Modal title="Problems in this flow" subtitle="Things marked Must fix stop the flow from being deployed." onClose={() => setIssuesOpen(false)} width={620} footer={<Button variant="primary" onClick={() => setIssuesOpen(false)}>Close</Button>}>

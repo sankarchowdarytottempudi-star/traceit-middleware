@@ -9,6 +9,7 @@
 @import "@xyflow/react/dist/style.css";
 @import "./studio/studio.css";
 @import "./studio/editor.css";
+@import "./studio/describe.css";
 html, body, #root { height: 100%; }
 #root { min-height: 100vh; }
 html { -webkit-text-size-adjust: 100%; }

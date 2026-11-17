@@ -2,11 +2,11 @@
 FROM node:22-bookworm-slim AS build
 RUN corepack enable
 WORKDIR /app
-COPY pnpm-workspace.yaml package.json tsconfig.base.json ./
+COPY pnpm-workspace.yaml package.json tsconfig.base.json pnpm-lock.yaml ./
 COPY packages ./packages
 COPY apps/gateway-admin/package.json ./apps/gateway-admin/package.json
 COPY apps/gateway-admin-bff/package.json ./apps/gateway-admin-bff/package.json
-RUN pnpm install --frozen-lockfile=false
+RUN pnpm install --frozen-lockfile
 COPY . .
 ARG VITE_WEAVE_FACTORY_URL=""
 ENV VITE_WEAVE_FACTORY_URL=$VITE_WEAVE_FACTORY_URL

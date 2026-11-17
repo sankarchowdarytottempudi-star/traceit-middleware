@@ -83,7 +83,7 @@ export async function authHeaders(conn: ResolvedConnection, http: NodeCtx["run"]
       try { j = JSON.parse(r.body.toString("utf8")); } catch { /* handled below */ }
       // only the error code is shown (invalid_client, invalid_code, …), never anything else from the body
       const code = typeof j.error === "string" && /^[a-z0-9_.-]{1,40}$/i.test(j.error) ? `, ${j.error}` : "";
-      if (r.status >= 400 || !j.access_token) throw new FlowError(`Could not refresh the token for connection "${conn.name}" (HTTP ${r.status}${code})${code ? tokenHint(String(j.error)) : ""}`, { status: 502 });
+      if (r.status >= 400 || !j.access_token) throw new FlowError(`Could not refresh the token for connection "${conn.name}" (HTTP ${r.status}${code})${code ? tokenHint(String(j.error), String(cfg.clientId ?? ""), String(sec.clientSecret ?? "")) : ""}`, { status: 502 });
       tokenCache.set(key, { token: j.access_token, until: Date.now() + Math.max(30, (j.expires_in ?? 3600) - 60) * 1000 });
       secrets?.add(j.access_token);
       return { authorization: `${prefix} ${j.access_token}` };
@@ -91,7 +91,10 @@ export async function authHeaders(conn: ResolvedConnection, http: NodeCtx["run"]
     default: return {};
   }
 }
-function tokenHint(code: string): string {
+export function tokenHint(code: string, clientId = "", clientSecret = ""): string {
+  // Zoho: a client id is "1000." + 30 capitals/digits, a client secret is lowercase hex; pasted the other way round they are refused
+  if (/invalid_client/i.test(code) && /^1000\.[A-Z0-9]{20,}$/.test(clientSecret.trim()) && /^[0-9a-f]{32,}$/.test(clientId.trim()))
+    return ". The Client ID and Client secret look swapped: the Client ID is the value that starts with 1000., the Client secret is the long lower-case one.";
   if (/invalid_client/i.test(code)) return ". The client id or client secret is not accepted (or belongs to another data centre).";
   if (/invalid_code|invalid_grant/i.test(code)) return ". The refresh token is not accepted: it may be revoked, mistyped, or from another data centre.";
   if (/access_denied|scope/i.test(code)) return ". The scopes are not allowed for this client.";

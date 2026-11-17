@@ -517,10 +517,17 @@ export class Runtime {
     this.resolved.set(id, { at: c.updatedAt, conn });
     return conn;
   }
-  async testConnection(input: { id?: string; draft?: SaveConnectionRequest }): Promise<{ ok: boolean; ms: number; detail: string }> {
+  async testConnection(input: { id?: string; draft?: SaveConnectionRequest; baseId?: string }): Promise<{ ok: boolean; ms: number; detail: string }> {
     let conn: ResolvedConnection;
     if (input.id) { const c = this.resolveConnection(input.id); if (!c) throw notFound("The connection"); conn = c; }
-    else { const b = this.buildConnection({ ...(input.draft as SaveConnectionRequest), name: `__test_${Date.now()}` }); conn = this.decrypt(b); }
+    else {
+      // an edited connection is tested with its stored secrets for every secret field left empty, exactly as Save keeps them
+      const base = input.baseId ? this.store.getConnection(input.baseId) : undefined;
+      if (input.baseId && !base) throw notFound("The connection");
+      const draft = input.draft as SaveConnectionRequest;
+      const b = this.buildConnection({ ...draft, name: base ? String(draft?.name ?? base.name) : `__test_${Date.now()}` }, base);
+      conn = this.decrypt(b);
+    }
     const started = Date.now();
     const secretValues = Object.values(conn.secrets);
     const fail = (e: unknown) => ({ ok: false, ms: Date.now() - started, detail: String(redact((e as Error)?.message || String(e), secretValues)) });

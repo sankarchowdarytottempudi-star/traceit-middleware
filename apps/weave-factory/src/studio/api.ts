@@ -137,7 +137,7 @@ export const studioApi = {
   updateConnection: (id: string, req: SaveConnectionRequest) => call<Connection>("PUT", `${S}/connections/${enc(id)}`, req),
   deleteConnection: (id: string) => call<{ ok: boolean }>("DELETE", `${S}/connections/${enc(id)}`),
   testConnection: (id: string) => call<ConnectionTestResult>("POST", `${S}/connections/${enc(id)}/test`, {}),
-  testConnectionDraft: (req: SaveConnectionRequest) => call<ConnectionTestResult>("POST", `${S}/connections/test`, req),
+  testConnectionDraft: (req: SaveConnectionRequest, baseId?: string) => call<ConnectionTestResult>("POST", `${S}/connections/test${baseId ? `?base=${enc(baseId)}` : ""}`, req),
 
   connectors: () => call<{ connectors: ConnectorDef[] }>("GET", `${S}/connectors`),
   createConnector: (c: ConnectorDraft) => call<ConnectorDef>("POST", `${S}/connectors`, c),

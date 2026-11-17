@@ -166,3 +166,31 @@ describe("retry back-off", () => {
     expect(gap2).toBeGreaterThan(gap1);
   });
 });
+
+describe("testing an edited connection (2026-11-17)", () => {
+  it("a draft tested against a saved connection uses the stored secrets for secret fields left empty", async () => {
+    reset();
+    const c = conn();
+    // the edit dialog sends the changed config without the secrets (empty means keep what is stored)
+    const draft = { name: c.name, type: "http", config: { baseUrl: base, authType: "oauth2refresh", tokenUrl: `${base}/oauth/v2/token`, clientId: "client-1", clientAuth: "body", tokenPrefix: "Zoho-oauthtoken", healthPath: "/health" } };
+    const r = await rt.testConnection({ draft: draft as never, baseId: c.id });
+    expect(tokenCalls).toHaveLength(1);
+    expect(tokenCalls[0].body.get("client_secret")).toBe(SECRET);
+    expect(tokenCalls[0].body.get("refresh_token")).toBe(REFRESH);
+    expect(r.detail).not.toContain(SECRET);
+    // the saved connection is not changed by a test
+    expect(rt.listConnections().find((x) => x.id === c.id)?.updatedAt).toBe(c.updatedAt);
+  });
+  it("a draft for a connection that does not exist is refused", async () => {
+    await expect(rt.testConnection({ draft: { name: "x", type: "http", config: { baseUrl: base } } as never, baseId: "cx_missing" })).rejects.toThrow();
+  });
+});
+
+describe("swapped Zoho client id and secret", () => {
+  it("says they look swapped when the secret has the client id shape and the id is hex", async () => {
+    const { tokenHint } = await import("../src/engine/nodes.js");
+    expect(tokenHint("invalid_client", "0123456789abcdef0123456789abcdef0123456789", "1000.ABCDEFGHIJ0123456789KLMNOPQRST")).toMatch(/look swapped/);
+    expect(tokenHint("invalid_client", "1000.ABCDEFGHIJ0123456789KLMNOPQRST", "0123456789abcdef0123456789abcdef0123456789")).not.toMatch(/swapped/);
+    expect(tokenHint("invalid_grant", "0123456789abcdef0123456789abcdef0123456789", "1000.ABCDEFGHIJ0123456789KLMNOPQRST")).not.toMatch(/swapped/);
+  });
+});

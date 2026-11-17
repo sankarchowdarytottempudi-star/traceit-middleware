@@ -119,7 +119,7 @@ export async function buildApp(cfg: Config, rt: Runtime): Promise<{ app: Fastify
 
     v1.get("/connections", async () => ({ connections: rt.listConnections() }));
     v1.post("/connections", async (req) => rt.createConnection(jsonBody<SaveConnectionRequest>(req)));
-    v1.post("/connections/test", async (req) => rt.testConnection({ draft: jsonBody<SaveConnectionRequest>(req) }));
+    v1.post("/connections/test", async (req) => rt.testConnection({ draft: jsonBody<SaveConnectionRequest>(req), baseId: (req.query as { base?: string }).base || undefined }));
     v1.put("/connections/:id", async (req) => rt.updateConnection(P<{ id: string }>(req).id, jsonBody<SaveConnectionRequest>(req)));
     v1.delete("/connections/:id", async (req) => { rt.deleteConnection(P<{ id: string }>(req).id); return { ok: true }; });
     v1.post("/connections/:id/test", async (req) => rt.testConnection({ id: P<{ id: string }>(req).id }));

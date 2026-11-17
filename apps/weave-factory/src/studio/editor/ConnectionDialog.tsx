@@ -55,7 +55,7 @@ export function ConnectionDialog({ existing, types, onClose, fixedType, onSaved,
   });
   const test = useMutation({
     // an existing connection is tested with its stored secrets unless new ones were typed
-    mutationFn: () => (existing && !Object.values(secrets).some(Boolean) && JSON.stringify(request().config) === JSON.stringify(existing.config) ? studioApi.testConnection(existing.id) : studioApi.testConnectionDraft(request())),
+    mutationFn: () => (existing && !Object.values(secrets).some(Boolean) && JSON.stringify(request().config) === JSON.stringify(existing.config) ? studioApi.testConnection(existing.id) : studioApi.testConnectionDraft(request(), existing?.id)),
     onMutate: () => setTested(undefined),
     onSuccess: (r) => setTested(r),
     onError: (e) => setTested({ error: errorText(e) }),

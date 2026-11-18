@@ -1,5 +1,6 @@
-// Read-only view of the cluster through the Kubernetes API (service-account token + CA from
-// files). Only get/list on deployments, services, pods and pod logs; nothing is ever changed.
+// View of the cluster through the Kubernetes API (service-account token + CA from files).
+// Reads deployments, services, pods and pod logs. The only writes are made by the on/off switch
+// (power.ts) through `send`: scaling a Deployment, its annotations and its autoscaler.
 import https from "node:https";
 import { readFileSync } from "node:fs";
 import { URL } from "node:url";
@@ -21,16 +22,20 @@ export class K8s {
   get namespace(): string { return this.o.namespace; }
   get configured(): boolean { return !!(this.o.apiUrl && this.o.tokenFile); }
 
-  private get(path: string, timeoutMs = 8000): Promise<{ status: number; text: string }> {
+  private get(path: string, timeoutMs = 8000): Promise<{ status: number; text: string }> { return this.send("GET", path, undefined, undefined, timeoutMs); }
+  /** One call to the Kubernetes API; a body is sent as JSON with the given content type. */
+  send(method: string, path: string, body?: unknown, contentType = "application/json", timeoutMs = 8000): Promise<{ status: number; text: string }> {
     if (!this.configured) return Promise.reject(new Error("Cluster access is not configured"));
     const u = new URL(this.o.apiUrl + path);
     let token = "", ca: string | undefined;
     try { token = readFileSync(this.o.tokenFile!, "utf8").trim(); } catch { return Promise.reject(new Error("Cluster token file is not readable")); }
     try { ca = this.o.caFile ? readFileSync(this.o.caFile, "utf8") : undefined; } catch { ca = undefined; }
+    const data = body === undefined ? undefined : JSON.stringify(body);
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: "application/json, */*" };
+    if (data !== undefined) { headers["Content-Type"] = contentType; headers["Content-Length"] = String(Buffer.byteLength(data)); }
     return new Promise((resolve, reject) => {
       const req = https.request({
-        method: "GET", hostname: u.hostname, port: u.port || 443, path: u.pathname + u.search,
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json, */*" }, ca, timeout: timeoutMs,
+        method, hostname: u.hostname, port: u.port || 443, path: u.pathname + u.search, headers, ca, timeout: timeoutMs,
       }, (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));
@@ -38,9 +43,12 @@ export class K8s {
       });
       req.on("timeout", () => req.destroy(new Error("The cluster did not answer in time")));
       req.on("error", reject);
+      if (data !== undefined) req.write(data);
       req.end();
     });
   }
+  /** Forget cached lists, so the next read shows a change made a moment ago. */
+  forget(): void { this.cache.clear(); }
   private async list<T>(key: string, path: string, map: (item: any) => T): Promise<T[]> {
     const hit = this.cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.value as T[];

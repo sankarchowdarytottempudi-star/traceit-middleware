@@ -1,0 +1,40 @@
+# On/off switch of the Weave Factory (apps/weave-factory-bff/src/estate/power.ts).
+# Lets the Factory identity (ServiceAccount wso2/weave-reader, token mounted at /etc/traceit/k8s)
+# scale migrated services in the wso2 namespace only, and keep their autoscaler while stopped:
+#   - deployments, deployments/scale: get/list/patch/update (scale to 0 / back, remember the count
+#     in annotations). No create, no delete of Deployments.
+#   - horizontalpodautoscalers: get/list/create/delete. An autoscaler cannot be set to 0 copies and
+#     would scale a stopped service straight back up, so Stop stores its spec in an annotation and
+#     removes the autoscaler object; Start creates it again exactly as it was.
+# Namespaced Role + RoleBinding: nothing cluster wide. Shared infrastructure (intg-postgres,
+# intg-redis) is refused by the Factory itself.
+# Apply:  kubectl apply -f deploy/rbac/weave-power.yaml
+# Undo:   kubectl delete -f deploy/rbac/weave-power.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: weave-power
+  namespace: wso2
+  labels: { app.kubernetes.io/part-of: weave-factory }
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: weave-power
+  namespace: wso2
+  labels: { app.kubernetes.io/part-of: weave-factory }
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: weave-power
+subjects:
+  - kind: ServiceAccount
+    name: weave-reader
+    namespace: wso2

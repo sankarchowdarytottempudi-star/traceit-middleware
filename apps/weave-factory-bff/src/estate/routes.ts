@@ -9,6 +9,8 @@ import type { ClientCreds } from "../auth.js";
 import { mtRequest } from "../mt.js";
 import { runtimeRequest } from "../studio.js";
 import { K8s, type K8sService } from "./k8s.js";
+import { kubeApiOf } from "./power.js";
+import { registerPower, runtimeOf } from "./powerRoutes.js";
 import { GatewayCatalog } from "./gateway.js";
 import { Estate } from "./service.js";
 import { MigratedExecutions } from "./executions.js";
@@ -200,6 +202,9 @@ export function registerEstate(app: FastifyInstance, cfg: Config, creds?: Client
       return problem(reply, 503, "The flow runtime is not reachable", e instanceof Error ? e.message : undefined);
     }
   });
+
+  // The on/off switch on the cards of the Flows page.
+  registerPower(app, { kube: k8s.configured ? kubeApiOf(k8s) : null, namespace: cfg.K8S_NAMESPACE, dataDir: cfg.DATA_DIR, runtime: runtimeOf(runtime) });
 
   return estate;
 }

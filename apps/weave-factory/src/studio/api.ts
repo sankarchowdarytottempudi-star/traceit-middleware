@@ -101,6 +101,16 @@ export interface DescribePreview {
 }
 export interface DescribeInfo { phrases: StepPhrase[]; model: { enabled: boolean; configured: boolean }; }
 
+/** On/off switch of the running APIs (BFF /api/factory/power). */
+export interface PowerAudit { at: string; by: string; kind: "service" | "flow"; target: string; action: "stop" | "start"; from: string; to: string; ok: boolean; error?: string }
+export interface ServicePower {
+  name: string; state: "on" | "off" | "starting" | "stopping"; ready: number; wanted: number; current: number; startsWith: number;
+  autoscaler?: { min: number; max: number; stored: boolean }; protected: boolean;
+  stoppedBy?: string; stoppedAt?: string; stoppedOutside?: boolean; last?: PowerAudit;
+}
+export interface FlowPower { id: string; name: string; state: "on" | "off"; published?: boolean; last?: PowerAudit }
+export interface PowerView { canToggle: boolean; namespace: string; services: ServicePower[]; flows: FlowPower[]; notes: string[] }
+
 export const studioApi = {
   health: () => call<HealthResponse>("GET", `${S}/healthz`),
   catalog: () => call<CatalogResponse>("GET", `${S}/catalog`),
@@ -152,6 +162,9 @@ export const studioApi = {
   evalExpr: (expr: string, context: ExprContext, template?: boolean) => call<ExprEvalResponse>("POST", `${S}/expr/eval`, { expr, context, template }),
 
   estate: () => call<{ apis: EstateApi[]; counts?: EstateCounts; links?: unknown[] }>("GET", `${F}/estate`),
+  power: () => call<PowerView>("GET", `${F}/power`),
+  powerService: (name: string, on: boolean) => call<ServicePower>("POST", `${F}/power/services/${enc(name)}`, { on }),
+  powerFlow: (id: string, on: boolean) => call<FlowPower>("POST", `${F}/power/flows/${enc(id)}`, { on }),
   estateApi: (api: string) => call<EstateApiDetail>("GET", `${F}/estate/${enc(api)}`),
   estateFlow: (api: string, operation?: string) => call<Flow>("GET", `${F}/estate/${enc(api)}/flow${qs({ operation })}`),
   estateLogs: (api: string, p: { tail?: number; q?: string } = {}) => call<{ lines: EstateLogLine[] }>("GET", `${F}/estate/${enc(api)}/logs${qs(p)}`),

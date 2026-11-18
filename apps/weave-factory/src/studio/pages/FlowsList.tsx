@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Download, FileUp, LayoutGrid, List, MoreHorizontal, PenLine, Plus, Search, Server, Trash2, Workflow } from "lucide-react";
 import type { Flow, FlowSummary } from "@traceit/weave-flow";
-import { errorText, isUnavailable, studioApi, type EstateApi } from "../api.ts";
+import { errorText, isUnavailable, studioApi, type EstateApi, type PowerView } from "../api.ts";
 import { estateTotals } from "../migrated.ts";
 import { useCatalog } from "../catalog.ts";
 import { ago, Badge, Button, Callout, confirmDialog, CopyButton, cx, downloadJson, Empty, Field, fmtTime, IconButton, Menu, Modal, Spinner, StudioHeader, TableWrap, toast, useDocumentTitle, type MenuItem } from "../ui.tsx";
@@ -13,6 +13,7 @@ import { deploymentBadge } from "../editor/DeployDialog.tsx";
 import { Unreachable } from "../editor/Executions.tsx";
 import { statusLabel, statusTone } from "../editor/RunViews.tsx";
 import { DescribeDialog } from "../editor/DescribeDialog.tsx";
+import { PowerSwitch, usePower } from "./PowerSwitch.tsx";
 
 const ORIGIN_LABEL: Record<string, string> = { template: "from a template", migrated: "migrated", clone: "copied from a migrated service" };
 const gatewayUrlOf = (f: FlowSummary) => (f.deployment?.status === "deployed" && f.deployment.gateway?.status === "published" ? f.deployment.gateway.url ?? "" : "");
@@ -104,8 +105,9 @@ function useFlowActions() {
   return { menu };
 }
 
-function FlowCard({ f, menu }: { f: FlowSummary; menu: MenuItem[] }) {
+function FlowCard({ f, menu, power }: { f: FlowSummary; menu: MenuItem[]; power?: PowerView }) {
   const url = liveUrlOf(f);
+  const pv = power?.flows.find((x) => x.id === f.id);
   return (
     <article className="mf-flowcard" data-flow-card={f.name} data-flow-id={f.id} data-flow-status={f.deployment?.status === "deployed" ? "deployed" : "draft"}>
       <header className="mf-flowcard-head">
@@ -122,6 +124,7 @@ function FlowCard({ f, menu }: { f: FlowSummary; menu: MenuItem[] }) {
         {(f.triggers?.length ?? 0) > 2 && <span className="mf-faint">+{f.triggers.length - 2} more</span>}
       </div>
       {url && <div className="mf-flowcard-url"><code className="mf-truncate" title={url}>{txt(url)}</code><CopyButton text={url} /></div>}
+      {pv && power && <PowerSwitch kind="flow" target={f.id} label={f.name || "this flow"} view={pv} canToggle={power.canToggle} />}
       <footer className="mf-flowcard-foot">
         <span>{f.lastExecution ? <><Badge tone={statusTone(f.lastExecution.status)}>{statusLabel(f.lastExecution.status)}</Badge> <span className="mf-faint">last run {ago(f.lastExecution.at)}</span></> : <span className="mf-faint">Never run</span>}</span>
         <span className="mf-faint" title={fmtTime(f.updatedAt)}>saved {ago(f.updatedAt)}</span>
@@ -130,7 +133,7 @@ function FlowCard({ f, menu }: { f: FlowSummary; menu: MenuItem[] }) {
   );
 }
 
-function MigratedApis() {
+function MigratedApis({ power }: { power?: PowerView }) {
   const q = useQuery({ queryKey: ["studio", "estate"], queryFn: studioApi.estate, retry: 0, staleTime: 60_000 });
   const apis: EstateApi[] = q.data?.apis ?? [];
   const [only, setOnly] = useState<"all" | "finished" | "unfinished">("all");
@@ -172,6 +175,7 @@ function MigratedApis() {
               {a.connectors !== undefined && <span className="mf-faint">{txt(a.connectors)} connector{a.connectors === 1 ? "" : "s"}</span>}
             </div>
             {a.unfinished && <p className="mf-flowcard-desc" data-estate-why>{txt(a.unfinished.summary)}.</p>}
+            {(() => { const pv = power?.services.find((x) => x.name === a.name); return pv && power ? <PowerSwitch kind="service" target={a.name} label={a.name} view={pv} canToggle={power.canToggle} /> : null; })()}
             <footer className="mf-flowcard-foot"><span className="mf-faint">{a.gateway?.published ? "On the gateway" : "Read-only"}</span><Link className="mf-button mf-button-default mf-button-sm" to={`/studio/estate/${encodeURIComponent(a.name)}`}>Open</Link></footer>
           </article>
         ))}
@@ -185,6 +189,7 @@ export function FlowsListPage() {
   const q = useQuery({ queryKey: ["studio", "flows"], queryFn: studioApi.flows, retry: 0, refetchInterval: 15000 });
   const estateQ = useQuery({ queryKey: ["studio", "estate"], queryFn: studioApi.estate, retry: 0, staleTime: 60_000 });
   const { menu } = useFlowActions();
+  const power = usePower();
   const [text, setText] = useState("");
   const [filter, setFilter] = useState<"all" | "live" | "draft">("all");
   const [view, setView] = useState<"cards" | "table">(() => { try { return localStorage.getItem("weave-flows-view") === "table" ? "table" : "cards"; } catch { return "cards"; } });
@@ -225,7 +230,7 @@ export function FlowsListPage() {
             <IconButton label="Show as a table" icon={List} active={view === "table"} onClick={() => setViewKept("table")} />
           </div>
           {flows.length === 0 && <Empty icon={Search} title="No flow matches" hint="Try another search or filter." />}
-          {flows.length > 0 && view === "cards" && <div className="mf-cardgrid">{flows.map((f) => <FlowCard key={f.id} f={f} menu={menu(f)} />)}</div>}
+          {flows.length > 0 && view === "cards" && <div className="mf-cardgrid">{flows.map((f) => <FlowCard key={f.id} f={f} menu={menu(f)} power={power.data} />)}</div>}
           {flows.length > 0 && view === "table" && (
             <TableWrap label="Flows">
               <table className="mf-table">
@@ -250,7 +255,7 @@ export function FlowsListPage() {
           )}
         </section>
       )}
-      <MigratedApis />
+      <MigratedApis power={power.data} />
       {creating && <NewFlowDialog onClose={() => setCreating(false)} />}
       {importing && <ImportDialog onClose={() => setImporting(false)} />}
       {describing && <DescribeDialog mode="new" onClose={() => setDescribing(false)} />}

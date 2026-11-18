@@ -18,6 +18,18 @@ export function sidOf(req: { cookies: Record<string, string | undefined>; unsign
 }
 interface Session { tokens: TokenSet; expiresAt: number; user: string; }
 
+export type Role = "admin" | "viewer";
+/** Admin when the sign-in granted `apim:admin`: WSO2 only grants a scope the user's roles allow.
+ *  Read from the token answer, or from the access token itself when the answer had no scope. */
+export function roleOfTokens(t: Pick<TokenSet, "scope" | "access_token"> | undefined): Role {
+  if (!t) return "viewer";
+  let scope = t.scope || "";
+  if (!scope) {
+    try { const [, body] = t.access_token.split("."); if (body) { const s = JSON.parse(Buffer.from(body, "base64url").toString()).scope; scope = Array.isArray(s) ? s.join(" ") : String(s || ""); } } catch { scope = ""; }
+  }
+  return scope.split(/\s+/).includes("apim:admin") ? "admin" : "viewer";
+}
+
 const SESSION_TTL = 86400;   // 1 day; refresh token kept server-side in the store
 const PKCE_TTL = 600;
 const SCOPE = "openid apim:admin apim:api_view apim:api_manage apim:tier_view apim:tier_manage apim:admin_settings apim:environment_manage " +
@@ -53,6 +65,15 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
     return s ? s.user : null;
   });
 
+  /** Role of the signed-in user (null when not signed in). The dev instance can play a viewer with DEV_AUTH_ROLE=viewer. */
+  app.decorate("roleFor", async (req: import("fastify").FastifyRequest): Promise<Role | null> => {
+    if (devUser) return process.env.DEV_AUTH_ROLE === "viewer" ? "viewer" : "admin";
+    const sid = sidOf(req);
+    if (!sid || !(await tokenFor(sid))) return null;
+    const s = await store.get<Session>(`sess:${sid}`);
+    return s ? roleOfTokens(s.tokens) : null;
+  });
+
   app.get("/api/auth/login", async (_req, reply) => {
     const { verifier, challenge } = pkce();
     const state = crypto.randomBytes(16).toString("hex");
@@ -82,10 +103,10 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
   });
 
   app.get("/api/auth/me", async (req, reply) => {
-    if (devUser) return { user: devUser, role: "admin" };
+    if (devUser) return { user: devUser, role: process.env.DEV_AUTH_ROLE === "viewer" ? "viewer" : "admin" };
     const sid = sidOf(req);
     const s = sid ? await store.get<Session>(`sess:${sid}`) : null;
     if (!s) return reply.code(401).send({ type: "about:blank", title: "Not signed in", status: 401 });
-    return { user: s.user, role: "admin" };
+    return { user: s.user, role: roleOfTokens(s.tokens) };
   });
 }

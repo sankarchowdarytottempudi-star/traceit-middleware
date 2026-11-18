@@ -240,3 +240,16 @@ button.mf-tree-caret:hover { background: var(--surface3); color: var(--text); }
   .mf-toolbarline > select.mf-control { flex: 1 1 130px; max-width: none; }
   .mf-toolbarline > select.mf-control ~ span:empty { display: none; }
 }
+
+/* On/off switch on a running API card */
+.ws-power { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12.5px; min-width: 0; }
+.ws-power-text { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.ws-power-busy { color: var(--warn); font-weight: 600; }
+.ws-power-last { flex-basis: 100%; font-size: 12px; overflow-wrap: anywhere; }
+.ws-switch { position: relative; flex: 0 0 auto; width: 40px; height: 22px; padding: 0; border-radius: 999px; border: 1px solid var(--border2); background: var(--border); cursor: pointer; transition: background .2s ease, border-color .2s ease; }
+.ws-switch-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s ease; }
+.ws-switch-on { background: var(--ok); border-color: var(--ok); }
+.ws-switch-on .ws-switch-knob { transform: translateX(18px); }
+.ws-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ws-switch:disabled { cursor: not-allowed; opacity: .55; }
+@media (prefers-reduced-motion: reduce) { .ws-switch, .ws-switch-knob { transition: none; } }

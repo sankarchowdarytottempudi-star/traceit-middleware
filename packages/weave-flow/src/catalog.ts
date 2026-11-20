@@ -2,6 +2,7 @@
 // connector operations) at GET /v1/catalog; the canvas renders palette and config forms
 // from it and must not hard-code per-node forms.
 import type { ConnectionTypeDef, FieldDef, NodeTypeDef, PortDef } from "./types.js";
+import { LESSON_DEFAULTS } from "./lessons.js";
 
 const OUT: PortDef = { id: "out", label: "Next" };
 const ERR: PortDef = { id: "error", label: "On error", kind: "error" };
@@ -13,13 +14,37 @@ const RESULT: FieldDef[] = [
     options: [{ value: "payload", label: "Payload (replace)" }, { value: "variable", label: "A variable (keep payload)" }] },
   { key: "resultVar", label: "Variable name", kind: "text", group: "Result", showIf: { key: "resultTarget", equals: "variable" }, placeholder: "voyage" },
 ];
-const RETRY: FieldDef[] = [
-  { key: "timeoutMs", label: "Timeout (ms)", kind: "number", group: "Advanced", default: 30000 },
-  { key: "retries", label: "Retries", kind: "number", group: "Advanced", default: 0 },
+// Production lessons (lessons.ts): an explicit timeout below the gateway's 30 s (L4), retries only
+// for calls that cannot change data twice, with back-off 1 s then 3 s (L4).
+export const RETRY: FieldDef[] = [
+  { key: "timeoutMs", label: "Timeout (ms)", kind: "number", group: "Advanced", default: LESSON_DEFAULTS.timeoutMs,
+    help: "Always set: keep it below the caller's timeout (the gateway waits 30 s), so this flow can still answer with a clear error." },
+  { key: "retries", label: "Retries", kind: "number", group: "Advanced", default: LESSON_DEFAULTS.retries,
+    help: "Used only for calls that cannot change data twice: GET, HEAD, OPTIONS, a GraphQL query, or a call with an Idempotency-Key header." },
   { key: "retryDelayMs", label: "Retry delay (ms)", kind: "number", group: "Advanced", default: 500 },
-  { key: "retryDelaysMs", label: "Wait before each retry (ms)", kind: "text", group: "Advanced", placeholder: "1000, 3000",
-    help: "Optional back-off: one wait per retry, in order (the last one repeats). Empty: Retry delay before every retry. Retries happen on timeouts, 5xx and 429 only." },
+  { key: "retryDelaysMs", label: "Wait before each retry (ms)", kind: "text", group: "Advanced", placeholder: "1000, 3000", default: LESSON_DEFAULTS.retryDelaysMs,
+    help: "Back-off: one wait per retry, in order (the last one repeats). Empty: Retry delay before every retry. Retries happen on timeouts, 5xx and 429 only." },
+  { key: "retryUnsafe", label: "Retry even though the call may change data", kind: "boolean", group: "Advanced", default: false,
+    help: "Off (recommended): POST, PUT, PATCH and DELETE are not repeated unless they carry an Idempotency-Key header, because a repeat can book, pay or send twice. Turn on only when the backend ignores repeats." },
 ];
+/** L2: a read may share identical in-flight calls and keep its answer briefly. Off by default. */
+export const SHARE_READS: FieldDef[] = [
+  { key: "shareIdentical", label: "Share identical calls", kind: "boolean", group: "Speed", default: false, showIf: { key: "method", equals: "GET" },
+    help: "When the same call (same address, headers and values) is already running, wait for its answer instead of calling the backend again. Errors are never shared to later callers." },
+  { key: "cacheSeconds", label: "Cache answer for N seconds", kind: "number", group: "Speed", default: 0, showIf: { key: "method", equals: "GET" },
+    help: "0 = off. Only for answers that may be a few seconds old (prices, reference data). Never for an answer that depends on the caller unless a caller header is part of the call. Errors are never kept." },
+];
+/** L1: a login/token call whose answer is kept and shared (per backend, per login values) instead of logging in on every request. */
+export const REUSE_SESSION: FieldDef[] = [
+  { key: "reuseSession", label: "Reuse the session (login once)", kind: "boolean", group: "Speed", default: false,
+    help: "For a login or token call: keep its answer and give it to every request until it expires, instead of logging in each time. The kept session is dropped when the backend answers 401/403. Never for a login made with the caller's own password." },
+  { key: "sessionSeconds", label: "Keep the session for (seconds)", kind: "number", group: "Speed", default: LESSON_DEFAULTS.sessionSeconds, showIf: { key: "reuseSession", equals: true } },
+];
+/** L3: an e-mail/SMS/notification send the answer does not need. */
+export const BACKGROUND: FieldDef = {
+  key: "background", label: "Send in background (don't wait)", kind: "boolean", group: "Advanced", default: false,
+  help: "For an e-mail, SMS or notification whose answer this flow does not use: the flow carries on at once and the send runs after it, retried on connection failures (1 s, 3 s); a failure is logged as an error. The payload is left unchanged.",
+};
 const FORWARD: FieldDef = {
   key: "forwardHeaders", label: "Forward incoming headers", kind: "stringlist", group: "Headers",
   help: "Header names copied from the incoming request to this call (e.g. Authorization, X-Seaware-Authorization, client_channel). Backends treat calls as anonymous when their session header is dropped.",
@@ -78,9 +103,9 @@ export const BUILTIN_NODE_TYPES: NodeTypeDef[] = [
         options: [{ value: "auto", label: "Auto (by content type)" }, { value: "json", label: "JSON" }, { value: "text", label: "Text" }, { value: "base64", label: "Binary (base64)" }] },
       { key: "output", label: "Output", kind: "select", group: "Result", default: "body",
         options: [{ value: "body", label: "Response body" }, { value: "full", label: "{ status, headers, body }" }] },
-      ...RETRY, ...RESULT,
+      ...RETRY, ...SHARE_READS, ...REUSE_SESSION, BACKGROUND, ...RESULT,
     ],
-    defaults: { method: "GET", url: "", query: [], headers: [], forwardHeaders: [], bodyMode: "none", failOnStatus: true, responseMode: "auto", output: "body", timeoutMs: 30000, retries: 0, resultTarget: "payload" } },
+    defaults: { method: "GET", url: "", query: [], headers: [], forwardHeaders: [], bodyMode: "none", failOnStatus: true, responseMode: "auto", output: "body", timeoutMs: LESSON_DEFAULTS.timeoutMs, retries: LESSON_DEFAULTS.retries, retryDelaysMs: LESSON_DEFAULTS.retryDelaysMs, resultTarget: "payload" } },
   { type: "graphql.request", label: "GraphQL Request", category: "connector", icon: "Braces", color: "http",
     description: "Sends a GraphQL query or mutation.", hasInput: true, outputs: [OUT, ERR],
     fields: [
@@ -95,7 +120,7 @@ export const BUILTIN_NODE_TYPES: NodeTypeDef[] = [
       { key: "output", label: "Output", kind: "select", group: "Result", default: "data", options: [{ value: "data", label: "data" }, { value: "full", label: "{ data, errors }" }] },
       ...RETRY, ...RESULT,
     ],
-    defaults: { url: "", query: "", variables: {}, headers: [], forwardHeaders: [], failOnErrors: true, output: "data", timeoutMs: 30000, retries: 0, resultTarget: "payload" } },
+    defaults: { url: "", query: "", variables: {}, headers: [], forwardHeaders: [], failOnErrors: true, output: "data", timeoutMs: LESSON_DEFAULTS.timeoutMs, retries: LESSON_DEFAULTS.retries, retryDelaysMs: LESSON_DEFAULTS.retryDelaysMs, resultTarget: "payload" } },
   { type: "redis.command", label: "Cache (Redis)", category: "connector", icon: "Database", color: "data",
     description: "Reads or writes a Redis key: cache lookups, cache fills, counters.", hasInput: true, outputs: [OUT, ERR],
     fields: [

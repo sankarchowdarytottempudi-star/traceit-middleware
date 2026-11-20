@@ -6,3 +6,4 @@ export * from "./describe.js";
 export * from "./document.js";
 export * from "./zoho.js";
 export * from "./valuetable.js";
+export * from "./lessons.js";

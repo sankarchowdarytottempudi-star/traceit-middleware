@@ -4,6 +4,7 @@
 // phrasings that are; nothing is guessed silently. STEP_PHRASES is the "What you can write" list: the
 // tests read every example, so the list can never promise more than the reader does.
 import type { ConnectorDef, ConnectorOperation, FlowEdge, FlowNode, MappingRule } from "./types.js";
+import { LESSON_DEFAULTS } from "./lessons.js";
 
 export interface StepPhrase { group: string; phrase: string; example: string; makes: string; }
 
@@ -55,6 +56,10 @@ export const STEP_PHRASES: StepPhrase[] = [
   { group: "Errors and retries", phrase: "If the call fails, STEP", example: "If the call fails, answer 502 with the error", makes: "The step is wired to the On error output of the call above" },
   { group: "Errors and retries", phrase: "Retry N times [waiting S seconds]", example: "Retry 3 times waiting 2 seconds", makes: "Retries on the call above" },
   { group: "Errors and retries", phrase: "Time out after N seconds", example: "Time out after 10 seconds", makes: "Timeout on the call above" },
+  { group: "Speed and side effects", phrase: "Send it in the background | Don't wait for it", example: "Send the e-mail in the background", makes: "The call above runs after the flow goes on (Send in background); retried on connection failures, a failure is logged as an error" },
+  { group: "Speed and side effects", phrase: "Cache the answer for N seconds | minutes", example: "Cache the answer for 60 seconds", makes: "The read above keeps its answer that long and shares identical calls (GET only)" },
+  { group: "Speed and side effects", phrase: "Share identical calls", example: "Share identical calls", makes: "Identical reads that run at the same time share one backend call (GET only)" },
+  { group: "Speed and side effects", phrase: "Reuse the session [for N minutes] | Log in once", example: "Reuse the session for 4 minutes", makes: "The login/token call above is made once and its answer reused until it expires or the backend answers 401/403" },
   { group: "Errors and retries", phrase: "Require FIELD[, FIELD]", example: "Require email and last name", makes: "Validate: answers 400 when one is missing" },
   { group: "Errors and retries", phrase: "Reject with STATUS if CONDITION", example: "Reject with 422 if the age is less than 18", makes: "Validate" },
   { group: "Errors and retries", phrase: "Fail with STATUS \"MESSAGE\" | Stop", example: "Fail with 409 \"already checked in\"", makes: "Stop / Raise Error" },
@@ -573,7 +578,7 @@ class Reader {
     }
 
     // ---- retry / timeout on the call above
-    if ((m = RETRY.exec(text)) || (m = TRY_TIMES.exec(text)) || (m = TIMEOUT.exec(text))) { this.modifier(text, L); return { tails, next: i + 1 }; }
+    if ((m = RETRY.exec(text)) || (m = TRY_TIMES.exec(text)) || (m = TIMEOUT.exec(text)) || BACKGROUND_RE.test(text) || CACHE_RE.test(text) || SHARE_RE.test(text) || REUSE_RE.test(text)) { this.modifier(text, L); return { tails, next: i + 1 }; }
 
     // ---- otherwise without an If
     if (OTHERWISE.test(text) && !/^if not\b/i.test(text)) { this.fail(L, "\"Otherwise\" needs an \"If …\" line just above it, at the same indentation."); return { tails, next: i + 1 }; }
@@ -747,6 +752,13 @@ class Reader {
     this.link(L, node.id);
   }
 
+  callMethod(call: FlowNode): string {
+    if (call.type === "graphql.request") return "POST";
+    const m = /^connector:([^:]+):(.+)$/.exec(call.type);
+    if (m) return String((this.ctx.connectors ?? []).find((c) => c.id === m[1])?.operations.find((o) => o.id === m[2])?.method ?? "GET").toUpperCase();
+    return String(call.config.method ?? "GET").toUpperCase();
+  }
+
   modifier(text: string, L: number): boolean {
     const call = this.lastCall;
     let m: RegExpExecArray | null;
@@ -758,6 +770,7 @@ class Reader {
       if (TRY_TIMES.test(text) && !RETRY.test(text)) n = Math.max(0, n - 1);
       if (isDb) { this.warn(L, `Database steps do not retry; "${call.name}" runs once.`); this.link(L, call.id); return true; }
       cfg.retries = n;
+      if (m[2]) delete cfg.retryDelaysMs;   // one wait between retries, as written
       if (m[2]) cfg.retryDelayMs = Math.round(Number(m[2]) * (/^m/i.test(m[3] ?? "s") && !/^min/i.test(m[3] ?? "") ? 1 : /^min/i.test(m[3] ?? "") ? 60000 : 1000));
       this.link(L, call.id);
       this.ok(L, `"${call.name}" is retried ${n} time${n === 1 ? "" : "s"}${m[2] ? `, ${cfg.retryDelayMs} ms apart` : ""}`);
@@ -768,6 +781,34 @@ class Reader {
       if (isDb) cfg.timeoutSeconds = Math.max(1, Math.round(ms / 1000)); else cfg.timeoutMs = ms;
       this.link(L, call.id);
       this.ok(L, `"${call.name}" gives up after ${ms} ms`);
+      return true;
+    }
+    const secondsOf = (n: string | undefined, unit: string | undefined) => Math.round(Number(n) * (/^m/i.test(unit ?? "s") ? 60 : 1));
+    const httpLike = call.type === "http.request" || call.type === "graphql.request" || call.type.startsWith("connector:");
+    if (BACKGROUND_RE.test(text)) {
+      this.link(L, call.id);
+      if (!httpLike) { this.warn(L, `"${call.name}" cannot run in the background; only calls to a system can.`); return true; }
+      cfg.background = true;
+      this.ok(L, `"${call.name}" runs in the background: the flow does not wait for it; it is retried on connection failures and a failure is logged as an error (lesson L3)`);
+      return true;
+    }
+    if ((m = CACHE_RE.exec(text)) || SHARE_RE.test(text)) {
+      this.link(L, call.id);
+      if (!httpLike || this.callMethod(call) !== "GET") { this.warn(L, `Only a read (GET) can share or keep its answer; "${call.name}" may change data, so it is called every time.`); return true; }
+      cfg.shareIdentical = true;
+      if (m) {
+        const sec = secondsOf(m[1] ?? m[3], m[2] ?? m[4]);
+        cfg.cacheSeconds = sec;
+        this.ok(L, `"${call.name}" keeps its answer for ${sec} seconds and identical calls share one backend call; errors are never kept (lesson L2)`);
+      } else this.ok(L, `identical calls of "${call.name}" share one backend call (lesson L2)`);
+      return true;
+    }
+    if ((m = REUSE_RE.exec(text))) {
+      this.link(L, call.id);
+      if (!httpLike) { this.warn(L, `"${call.name}" is not a call to a system, so there is no session to reuse.`); return true; }
+      cfg.reuseSession = true;
+      cfg.sessionSeconds = m[1] ? secondsOf(m[1], m[2]) : LESSON_DEFAULTS.sessionSeconds;
+      this.ok(L, `"${call.name}" logs in once and its answer is reused for ${cfg.sessionSeconds} seconds (dropped when the backend answers 401/403) (lesson L1)`);
       return true;
     }
     return false;
@@ -850,7 +891,8 @@ class Reader {
     // trailing modifiers on a call: ", retry 3 times", "(time out after 5 seconds)"
     const mods: string[] = [];
     let cut: [string, string, RegExpExecArray] | null;
-    while ((cut = cutOutside(t, /\s*[,(]\s*(?:and\s+)?(?=(?:retry|try again|repeat|time\s*out|timeout|give up)\b)/i))) { mods.unshift(cut[1].replace(/\)\s*$/, "").trim()); t = cut[0].trim(); }
+    while ((cut = cutOutside(t, /\s*[,(]\s*(?:and\s+)?(?=(?:retry|try again|repeat|time\s*out|timeout|give up|cache\s|share\s+(?:identical|the\s+same)|reuse\s+the|re-use\s+the|log\s*in\s+once|(?:send|run|do)\s+(?:it|this|that)\s+in\s+the\s+background|in\s+the\s+background|don'?t\s+wait|do\s+not\s+wait|without\s+waiting)\b)/i))) { mods.unshift(cut[1].replace(/\)\s*$/, "").trim()); t = cut[0].trim(); }
+    { const bg = /\s+(in\s+the\s+background|without\s+waiting)$/i.exec(t); if (bg && /^(?:send|notify|e-?mail|text|sms|push|call|post|create|add|submit)\b/i.test(t)) { mods.unshift(bg[1]); t = t.slice(0, bg.index).trim(); } }
 
     // log
     if ((m = LOG.exec(t))) return this.log(m, L, tails);
@@ -1101,7 +1143,7 @@ class Reader {
       const pick = this.pickOperation(conn.operations ?? [], opWords, want, method, kind);
       if (!pick) { this.fail(L, `${conn.name} has no operation that matches "${short(text, 50)}". Its operations: ${(conn.operations ?? []).map((o) => o.name || o.id).slice(0, 8).join(", ")}.`); return { tails }; }
       const op = pick.op;
-      const cfg: Record<string, unknown> = { failOnStatus: true, output: "body", timeoutMs: 30000, retries: 0, resultTarget: "variable", resultVar: varName };
+      const cfg: Record<string, unknown> = { failOnStatus: true, output: "body", timeoutMs: LESSON_DEFAULTS.timeoutMs, retries: LESSON_DEFAULTS.retries, retryDelaysMs: LESSON_DEFAULTS.retryDelaysMs, resultTarget: "variable", resultVar: varName };
       const connection = conn.defaultConnectionId || this.connectionFor(conn.name, "http")?.id || "";
       cfg.connection = connection;
       const used = new Set<Ref>();
@@ -1184,7 +1226,7 @@ class Reader {
     else if (fields.length === 1 && fields[0].whole) { bodyMode = "json"; body = `{{ ${fields[0].expr} }}`; }
     else if (fields.length) { bodyMode = "json"; body = Object.fromEntries(fields.map((f) => [f.key, `{{ ${f.expr} }}`])); }
     else { bodyMode = "json"; body = "{{ $ }}"; }
-    const cfg: Record<string, unknown> = { connection, method, url, query, headers: [], forwardHeaders: [], bodyMode, failOnStatus: true, responseMode: "auto", output: "body", timeoutMs: 30000, retries: 0, resultTarget: "variable", resultVar: varName };
+    const cfg: Record<string, unknown> = { connection, method, url, query, headers: [], forwardHeaders: [], bodyMode, failOnStatus: true, responseMode: "auto", output: "body", timeoutMs: LESSON_DEFAULTS.timeoutMs, retries: LESSON_DEFAULTS.retries, retryDelaysMs: LESSON_DEFAULTS.retryDelaysMs, resultTarget: "variable", resultVar: varName };
     if (body !== undefined) cfg.body = body;
     return this.step(tails, "http.request", title, cfg, L);
   }
@@ -1353,6 +1395,11 @@ const FAIL = /^(?:if|when|whenever|in case)\s+(?:(?:the|that|this|it|any|a|anyth
 const ONERR = /^on\s+(?:an?\s+)?(?:error|failure)\s*(?:,\s*|\s*:\s*|\s+then\s+|$)(.*)$/i;
 const RETRY = /^(?:and\s+)?(?:retry|repeat|try again)\s+(?:it\s+|the call\s+)?(?:up to\s+)?(\d+|once|twice|one|two|three|four|five)(?:\s*times?)?(?:\s*,?\s*(?:waiting|wait|with|every|pausing)\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|secs?|seconds?|minutes?)\s*(?:between(?:\s+(?:tries|attempts|retries))?|apart)?)?$/i;
 const TRY_TIMES = /^try\s+(?:it\s+)?(?:up to\s+)?(\d+|two|three|four|five)\s+times(?:\s*,?\s*(?:waiting|wait|with|every|pausing)\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|secs?|seconds?)\s*(?:between(?:\s+(?:tries|attempts))?|apart)?)?$/i;
+// production lessons (lessons.ts): L3 background sends, L2 shared/cached reads, L1 session reuse
+const BACKGROUND_RE = /^(?:and\s+)?(?:(?:send|run|do|make)\s+(?:it|this|that|them|the\s+[\w-]+(?:\s+[\w-]+)?)\s+in\s+the\s+background|(?:don'?t|do\s+not)\s+wait(?:\s+for\s+(?:it|this|that|the\s+[\w-]+(?:\s+[\w-]+)?))?|in\s+the\s+background|(?:send|run)\s+in\s+the\s+background|without\s+waiting)$/i;
+const CACHE_RE = /^(?:and\s+)?(?:cache|keep)\s+(?:it|this|that|the\s+(?:answer|result|response|reply|data))\s+for\s+(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?)$|^(?:and\s+)?cache\s+(?:it\s+)?for\s+(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?)$/i;
+const SHARE_RE = /^(?:and\s+)?share\s+(?:identical|the\s+same|duplicate)\s+(?:calls|requests)$/i;
+const REUSE_RE = /^(?:and\s+)?(?:(?:reuse|re-use|keep)\s+the\s+(?:session|token|login)(?:\s+for\s+(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?))?|log\s*in\s+once|login\s+once)$/i;
 const TIMEOUT = /^(?:time\s*out|timeout|give up)\s+after\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|secs?|seconds?|minutes?|mins?)$/i;
 const FOREACH = /^(?:for\s+(?:each|every|all)|loop\s+(?:over|through)\s+(?:each|every)|go\s+through\s+(?:each|every))\s+(?<item>[A-Za-z_][\w-]*(?:\s+[A-Za-z_][\w-]*)?)\s+(?:in|of|from)\s+(?<list>.+?)(?:\s*[,:]\s*(?<action>.*)|\s+do\s+(?<action2>.+))?$/i;
 const FOREACH_OF = /^(?:for\s+each\s+of|loop\s+(?:over|through)|go\s+through)\s+(?<list>.+?)(?:\s*[,:]\s*(?<action>.*))?$/i;

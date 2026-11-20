@@ -1,6 +1,6 @@
 // Effective catalog: built-in node types + one node type per custom connector operation,
 // plus the starter templates offered by POST /v1/flows { templateId }.
-import { BUILTIN_CONNECTION_TYPES, BUILTIN_NODE_TYPES } from "@traceit/weave-flow";
+import { BACKGROUND, BUILTIN_CONNECTION_TYPES, BUILTIN_NODE_TYPES, LESSON_DEFAULTS, REUSE_SESSION, isLoginLike, isNotificationLike } from "@traceit/weave-flow";
 import type { CatalogResponse, ConnectorDef, FieldDef, Flow, FlowEdge, FlowNode, NodeTypeDef } from "@traceit/weave-flow";
 import { FUNCTION_DOCS } from "./expr.js";
 import { INSTRUCTION_EXAMPLES } from "./mapping/instruction.js";
@@ -10,18 +10,33 @@ const BUILTIN = new Map(BUILTIN_NODE_TYPES.map((t) => [t.type, t]));
 const CONNECTOR_TAIL: FieldDef[] = [
   { key: "failOnStatus", label: "Treat 4xx/5xx as error", kind: "boolean", group: "Advanced", default: true },
   { key: "output", label: "Output", kind: "select", group: "Result", default: "body", options: [{ value: "body", label: "Response body" }, { value: "full", label: "{ status, headers, body }" }] },
-  { key: "timeoutMs", label: "Timeout (ms)", kind: "number", group: "Advanced", default: 30000 },
-  { key: "retries", label: "Retries", kind: "number", group: "Advanced", default: 0 },
+  { key: "timeoutMs", label: "Timeout (ms)", kind: "number", group: "Advanced", default: LESSON_DEFAULTS.timeoutMs, help: "Keep it below the caller's timeout (the gateway waits 30 s)." },
+  { key: "retries", label: "Retries", kind: "number", group: "Advanced", default: LESSON_DEFAULTS.retries, help: "Used only for operations that cannot change data twice (GET, HEAD, OPTIONS, or an Idempotency-Key header)." },
   { key: "retryDelayMs", label: "Retry delay (ms)", kind: "number", group: "Advanced", default: 500 },
+  { key: "retryDelaysMs", label: "Wait before each retry (ms)", kind: "text", group: "Advanced", default: LESSON_DEFAULTS.retryDelaysMs, placeholder: "1000, 3000" },
+  { key: "retryUnsafe", label: "Retry even though the call may change data", kind: "boolean", group: "Advanced", default: false },
   { key: "resultTarget", label: "Put result in", kind: "select", group: "Result", default: "payload", options: [{ value: "payload", label: "Payload (replace)" }, { value: "variable", label: "A variable (keep payload)" }] },
   { key: "resultVar", label: "Variable name", kind: "text", group: "Result", showIf: { key: "resultTarget", equals: "variable" } },
 ];
-const RESERVED_KEYS = new Set(["connection", ...CONNECTOR_TAIL.map((f) => f.key)]);
+/** L2 for a read operation (no showIf: the method is the operation's, not a field). */
+const READ_SHARE: FieldDef[] = [
+  { key: "shareIdentical", label: "Share identical calls", kind: "boolean", group: "Speed", default: false, help: "Identical calls already running share one answer instead of calling the backend again. Errors are never shared to later callers." },
+  { key: "cacheSeconds", label: "Cache answer for N seconds", kind: "number", group: "Speed", default: 0, help: "0 = off. Only for answers that may be a few seconds old; never for an answer that depends on the caller unless a caller header is part of the call." },
+];
+const RESERVED_KEYS = new Set(["connection", ...CONNECTOR_TAIL.map((f) => f.key), ...READ_SHARE.map((f) => f.key), ...REUSE_SESSION.map((f) => f.key), BACKGROUND.key]);
 
 export function connectorNodeTypes(c: ConnectorDef): NodeTypeDef[] {
   return (c.operations ?? []).map((op) => {
     const params = (op.params ?? []).filter((p) => !RESERVED_KEYS.has(p.key));
-    const defaults: Record<string, unknown> = { failOnStatus: true, output: "body", timeoutMs: 30000, retries: 0, resultTarget: "payload" };
+    const defaults: Record<string, unknown> = { failOnStatus: true, output: "body", timeoutMs: LESSON_DEFAULTS.timeoutMs, retries: LESSON_DEFAULTS.retries, retryDelaysMs: LESSON_DEFAULTS.retryDelaysMs, resultTarget: "payload" };
+    // production lessons: reads may be shared (L2), a login may be reused (L1), a notification may go in the background (L3)
+    const method = String(op.method || "GET").toUpperCase();
+    const words = [op.id, op.name, op.path, c.name, c.description];
+    const extra: FieldDef[] = [
+      ...(method === "GET" ? READ_SHARE : []),
+      ...(isLoginLike(op.id, op.name, op.path) ? REUSE_SESSION : []),
+      ...(method !== "GET" && isNotificationLike(...words) ? [BACKGROUND] : []),
+    ];
     if (c.defaultConnectionId) defaults.connection = c.defaultConnectionId;
     for (const p of params) if (p.default !== undefined) defaults[p.key] = p.default;
     return {
@@ -30,7 +45,7 @@ export function connectorNodeTypes(c: ConnectorDef): NodeTypeDef[] {
       outputs: [{ id: "out", label: "Next" }, { id: "error", label: "On error", kind: "error" as const }],
       fields: [
         { key: "connection", label: "Connection", kind: "connection" as const, connectionType: "http", help: `Supplies the base URL and authentication for ${c.name}.` },
-        ...params, ...CONNECTOR_TAIL,
+        ...params, ...CONNECTOR_TAIL, ...extra,
       ],
       defaults,
       docs: `**${c.name}** - \`${op.method} ${op.path}\`. Parameters are available to the operation as \`$params.<name>\`.`,

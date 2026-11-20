@@ -1,0 +1,171 @@
+{
+  "catalogue": "production-lessons",
+  "version": 1,
+  "updated": "2026-11-20",
+  "about": "Practical issues met in production and the fix each one taught. Read by the migration factory (generator/porter), the Migration tool readiness check (hostscan.py) and the Weave Factory flow validator. Deterministic: every detection is a fixed rule, no model. Human summary: LESSONS.md next to this file.",
+  "where": {
+    "generator": "migration-factory/factory/lessons.py (rules + helper names), flow2bal.py, porter.py, logic.bal.txt",
+    "readiness": "Migration-tool/backend/hostscan.py: lesson_findings() -> readiness report 'lessons'",
+    "factory": "traceit-middleware packages/weave-flow/src/lessons.ts, catalog.ts, describe.ts; apps/weave-runtime/src/validate.ts, engine/nodes.ts"
+  },
+  "lessons": [
+    {
+      "id": "L1",
+      "title": "Downstream sessions and tokens are reused, not re-created per call",
+      "why": "Traveller-details calls each logged into Seaware separately: 10 parallel logins at 2.5-4.6 s each; one timed out after 36 s.",
+      "detect": "A call whose path, name or configuration reads like login/token/auth/session runs on every request (or inside a loop) to the same backend, and its result is not kept between requests.",
+      "apply": "Generator: a login whose inputs are only settings/literals is wrapped in session reuse (kept per backend for lessons.sessionReuseSeconds, identical parallel logins share one call, dropped when the backend answers 401/403/440). A login that depends on the caller's own data (per-user credentials) is never shared: TODO in the code and a readiness warning. Factory: a connection-level token is used; a login step inside a loop or per request is flagged.",
+      "test": "factory tests: test_lessons.LoginReuse; hostscan tests: test_lessons.L1; weave-flow lessons.test.ts 'login in loop'",
+      "checks": [
+        {"id": "L1.login-per-request", "severity": "warn", "title": "A login/token call runs on every request",
+         "fix": "Keep the session or token and reuse it until it expires (generated: lessonsSession(...) with lessons.sessionReuseSeconds). Never share a login made with the caller's own credentials."},
+        {"id": "L1.login-in-loop", "severity": "error", "title": "A login/token call runs inside a loop or parallel branch",
+         "fix": "Log in once before the loop and pass the session to each item; or use the connection-level token."}
+      ]
+    },
+    {
+      "id": "L2",
+      "title": "Identical in-flight reads are coalesced; short-lived read results are cached",
+      "why": "Identical parallel CMS requests and cabin-price requests sent 3x in parallel each hit the backend. A stuck in-flight mark hung callers. A Ballerina 'Kept & readonly' record literal read from a cache written by another copy crashed the handler (Java NPE) and callers hung.",
+      "detect": "A read-only GET/lookup to a backend with no cache/share setting; coalescing code without a time limit on the in-flight mark; a '& readonly' record literal in cache code.",
+      "apply": "Generator: every outbound GET goes through lessonsRead(...): identical in-flight reads share one call (lessons.shareIdenticalReads), answers kept lessons.readCacheSeconds (default 0 = off), key = backend + method + full URL + hash of all outbound headers (so per-user headers give per-user keys). Errors are never kept. The in-flight mark expires after lessons.inflightMaxSeconds, and waiters always get released. Cached values are built as a plain record, then .cloneReadOnly(). Redis-shared when the framework helper exists (flag MT_LESSONS_HELPERS=commons), memory otherwise. Factory: 'Cache answer for N seconds / share identical calls' on GET steps, default off.",
+      "test": "factory tests: test_lessons.ReadSharing (generated text: cloneReadOnly, expiry, no error caching); hostscan tests: L2.readonly-literal; weave-runtime nodes.test cache/coalesce",
+      "checks": [
+        {"id": "L2.read-not-shared", "severity": "info", "title": "Backend reads are neither shared nor cached",
+         "fix": "Set lessons.shareIdenticalReads = true and, for answers that may be a little old, lessons.readCacheSeconds (e.g. 60). Never cache writes or per-user answers unless the key includes the user."},
+        {"id": "L2.readonly-literal", "severity": "error", "title": "A '& readonly' record literal is used for a cached/shared value",
+         "fix": "Build a plain record, then call .cloneReadOnly() on it. The readonly literal crashed the handler with a Java NPE in production."},
+        {"id": "L2.inflight-no-expiry", "severity": "error", "title": "An in-flight mark has no time limit",
+         "fix": "Store the time the mark was set and let a waiter take over after inflightMaxSeconds; release the mark on error and on panic."}
+      ]
+    },
+    {
+      "id": "L3",
+      "title": "Side effects the caller does not wait for run after the answer, in the background",
+      "why": "Sign-in waited 5.4 s for the e-mail send before answering.",
+      "detect": "An e-mail/SMS/notification send in the request path whose result is not used by the response.",
+      "apply": "Generator: a notification-like http:request whose result is only kept in a variable nothing reads (or is not used) runs with start runAsync after the answer path, with retries on connection failure (1 s, 3 s) and an error log 'background send failed' with backend/step (switch: lessons.backgroundSends). Factory: 'Send in background (don't wait)' option on e-mail/SMS/notification steps.",
+      "test": "factory tests: test_lessons.BackgroundSend; hostscan: L3.notify-blocks-answer; weave-runtime background send test",
+      "checks": [
+        {"id": "L3.notify-blocks-answer", "severity": "warn", "title": "The answer waits for an e-mail/SMS/notification send",
+         "fix": "Send it in the background after the answer (generated: lessonsBackground(...), Factory: 'Send in background'), with retries and a visible failure log."}
+      ]
+    },
+    {
+      "id": "L4",
+      "title": "Every outbound call has an explicit timeout below the caller's; retries only for idempotent calls; bounded fan-out",
+      "why": "Calls waited up to 60 s with no explicit limit; retrying non-idempotent calls risks double bookings/payments; unbounded parallel calls overloaded the same backend.",
+      "detect": "A client or call without a timeout, a timeout >= the caller's timeout, a retry on POST/PATCH/payment without an idempotency key, a parallel loop with no bound to one backend.",
+      "apply": "Generator: every DownstreamSettings gets an explicit timeoutSeconds in Config.toml.example (lessons.outboundTimeoutSeconds, default 20 < 30 s gateway timeout); ad-hoc URL clients use the same setting and are reused per base address; GET/HEAD/OPTIONS are retried on connection errors and 502/503/504 with lessons.retryDelaysSeconds = [1, 3]; other methods never. Factory: HTTP Request defaults timeoutMs 20000 and retries only for idempotent methods (or with an Idempotency-Key header) with retryDelaysMs [1000, 3000].",
+      "test": "factory tests: test_lessons.Timeouts/Retries; hostscan: L4.*; weave-runtime validate tests",
+      "checks": [
+        {"id": "L4.no-timeout", "severity": "warn", "title": "An outbound call has no explicit timeout",
+         "fix": "Set timeoutSeconds for the backend (below the caller's timeout, e.g. 20 s when the gateway waits 30 s)."},
+        {"id": "L4.timeout-too-long", "severity": "warn", "title": "An outbound timeout is not below the caller's timeout",
+         "fix": "Lower the backend timeout below the caller's (gateway) timeout so the service can still answer with a clear error."},
+        {"id": "L4.retry-non-idempotent", "severity": "error", "title": "A non-idempotent call is retried",
+         "fix": "Retry only GET/HEAD/OPTIONS (or calls with an idempotency key). Payment and booking calls are never retried."},
+        {"id": "L4.unbounded-fanout", "severity": "warn", "title": "Parallel calls to one backend are not bounded",
+         "fix": "Bound the parallel calls (e.g. at most 4 at once) or call sequentially."}
+      ]
+    },
+    {
+      "id": "L5",
+      "title": "Health checks: startup budget, tolerant liveness, separate readiness, safe rollouts",
+      "why": "1 s liveness probes with no start-up budget killed busy services in a loop all night (2026-11-18).",
+      "detect": "Helm values (chart or per-service override) with liveness timeout < 5 s, liveness failureThreshold < 6, no startupProbe or < 5 min start budget, readiness path equal to liveness, rollout surge > 0 on a tight node.",
+      "apply": "Chart deploy/helm/wso2-api has the right defaults since 2026-11-18; the generator writes no probe values; the readiness check flags any per-service override that weakens them.",
+      "test": "hostscan tests: test_lessons.L5",
+      "checks": [
+        {"id": "L5.liveness-timeout", "severity": "error", "title": "Liveness probe timeout is below 5 s",
+         "fix": "Remove the per-service probes override (the chart default is timeoutSeconds 5, failureThreshold 6)."},
+        {"id": "L5.liveness-failures", "severity": "error", "title": "Liveness failureThreshold is below 6",
+         "fix": "Remove the per-service probes override or set failureThreshold: 6."},
+        {"id": "L5.no-startup-probe", "severity": "error", "title": "No startup probe or less than 5 minutes to start",
+         "fix": "Keep the chart's startup probe (periodSeconds 10 x failureThreshold 30 = 5 min)."},
+        {"id": "L5.readiness-same-as-liveness", "severity": "warn", "title": "Readiness and liveness use the same check",
+         "fix": "Readiness /health/ready, liveness /health/live."},
+        {"id": "L5.rollout-surge", "severity": "warn", "title": "Rollout starts an extra copy on a tight node",
+         "fix": "strategy: { maxSurge: 0, maxUnavailable: 1 } (chart default)."}
+      ]
+    },
+    {
+      "id": "L6",
+      "title": "Observability: started/finished per request, every backend call timed, correlation ID end to end",
+      "why": "Without per-request and per-backend timing we could not find the 'unanswered' calls.",
+      "detect": "No log with durationMs per request / per backend call; outbound requests without the correlation header.",
+      "apply": "Generator: operation() logs 'request started' and 'request finished' with operation, status, durationMs, correlationId; every outbound call logs 'backend call' with backend, step, method, status, durationMs; the correlation ID header goes on every outbound request. Factory: runtime already logs per step; validation keeps it.",
+      "test": "factory tests: test_lessons.Logging; hostscan: L6.*",
+      "checks": [
+        {"id": "L6.no-duration-log", "severity": "warn", "title": "Requests or backend calls are not logged with durationMs",
+         "fix": "Log started/finished per request with operation, status, durationMs, and every backend call with backend, step, status, durationMs (regenerate the service or use lessonsTimed)."},
+        {"id": "L6.no-correlation", "severity": "warn", "title": "The correlation ID is not passed to backends",
+         "fix": "Send the x-correlation-id header on every outbound request."}
+      ]
+    },
+    {
+      "id": "L7",
+      "title": "Zoho CRM specifics",
+      "why": "Zoho rejects \"\" for number/picklist/currency fields; unknown picklist values are rejected; search with 57 fields broke guest login (limit 50); a .sa token on the .in API gives 401; the header is 'Zoho-oauthtoken <token>'; inserts created duplicates where an upsert was needed.",
+      "detect": "Calls to zohoapis/zoho.* hosts: body built without dropping empty strings, fields= list > 50, accounts and API data centres differ, Authorization 'Bearer' instead of 'Zoho-oauthtoken', POST /crm/vN/<Module> instead of /upsert with duplicate_check_fields.",
+      "apply": "Generator: request bodies to Zoho go through lessonsDropEmpty (empty strings left out); search field lists over 50 and insert-instead-of-upsert are reported in PORTING.md/porting.json and as readiness warnings; data-centre mismatch is a readiness error. Factory: Zoho connector keeps OAuth2 refresh with the Zoho-oauthtoken prefix and drops empty strings.",
+      "test": "factory tests: test_lessons.Zoho; hostscan: L7.*",
+      "checks": [
+        {"id": "L7.zoho-empty-string", "severity": "warn", "title": "Empty strings may be sent to Zoho",
+         "fix": "Leave out fields whose value is \"\" (lessonsDropEmpty) before sending to Zoho."},
+        {"id": "L7.zoho-search-fields", "severity": "error", "title": "Zoho search asks for more than 50 fields",
+         "fix": "Ask for at most 50 fields per search (split the call or drop unused fields)."},
+        {"id": "L7.zoho-dc-mismatch", "severity": "error", "title": "Zoho accounts and API data centres differ",
+         "fix": "Use the same data centre for accounts.zoho.<dc> and www.zohoapis.<dc> (a .sa token on the .in API gives 401)."},
+        {"id": "L7.zoho-auth-prefix", "severity": "error", "title": "Zoho Authorization header does not use 'Zoho-oauthtoken'",
+         "fix": "Send 'Authorization: Zoho-oauthtoken <access token>' (refreshed from the OAuth2 refresh token)."},
+        {"id": "L7.zoho-insert-not-upsert", "severity": "warn", "title": "Zoho records are inserted, not upserted",
+         "fix": "POST /crm/v2/<Module>/upsert with duplicate_check_fields so a repeat does not create a duplicate."},
+        {"id": "L7.zoho-picklist", "severity": "info", "title": "Zoho picklist values must exist",
+         "fix": "Check picklist values against the Zoho field metadata before sending; map unknown values to an allowed one."}
+      ]
+    },
+    {
+      "id": "L8",
+      "title": "Configuration correctness",
+      "why": "An undeclared config section broke start-up; two services asked for the same NodePort; a wrong CMS host caused 500s; TLS validation must stay explicit.",
+      "detect": "Settings file sections no 'configurable' declares; duplicate nodePort in deploy/vm/values; backend hosts that do not resolve; tlsValidation=false or not explicit.",
+      "apply": "Generator: Config.toml.example only carries declared sections and writes timeoutSeconds/tlsValidation explicitly per backend. Readiness: undeclared sections, NodePort clashes, unresolved hosts (when asked) and disabled TLS validation are findings.",
+      "test": "hostscan tests: test_lessons.L8",
+      "checks": [
+        {"id": "L8.undeclared-config-section", "severity": "error", "title": "The settings file has a section the service does not declare",
+         "fix": "Remove the section or declare a matching configurable; an undeclared section stops the service at start-up."},
+        {"id": "L8.nodeport-clash", "severity": "error", "title": "Two services use the same NodePort",
+         "fix": "Give this service a free NodePort (30100-30189) in deploy/vm/values/<api>.yaml."},
+        {"id": "L8.host-unresolved", "severity": "error", "title": "A backend host does not resolve",
+         "fix": "Correct the backend address in the settings file."},
+        {"id": "L8.tls-disabled", "severity": "warn", "title": "TLS certificate validation is switched off",
+         "fix": "Set tlsValidation = true (give caCertPath for a private CA)."}
+      ]
+    },
+    {
+      "id": "L9",
+      "title": "Idempotency and ordering for events",
+      "why": "Repeated or out-of-order events created two identities for one message.",
+      "detect": "A message/topic consumer with no event ID check, no stale-event check (version/timestamp) or that creates records without an upsert key.",
+      "apply": "Generator: self-starting consumers carry a TODO and a readiness warning until an event ID and a stale-event rule exist. Factory: event triggers expose an idempotency key.",
+      "test": "hostscan tests: test_lessons.L9",
+      "checks": [
+        {"id": "L9.event-no-idempotency", "severity": "warn", "title": "An event consumer has no event-ID/stale-event check",
+         "fix": "Record each event ID (skip repeats), reject events older than the stored version, and upsert by a stable key so one message never makes two identities."}
+      ]
+    },
+    {
+      "id": "L10",
+      "title": "Operations safety (runbook)",
+      "why": "Builds and browser tests overloaded the production VM on 2026-11-17/18; self-matching pgrep -f wait loops never ended; k8s/SQLite compaction ran without a health check.",
+      "detect": "Runbook and tool checks, not generator output.",
+      "apply": "Heavy builds/tests run under systemd-run --scope -p CPUQuota=100% nice -n 19 ionice -c3, never during working hours and never when load > 20; no Playwright on the production VM; no 'while pgrep -f <pattern>' loops (they match themselves); compaction is followed by a health check.",
+      "test": "runbook (LESSONS.md); hostscan flags 'pgrep -f' wait loops in service scripts",
+      "checks": [
+        {"id": "L10.pgrep-self-match", "severity": "warn", "title": "A script waits with 'pgrep -f' (matches itself)",
+         "fix": "Wait on a PID or a lock file (flock) instead of a pgrep -f pattern."}
+      ]
+    }
+  ]
+}

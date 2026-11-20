@@ -1,12 +1,13 @@
 // Flow validation. Errors block deploy; warnings are advice. Nothing here executes the flow.
 import type { ConnectorDef, FieldDef, Flow, FlowEdge, FlowNode, MappingSpec, NodeTypeDef, ValidationIssue } from "@traceit/weave-flow";
 import { Cron } from "croner";
+import { isIdempotentCall, isLoginLike, isNotificationLike, lessonMessage } from "@traceit/weave-flow";
 import { checkDeep, checkExpr, checkTemplate } from "./expr.js";
 import { nodeTypeDef } from "./catalog.js";
 import { parsePath } from "./mapping/apply.js";
 
 export interface ValidateCtx {
-  getConnection(id: string): { id: string; name: string; type: string } | undefined;
+  getConnection(id: string): { id: string; name: string; type: string; config?: Record<string, unknown> } | undefined;
   getConnector(id: string): ConnectorDef | undefined;
   getFlow(id: string): { id: string; name: string } | undefined;
   /** Contexts on the gateway that belong to somebody else. */
@@ -200,6 +201,8 @@ export function validateFlow(flow: Flow, ctx: ValidateCtx): ValidationIssue[] {
 
   // an answer or mapping that reads a name nothing produced ("lead" when no step makes it) is a warning
   unknownNames(flow, nodes, edges, byId, warn);
+  // production lessons (lessons.json): advice, never a reason to refuse a deploy
+  lessonChecks(flow, nodes, edges, defs, ctx, issues);
 
   const gw = flow.settings?.gateway;
   if (gw?.publish) {
@@ -260,4 +263,68 @@ function unknownNames(flow: Flow, nodes: FlowNode[], edges: FlowEdge[], byId: Ma
     }
   }
   void flow;
+}
+
+
+// ---------------------------------------------------------------- production lessons
+const CALL_TYPES = /^(?:http\.request|graphql\.request|connector:)/;
+/** Steps that run once per item of a For Each or in a Parallel branch. */
+function insideLoops(nodes: FlowNode[], edges: FlowEdge[]): Set<string> {
+  const out = new Set<string>();
+  const from = new Map<string, FlowEdge[]>();
+  for (const e of edges) { if (!e?.from) continue; const l = from.get(e.from) ?? []; l.push(e); from.set(e.from, l); }
+  for (const n of nodes) {
+    if (n?.type !== "logic.foreach" && n?.type !== "logic.parallel") continue;
+    const stack = (from.get(n.id) ?? []).filter((e) => (n.type === "logic.foreach" ? (e.fromPort || "out") === "each" : String(e.fromPort || "").startsWith("branch:"))).map((e) => e.to);
+    while (stack.length) { const id = stack.pop()!; if (out.has(id)) continue; out.add(id); for (const e of from.get(id) ?? []) stack.push(e.to); }
+  }
+  return out;
+}
+function lessonChecks(flow: Flow, nodes: FlowNode[], edges: FlowEdge[], defs: Map<string, NodeTypeDef | undefined>, ctx: ValidateCtx, issues: ValidationIssue[]) {
+  const add = (lesson: string, n: FlowNode, field: string | undefined, detail?: string) => issues.push({ level: "warning", nodeId: n.id, field, lesson, message: lessonMessage(lesson, n.name, detail) });
+  const loops = insideLoops(nodes, edges);
+  const answers = nodes.some((n) => n?.type === "trigger.http" && !n.disabled);
+  const flowTimeout = Number(flow.settings?.timeoutMs) > 0 ? Number(flow.settings?.timeoutMs) : 60_000;
+  for (const n of nodes) {
+    if (!n?.id || n.disabled || !CALL_TYPES.test(n.type)) continue;
+    const def = defs.get(n.id);
+    if (!def) continue;
+    const cfg = { ...(def.defaults ?? {}), ...(n.config ?? {}) };
+    const op = n.type.startsWith("connector:") ? opOf(n.type, ctx) : undefined;
+    const method = n.type === "graphql.request" ? "POST" : String(op?.method ?? cfg.method ?? "GET").toUpperCase();
+    const headerNames = [...kvKeys(cfg.headers), ...kvKeys(op?.headers)];
+    const idempotent = isIdempotentCall(method, headerNames, n.type === "graphql.request" ? String(cfg.query ?? "") : undefined, String(op?.path ?? cfg.url ?? ""));
+    const words = [String(cfg.url ?? ""), n.name, op?.path, op?.name, op?.id];
+    // L4: explicit timeout, below the flow's own timeout
+    const t = Number(cfg.timeoutMs);
+    if (cfg.timeoutMs === undefined || cfg.timeoutMs === null || cfg.timeoutMs === "" || !(t > 0)) add("L4.no-timeout", n, "timeoutMs");
+    else if (t >= flowTimeout) add("L4.timeout-too-long", n, "timeoutMs", `the timeout (${t} ms) is not below the flow's timeout (${flowTimeout} ms)`);
+    // L4: retries only for calls that cannot change data twice
+    if (!idempotent && cfg.retryUnsafe === true && Number(cfg.retries) > 0) add("L4.retry-non-idempotent", n, "retries", `${method} is retried ${Number(cfg.retries)} time(s) without an Idempotency-Key header`);
+    else if (!idempotent && n.config?.retries !== undefined && Number(n.config.retries) > 0 && Number(n.config.retries) !== Number(def.defaults?.retries)) add("L4.retry-non-idempotent", n, "retries", `${method} asks for ${Number(n.config.retries)} retries, which the runtime does not do without an Idempotency-Key header (or "Retry even though the call may change data")`);
+    // L1: a login/token call per item or per request
+    if (isLoginLike(...words)) {
+      const reused = cfg.reuseSession === true || Number(cfg.cacheSeconds) > 0;
+      const conn = cfg.connection ? ctx.getConnection(String(cfg.connection)) : undefined;
+      const connToken = !!conn?.config && String(conn.config.authType ?? "none") !== "none";
+      if (loops.has(n.id)) add("L1.login-in-loop", n, undefined);
+      else if (answers && !reused) add("L1.login-per-request", n, "reuseSession", connToken ? `logs in on every request although its connection "${conn!.name}" already supplies a token` : "logs in on every request");
+    }
+    // L3: the answer waits for an e-mail/SMS/notification send
+    if (answers && !idempotent && cfg.background !== true && isNotificationLike(...words, op ? (ctx.getConnector(n.type.split(":")[1])?.name ?? "") : "")) add("L3.notify-blocks-answer", n, "background", "the answer waits for this send; if the flow does not use its answer, tick \"Send in background (don't wait)\"");
+    // L4: bounded fan-out to one backend
+    if (loops.has(n.id)) {
+      const each = nodes.find((m) => m.type === "logic.foreach" && Number({ ...(defs.get(m.id)?.defaults ?? {}), ...(m.config ?? {}) }.concurrency) > 8);
+      if (each) add("L4.unbounded-fanout", n, undefined, `runs up to ${Number(each.config?.concurrency)} at once inside "${each.name}"`);
+    }
+  }
+}
+function kvKeys(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => String((x as { key?: unknown })?.key ?? "")).filter(Boolean);
+  if (v && typeof v === "object") return Object.keys(v);
+  return [];
+}
+function opOf(type: string, ctx: ValidateCtx) {
+  const m = /^connector:([^:]+):(.+)$/.exec(type);
+  return m ? ctx.getConnector(m[1])?.operations.find((o) => o.id === m[2]) : undefined;
 }

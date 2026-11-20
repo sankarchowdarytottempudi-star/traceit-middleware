@@ -1,5 +1,7 @@
 // Node implementations. One handler per node type in the catalog.
 import type { ConnectorOperation, FieldDef } from "@traceit/weave-flow";
+import { isIdempotentCall, LESSON_DEFAULTS } from "@traceit/weave-flow";
+import { httpShare, shareKey } from "./share.js";
 import { evalExpr, renderDeep, renderString, renderTemplate, truthy, xmlToJson, jsonToXml, isEmpty } from "../expr.js";
 import { applyMapping } from "../mapping/apply.js";
 import { readBody, type HttpResult } from "../clients/http.js";
@@ -109,11 +111,24 @@ interface HttpSpec {
   query: { key: string; value: unknown }[]; headers: Record<string, string>;
   body?: string | Buffer; timeoutMs: number; retries: number; retryDelayMs: number; failOnStatus: boolean; responseMode: string;
   retryDelaysMs?: number[];
+  /** L4: a call that may change data is retried only when it is idempotent (or the step says so). */
+  idempotent?: boolean; retryUnsafe?: boolean;
+  /** L2: identical in-flight calls share one call; the answer may be kept keepMs. */
+  share?: { keepMs: number; share: boolean };
+  signal?: AbortSignal;
 }
 /** "1000, 3000" -> [1000, 3000]; anything unreadable is left out. */
 export function delayList(v: unknown): number[] {
   const parts = Array.isArray(v) ? v : typeof v === "string" ? v.split(/[,;\s]+/) : [];
   return parts.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n >= 0).map((n) => Math.min(60_000, Math.round(n)));
+}
+/** The back-off list of a step. The default list (1 s, 3 s) applies unless the step set its own
+ * single Retry delay, so steps saved before the default existed keep their waits. */
+function delaysFor(c: NodeCtx): number[] {
+  const own = (c.node.config ?? {}) as Record<string, unknown>;
+  if (own.retryDelaysMs !== undefined) return delayList(own.retryDelaysMs);
+  if (own.retryDelayMs !== undefined && own.retryDelayMs !== null && own.retryDelayMs !== "") return [];
+  return delayList(c.cfg.retryDelaysMs);
 }
 export function joinUrl(base: string | undefined, path: string): string {
   if (/^https?:\/\//i.test(path)) return path;
@@ -128,13 +143,19 @@ async function doHttp(c: NodeCtx, s: HttpSpec): Promise<{ status: number; header
   for (const q of s.query) { if (q.value === undefined || q.value === null || q.value === "") continue; if (Array.isArray(q.value)) for (const v of q.value) url.searchParams.append(q.key, asText(v)); else url.searchParams.append(q.key, asText(q.value)); }
   const shown = String(redact(url.toString(), c.run.secrets));
   c.step.meta = { ...(c.step.meta ?? {}), http: { method: s.method, url: shown } };
-  const attempts = 1 + Math.max(0, Math.min(10, Math.floor(s.retries)));
+  let attempts = 1 + Math.max(0, Math.min(10, Math.floor(s.retries)));
+  if (attempts > 1 && s.idempotent === false && s.retryUnsafe !== true) {
+    // L4: repeating a call that changes data can do it twice (a booking, a payment, an e-mail)
+    c.run.log("info", `[L4] ${s.method} is not retried: it may change data and carries no Idempotency-Key header`, c.node.name);
+    attempts = 1;
+  }
+  const signal = s.signal ?? c.run.abort.signal;
   let lastErr: FlowError | undefined;
   let refreshed = false;
   for (let i = 1; i <= attempts; i++) {
     let res: HttpResult | undefined;
     try {
-      res = await c.run.deps.http.request({ method: s.method, url: url.toString(), headers: s.headers, body: s.body, timeoutMs: s.timeoutMs, tlsVerify: s.conn ? s.conn.config.tlsVerify !== false : true, signal: c.run.abort.signal });
+      res = await c.run.deps.http.request({ method: s.method, url: url.toString(), headers: s.headers, body: s.body, timeoutMs: s.timeoutMs, tlsVerify: s.conn ? s.conn.config.tlsVerify !== false : true, signal });
     } catch (e) {
       const x = e as { code?: string; message?: string };
       const timedOut = x.code === "ETIMEDOUT";
@@ -151,13 +172,75 @@ async function doHttp(c: NodeCtx, s: HttpSpec): Promise<{ status: number; header
         c.run.log("info", "The access token was refused; a new one was fetched and the call repeated", c.node.name);
         i--; continue;
       }
+      // a refused session or token: answers kept for this backend (a reused login) are dropped (L1)
+      if (res.status === 401 || res.status === 403 || res.status === 440) httpShare.forget(url.origin + "|");
       if (!(s.failOnStatus && res.status >= 400)) return { status: res.status, headers: res.headers, body };
       lastErr = new FlowError(`${s.method} ${shown} answered ${res.status}`, { status: res.status >= 500 ? 502 : res.status, detail: { status: res.status, body: body as never } });
       if (res.status < 500 && res.status !== 429) break;
     }
-    if (i < attempts) { c.run.log("warn", `${lastErr!.message}; retrying (${i}/${attempts - 1})`, c.node.name); const list = s.retryDelaysMs ?? []; await sleep(Math.max(0, list.length ? list[Math.min(i - 1, list.length - 1)] : s.retryDelayMs), c.run.abort.signal); }
+    if (i < attempts) {
+      const list = s.retryDelaysMs ?? []; const wait = Math.max(0, list.length ? list[Math.min(i - 1, list.length - 1)] : s.retryDelayMs);
+      // L4: a retry that cannot finish before the flow's own timeout only makes the caller wait longer
+      const budget = Number(c.run.flow.settings?.timeoutMs) > 0 ? Number(c.run.flow.settings?.timeoutMs) : 60_000;
+      const deadline = Date.parse(c.run.exec.startedAt) + budget;
+      if (!s.signal && Number.isFinite(deadline) && Date.now() + wait + s.timeoutMs > deadline) { c.run.log("warn", `${lastErr!.message}; [L4] not retried: no time left before the flow's ${budget} ms timeout`, c.node.name); break; }
+      c.run.log("warn", `${lastErr!.message}; retrying (${i}/${attempts - 1})`, c.node.name);
+      await sleep(wait, signal);
+    }
   }
   throw lastErr!;
+}
+/** doHttp through the L2 share: identical in-flight calls share one call, answers kept when asked. */
+async function sharedHttp(c: NodeCtx, s: HttpSpec): Promise<{ status: number; headers: Record<string, string>; body: unknown }> {
+  if (!s.share || (!s.share.share && s.share.keepMs <= 0)) return doHttp(c, s);
+  let full: string;
+  try { const u = new URL(s.url); for (const q of s.query) { if (q.value === undefined || q.value === null || q.value === "") continue; for (const v of Array.isArray(q.value) ? q.value : [q.value]) u.searchParams.append(q.key, asText(v)); } full = u.toString(); }
+  catch { return doHttp(c, s); }
+  const key = shareKey(s.method, full, s.headers, s.body);
+  const r = await httpShare.run(key, { keepMs: s.share.keepMs, share: s.share.share, inflightMaxMs: Math.max(1000, s.timeoutMs + 1000) }, () => doHttp(c, s));
+  c.step.meta = { ...(c.step.meta ?? {}), cache: { hit: r.via !== "call" }, shared: r.via };
+  return r.value;
+}
+/** The L2 options of a step: only reads are shared or kept, and a login only when the step reuses the session. */
+function shareOf(cfg: Record<string, unknown>, method: string, idempotent: boolean): HttpSpec["share"] {
+  const reuse = cfg.reuseSession === true;
+  const keepS = reuse ? numOr(cfg.sessionSeconds, numOr(cfg.cacheSeconds, LESSON_DEFAULTS.sessionSeconds)) : numOr(cfg.cacheSeconds, 0);
+  const share = reuse || cfg.shareIdentical === true;
+  if (!reuse && !(method === "GET" && idempotent)) return undefined;   // never share or keep a call that writes
+  if (keepS <= 0 && !share) return undefined;
+  return { keepMs: Math.max(0, Math.min(86_400, keepS)) * 1000, share };
+}
+/** L3: the step does not wait. The call runs after the answer path, with retries when no answer
+ * came back (connection refused/reset) or the backend said 429/503; a final failure is logged as an error. */
+function inBackground(c: NodeCtx, s: HttpSpec): { output: Record<string, unknown> } {
+  const delays = [...LESSON_DEFAULTS.backgroundRetryDelaysMs];
+  const name = c.node.name;
+  const started = Date.now();
+  const ctl = new AbortController();
+  const run = async () => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const r = await doHttp(c, { ...s, retries: 0, signal: ctl.signal });
+        c.run.log("info", `[L3] Background send "${name}" answered ${r.status} in ${Date.now() - started} ms`, name);
+        return;
+      } catch (e) {
+        const x = e as { message?: string; detail?: { status?: number; code?: string | null } };
+        const st = x.detail?.status;
+        const noAnswer = st === undefined && x.detail?.code !== undefined && x.detail?.code !== "ETIMEDOUT";
+        const again = attempt <= delays.length && (noAnswer || st === 429 || st === 503 || (s.idempotent === true && x.detail?.code === "ETIMEDOUT"));
+        if (!again) {
+          const msg = `[L3] Background send "${name}" failed after ${attempt} attempt${attempt === 1 ? "" : "s"}: ${x.message ?? String(e)}`;
+          c.run.log("error", msg, name);
+          console.error(`[weave-runtime] ${String(msg).slice(0, 500)}`);
+          return;
+        }
+        c.run.log("warn", `[L3] Background send "${name}" failed (${x.message ?? "error"}); trying again in ${delays[attempt - 1]} ms`, name);
+        await sleep(delays[attempt - 1]);
+      }
+    }
+  };
+  void run().catch((e) => console.error(`[weave-runtime] background send failed: ${(e as Error)?.message ?? e}`));
+  return { output: { background: true, queued: true } };
 }
 async function buildHeaders(c: NodeCtx, conn: ResolvedConnection | undefined, extra: unknown): Promise<Record<string, string>> {
   const h: Record<string, string> = {};
@@ -196,7 +279,10 @@ const httpRequest: NodeHandler = async (c) => {
     default: break;
   }
   if (!headers.accept) headers.accept = "application/json, */*;q=0.8";
-  const res = await doHttp(c, { conn, method, url, query, headers, body, timeoutMs: numOr(cfg.timeoutMs, numOr(conn?.config.timeoutMs, 30_000)), retries: numOr(cfg.retries, 0), retryDelayMs: numOr(cfg.retryDelayMs, 500), retryDelaysMs: delayList(cfg.retryDelaysMs), failOnStatus: cfg.failOnStatus !== false, responseMode: String(cfg.responseMode || "auto") });
+  const idempotent = isIdempotentCall(method, Object.keys(headers), undefined, url);
+  const spec: HttpSpec = { conn, method, url, query, headers, body, timeoutMs: numOr(cfg.timeoutMs, numOr(conn?.config.timeoutMs, LESSON_DEFAULTS.timeoutMs)), retries: numOr(cfg.retries, 0), retryDelayMs: numOr(cfg.retryDelayMs, 500), retryDelaysMs: delaysFor(c), failOnStatus: cfg.failOnStatus !== false, responseMode: String(cfg.responseMode || "auto"), idempotent, retryUnsafe: cfg.retryUnsafe === true };
+  if (cfg.background === true) return inBackground(c, spec);
+  const res = await sharedHttp(c, { ...spec, share: shareOf(cfg, method, idempotent) });
   return { result: cfg.output === "full" ? { status: res.status, headers: res.headers, body: res.body } : res.body };
 };
 function tryJson(s: string): unknown { try { return JSON.parse(s); } catch { return s; } }
@@ -212,7 +298,8 @@ const graphqlRequest: NodeHandler = async (c) => {
   const variables = await renderDeep(typeof cfg.variables === "string" ? tryJson(cfg.variables) : cfg.variables ?? {}, es);
   const payload: Record<string, unknown> = { query: String(cfg.query), variables: variables ?? {} };
   if (cfg.operationName) payload.operationName = String(cfg.operationName);
-  const res = await doHttp(c, { conn, method: "POST", url, query: [], headers, body: JSON.stringify(payload), timeoutMs: numOr(cfg.timeoutMs, numOr(conn?.config.timeoutMs, 30_000)), retries: numOr(cfg.retries, 0), retryDelayMs: numOr(cfg.retryDelayMs, 500), failOnStatus: true, responseMode: "auto" });
+  const idempotent = isIdempotentCall("POST", Object.keys(headers), String(cfg.query));
+  const res = await doHttp(c, { conn, method: "POST", url, query: [], headers, body: JSON.stringify(payload), timeoutMs: numOr(cfg.timeoutMs, numOr(conn?.config.timeoutMs, LESSON_DEFAULTS.timeoutMs)), retries: numOr(cfg.retries, 0), retryDelayMs: numOr(cfg.retryDelayMs, 500), retryDelaysMs: delaysFor(c), failOnStatus: true, responseMode: "auto", idempotent, retryUnsafe: cfg.retryUnsafe === true });
   const body = (res.body && typeof res.body === "object" ? res.body : { data: null, errors: [{ message: "The endpoint did not return a GraphQL response" }] }) as { data?: unknown; errors?: { message?: string }[] };
   if (cfg.failOnErrors !== false && Array.isArray(body.errors) && body.errors.length) {
     throw new FlowError(`GraphQL error: ${body.errors.map((e) => e?.message ?? "unknown").join("; ")}`, { status: 502, detail: { errors: body.errors as never } });
@@ -252,7 +339,10 @@ export const connectorHandler: NodeHandler = async (c) => {
     }
   }
   if (!headers.accept) headers.accept = "application/json, */*;q=0.8";
-  const res = await doHttp(c, { conn, method, url, query, headers, body, timeoutMs: numOr(cfg.timeoutMs, numOr(conn?.config.timeoutMs, 30_000)), retries: numOr(cfg.retries, 0), retryDelayMs: numOr(cfg.retryDelayMs, 500), failOnStatus: cfg.failOnStatus !== false, responseMode: "auto" });
+  const idempotent = isIdempotentCall(method, Object.keys(headers), undefined, url);
+  const spec: HttpSpec = { conn, method, url, query, headers, body, timeoutMs: numOr(cfg.timeoutMs, numOr(conn?.config.timeoutMs, LESSON_DEFAULTS.timeoutMs)), retries: numOr(cfg.retries, 0), retryDelayMs: numOr(cfg.retryDelayMs, 500), retryDelaysMs: delaysFor(c), failOnStatus: cfg.failOnStatus !== false, responseMode: "auto", idempotent, retryUnsafe: cfg.retryUnsafe === true };
+  if (cfg.background === true) return inBackground(c, spec);
+  const res = await sharedHttp(c, { ...spec, share: shareOf(cfg, method, idempotent) });
   return { result: cfg.output === "full" ? { status: res.status, headers: res.headers, body: res.body } : res.body };
 };
 async function renderParam(f: FieldDef, raw: unknown, es: Parameters<typeof renderTemplate>[1]): Promise<unknown> {

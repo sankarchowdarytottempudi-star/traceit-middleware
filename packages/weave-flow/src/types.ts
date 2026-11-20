@@ -65,7 +65,7 @@ export type FlowSummary = Pick<Flow, "id" | "name" | "slug" | "description" | "t
 };
 export interface FlowVersion { revision: number; savedAt: string; savedBy?: string; note?: string; deployed?: boolean; }
 
-export interface ValidationIssue { level: "error" | "warning"; nodeId?: string; field?: string; message: string; }
+export interface ValidationIssue { level: "error" | "warning"; nodeId?: string; field?: string; message: string; /** production lesson check id (lessons.json), e.g. "L4.no-timeout" */ lesson?: string; }
 
 // ---------------------------------------------------------------- mapping
 /** One target field of a Transform (Map) node.

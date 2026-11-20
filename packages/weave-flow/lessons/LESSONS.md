@@ -8,7 +8,7 @@ Everything is deterministic: fixed rules, no model.
 | Id | Lesson | Incident | Generator | Readiness check | Factory flows |
 |----|--------|----------|-----------|-----------------|---------------|
 | L1 | Reuse downstream sessions/tokens | 10 parallel Seaware logins, 2.5-4.6 s each, one 36 s timeout | session reuse for setting-only logins; TODO + warning for per-user logins | `L1.login-per-request`, `L1.login-in-loop` | warns on login in a loop / per request |
-| L2 | Share identical in-flight reads, cache short-lived reads | CMS / cabin-price 3x parallel hits; stuck in-flight mark; `Kept & readonly` literal NPE | `lessonsRead` on GETs (share/cache settings, off by default), expiring marks, no error caching, `.cloneReadOnly()` | `L2.read-not-shared`, `L2.readonly-literal`, `L2.inflight-no-expiry` | "Cache answer for N seconds / share identical calls" (off) |
+| L2 | Share identical in-flight reads, cache short-lived reads | CMS / cabin-price 3x parallel hits; stuck in-flight mark; `Kept & readonly` literal NPE | `lessonsCall` read mode on `commons:SharedCache` (off by default), expiring marks, no error caching, `.cloneReadOnly()` | `L2.read-not-shared`, `L2.readonly-literal`, `L2.inflight-no-expiry` | "Cache answer for N seconds / share identical calls" (off) |
 | L3 | Background side effects | sign-in waited 5.4 s for the e-mail | unused notification sends go `start` with retries + error log | `L3.notify-blocks-answer` | "Send in background (don't wait)" |
 | L4 | Explicit timeouts, idempotent-only retries, bounded fan-out | 60 s waits, retry risk on writes | explicit `timeoutSeconds` (20 s), GET-only retries 1 s/3 s, reused URL clients | `L4.no-timeout`, `L4.timeout-too-long`, `L4.retry-non-idempotent`, `L4.unbounded-fanout` | timeout default, retries only for idempotent/with key |
 | L5 | Probes and rollouts | 1 s liveness killed services all night | no probe values written (chart defaults) | `L5.*` on per-service values | n/a |
@@ -26,13 +26,17 @@ Everything is deterministic: fixed rules, no model.
 | `retryDelaysSeconds` | [1, 3] | GET/HEAD/OPTIONS retried on connection errors and 502/503/504; others never |
 | `shareIdenticalReads` | false | identical in-flight GETs share one backend call |
 | `readCacheSeconds` | 0 | keep GET answers this long (0 = off); errors are never kept |
-| `inflightMaxSeconds` | 30 | a waiter takes over after this; marks always released |
-| `sessionReuseSeconds` | 240 | keep a setting-only login this long (0 = off); dropped on 401/403/440 |
+| `inflightMaxSeconds` | 30 | longest wait for an identical call (SharedCache waitSeconds); marks always released |
+| `sessionReuseSeconds` | 240 | keep a setting-only (service-account) login this long (0 = off); dropped on 401/403/440 |
+| `lessonsRedis` (section) | enabled = false unless the platform Redis is found | where shared reads/sessions live between copies |
 | `backgroundSends` | true | notification sends whose result is unused run after the answer |
 
-Switch the whole generator behaviour off with `MT_LESSONS=0`. Use the shared framework helpers
-(Redis-shared cache, session reuse) with `MT_LESSONS_HELPERS=commons` once their names are set in
-`factory/lessons.py` (`HELPERS`).
+Switch the whole generator behaviour off with `MT_LESSONS=0`. Session reuse (L1) and shared/kept
+reads (L2) are built on the framework's `commons:SharedCache` (`framework/integration-commons/shared_cache.bal`):
+Redis between copies when `[<org>.<pkg>.lessonsRedis]` is on (the generator copies the platform Redis
+address the state section uses), this copy's memory otherwise. The framework names the generated code
+uses are in one place: `factory/lessons.py` (`FRAMEWORK_HELPERS`). L1 safety rule: share only the API's
+own service/agent session, never a per-end-user one; the credential is part of the hashed key.
 
 ## Runbook (L10)
 

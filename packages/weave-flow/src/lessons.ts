@@ -9,7 +9,7 @@ export interface LessonCheck { id: string; lesson: string; title: string; fix: s
 /** Check ids and fix texts; the test keeps them identical to lessons/lessons.json. */
 export const LESSON_CHECKS: Record<string, LessonCheck> = {
   "L1.login-per-request": { id: "L1.login-per-request", lesson: "L1", title: "A login/token call runs on every request",
-    fix: "Keep the session or token and reuse it until it expires (generated: lessonsSession(...) with lessons.sessionReuseSeconds). Never share a login made with the caller's own credentials." },
+    fix: "Keep the session or token and reuse it until it expires (generated: lessonsCall session mode on the framework's SharedCache, lessons.sessionReuseSeconds). Share only the API's own service/agent account, never a per-end-user session." },
   "L1.login-in-loop": { id: "L1.login-in-loop", lesson: "L1", title: "A login/token call runs inside a loop or parallel branch",
     fix: "Log in once before the loop and pass the session to each item; or use the connection-level token." },
   "L2.read-not-shared": { id: "L2.read-not-shared", lesson: "L2", title: "Backend reads are neither shared nor cached",

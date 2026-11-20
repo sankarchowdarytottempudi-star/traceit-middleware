@@ -60,15 +60,12 @@ describe("upload validation", () => {
       expect(by[id]?.maturity, id).toBe("complete-unverified");
       expect(by[id]?.depth, id).toBe("partial");
     }
-    for (const id of ["dotnet", "springboot", "mule"]) {
+    for (const id of ["dotnet", "springboot", "mule", "nodejs", "openapi"]) {
       expect(by[id]?.maturity, id).toBe("complete");
       expect(by[id]?.depth, id).toBe("full");
     }
     expect(TARGET_TECHNOLOGIES.map((t) => t.id)).toEqual(["wso2", "mule", "springboot", "dotnet", "webmethods", "boomi", "workato", "nodejs", "openapi"]);
-    for (const id of ["nodejs", "openapi"]) {
-      expect(by[id]?.maturity, id).toBe("skeleton");
-      expect(by[id]?.depth, id).toBe("skeleton");
-    }
+    expect(TARGET_TECHNOLOGIES.filter((t) => t.maturity === "skeleton")).toEqual([]);
     expect(by.workato.label).toBe("Workato");
     expect(by.nodejs.label).toBe("Node.js");
     expect(validateUpload({ name: "n", filename: "a.zip", target: "workato" }, 10, 5)).toMatchObject({ ok: true });

@@ -12,6 +12,6 @@ export const GENERATED_TARGETS: GeneratedTarget[] = [
   { id: "webmethods", label: "webMethods", maturity: "complete-unverified", depth: "partial", hint: "complete-unverified: an Integration Server package zip (flow services, document types, REST resource, JDBC adapter placeholders), tests, parity and lessons reports." },
   { id: "boomi", label: "Boomi", maturity: "complete-unverified", depth: "partial", hint: "complete-unverified: importable component XML (processes, connections, operations, profiles, maps), Platform API import script, tests, parity and lessons reports." },
   { id: "workato", label: "Workato", maturity: "complete-unverified", depth: "partial", hint: "Importable Workato package: API endpoint recipes, recipe functions, connections; format-verified, not run (no Workato account)." },
-  { id: "nodejs", label: "Node.js", maturity: "skeleton", depth: "skeleton", hint: "Project skeleton, step model and documents." },
-  { id: "openapi", label: "OpenAPI description only", maturity: "skeleton", depth: "skeleton", hint: "The API contract and documents, no service." },
+  { id: "nodejs", label: "Node.js", maturity: "complete", depth: "full", hint: "Complete TypeScript service: routes, flows, mappings, tests, Docker and Helm." },
+  { id: "openapi", label: "OpenAPI description", maturity: "complete", depth: "full", hint: "OpenAPI 3.1 contract with documentation, mock server and contract tests." },
 ];

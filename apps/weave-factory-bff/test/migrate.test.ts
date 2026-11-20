@@ -60,7 +60,9 @@ describe("upload validation", () => {
       expect(by[id]?.maturity, id).toBe("complete-unverified");
       expect(by[id]?.depth, id).toBe("partial");
     }
-    for (const id of ["mule", "springboot", "dotnet", "nodejs", "openapi"]) {
+    expect(by.dotnet.maturity).toBe("complete");
+    expect(by.dotnet.depth).toBe("full");
+    for (const id of ["mule", "springboot", "nodejs", "openapi"]) {
       expect(by[id]?.maturity, id).toBe("skeleton");
       expect(by[id]?.depth, id).toBe("skeleton");
     }

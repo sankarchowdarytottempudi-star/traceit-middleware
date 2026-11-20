@@ -56,7 +56,11 @@ describe("upload validation", () => {
   it("takes the targets and their maturity from the generator's registry", () => {
     const by = Object.fromEntries(TARGET_TECHNOLOGIES.map((t) => [t.id, t]));
     expect(by.wso2.maturity).toBe("complete");
-    for (const id of ["mule", "springboot", "dotnet", "webmethods", "boomi", "workato", "nodejs", "openapi"]) {
+    for (const id of ["boomi", "webmethods", "workato"]) {
+      expect(by[id]?.maturity, id).toBe("complete-unverified");
+      expect(by[id]?.depth, id).toBe("partial");
+    }
+    for (const id of ["mule", "springboot", "dotnet", "nodejs", "openapi"]) {
       expect(by[id]?.maturity, id).toBe("skeleton");
       expect(by[id]?.depth, id).toBe("skeleton");
     }

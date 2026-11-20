@@ -9,9 +9,9 @@ export const GENERATED_TARGETS: GeneratedTarget[] = [
   { id: "mule", label: "MuleSoft", maturity: "skeleton", depth: "skeleton", hint: "Project skeleton and documents." },
   { id: "springboot", label: "Spring Boot", maturity: "skeleton", depth: "skeleton", hint: "Project skeleton and documents." },
   { id: "dotnet", label: ".NET", maturity: "skeleton", depth: "skeleton", hint: "Project skeleton and documents." },
-  { id: "webmethods", label: "webMethods", maturity: "skeleton", depth: "skeleton", hint: "Project skeleton and documents." },
-  { id: "boomi", label: "Boomi", maturity: "skeleton", depth: "skeleton", hint: "Project skeleton and documents." },
-  { id: "workato", label: "Workato", maturity: "skeleton", depth: "skeleton", hint: "Recipe skeleton, step model and documents." },
+  { id: "webmethods", label: "webMethods", maturity: "complete-unverified", depth: "partial", hint: "complete-unverified: an Integration Server package zip (flow services, document types, REST resource, JDBC adapter placeholders), tests, parity and lessons reports." },
+  { id: "boomi", label: "Boomi", maturity: "complete-unverified", depth: "partial", hint: "complete-unverified: importable component XML (processes, connections, operations, profiles, maps), Platform API import script, tests, parity and lessons reports." },
+  { id: "workato", label: "Workato", maturity: "complete-unverified", depth: "partial", hint: "Importable Workato package: API endpoint recipes, recipe functions, connections; format-verified, not run (no Workato account)." },
   { id: "nodejs", label: "Node.js", maturity: "skeleton", depth: "skeleton", hint: "Project skeleton, step model and documents." },
   { id: "openapi", label: "OpenAPI description only", maturity: "skeleton", depth: "skeleton", hint: "The API contract and documents, no service." },
 ];

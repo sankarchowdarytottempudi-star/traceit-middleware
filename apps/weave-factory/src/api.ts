@@ -112,7 +112,7 @@ export interface MappingRule { target: string; kind: "direct" | "expr" | "const"
 export interface InferResult { rules: MappingRule[]; engine: string; needsModel: boolean; }
 
 export interface SourceTechnology { id: string; label: string; upload: string; hint?: string; sourceType?: string; }
-export interface TargetTechnology { id: string; label: string; depth: string; hint?: string; }
+export interface TargetTechnology { id: string; label: string; depth: string; maturity?: "complete" | "complete-unverified" | "partial" | "skeleton"; hint?: string; }
 export interface MigrateOptions { technologies: SourceTechnology[]; targets: TargetTechnology[]; extensions: string[]; maxUploadMb: number; }
 
 export interface Environment { id: string; name: string; workspace?: string | null; baseUrl: string; createdAt?: string; hasToken?: boolean; tokenSet?: boolean; }

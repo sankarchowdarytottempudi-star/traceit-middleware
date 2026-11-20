@@ -9,6 +9,12 @@ import { fileSize, validateNewMigration } from "../lib/migrate.ts";
 import { Bar, Btn, Failed, Field, Head, LinkBtn, Loading, Notice, Panel, Pill, SourceWays, errText, useTitle } from "./ui.tsx";
 import { NewPartFields, type PartSpec } from "./Part.tsx";
 
+// How complete the generator's writer for a target is (the migration factory's registry; older
+// servers send only depth).
+type Maturity = "complete" | "complete-unverified" | "partial" | "skeleton";
+const MATURITY_WORD: Record<Maturity, string> = { complete: "Complete", "complete-unverified": "Complete (unverified)", partial: "Partial", skeleton: "Skeleton" };
+const maturityOf = (t: { depth: string; maturity?: Maturity }): Maturity => t.maturity ?? (t.depth === "full" ? "complete" : t.depth === "partial" ? "partial" : "skeleton");
+
 const NEW = "__new__";
 function StepTitle({ n, children }: { n: number; children: string }) {
   return <span className="mf-mg-row" style={{ gap: 10 }}><span className="mf-mg-stepno">{n}</span>{children}</span>;
@@ -114,12 +120,14 @@ export function MigrationNew() {
             <div className="mf-mg-choices" role="radiogroup" aria-label="Target">
               {opts.data.targets.map((t) => (
                 <button key={t.id} type="button" role="radio" aria-checked={target === t.id} className="mf-btn mf-mg-choice" disabled={uploading} onClick={() => setTarget(t.id)}>
-                  <span className="mf-mg-row" style={{ gap: 8, justifyContent: "space-between" }}><strong>{txt(t.label)}</strong><Pill tone={t.depth === "full" ? "ok" : undefined}>{t.depth === "full" ? "Complete" : "Skeleton"}</Pill></span>
+                  <span className="mf-mg-row" style={{ gap: 8, justifyContent: "space-between" }}><strong>{txt(t.label)}</strong><Pill tone={maturityOf(t) === "complete" ? "ok" : undefined}>{MATURITY_WORD[maturityOf(t)]}</Pill></span>
                   <small>{txt(t.hint)}</small>
                 </button>
               ))}
             </div>
-            {tgt && tgt.depth !== "full" && <Notice tone="warn">For this target the tool writes the documents and a project skeleton. Testing and deployment from this screen are only available for the complete target.</Notice>}
+            {tgt && maturityOf(tgt) === "skeleton" && <Notice tone="warn">For this target the tool writes the documents and a project skeleton. Testing and deployment from this screen are only available for the complete target.</Notice>}
+            {tgt && maturityOf(tgt) === "complete-unverified" && <Notice tone="warn">For this target the tool writes a complete project to download. It is format-checked but has not been imported into that product here; import and test it on your own systems.</Notice>}
+            {tgt && maturityOf(tgt) === "partial" && <Notice tone="warn">For this target the tool writes a project to download; some steps stay marked placeholders (listed in its parity report). Testing and deployment from this screen are only available for the complete target.</Notice>}
           </Panel>
 
           <Panel title={<StepTitle n={4}>Upload the source</StepTitle>}>

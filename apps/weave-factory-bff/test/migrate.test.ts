@@ -53,6 +53,18 @@ describe("upload validation", () => {
     expect(SOURCE_TECHNOLOGIES.find((t) => t.id === "node")!.upload).toMatch(/without node_modules/);
     expect(TARGET_TECHNOLOGIES.find((t) => t.id === "wso2")!.depth).toBe("full");
   });
+  it("takes the targets and their maturity from the generator's registry", () => {
+    const by = Object.fromEntries(TARGET_TECHNOLOGIES.map((t) => [t.id, t]));
+    expect(by.wso2.maturity).toBe("complete");
+    for (const id of ["mule", "springboot", "dotnet", "webmethods", "boomi", "workato", "nodejs", "openapi"]) {
+      expect(by[id]?.maturity, id).toBe("skeleton");
+      expect(by[id]?.depth, id).toBe("skeleton");
+    }
+    expect(by.workato.label).toBe("Workato");
+    expect(by.nodejs.label).toBe("Node.js");
+    expect(validateUpload({ name: "n", filename: "a.zip", target: "workato" }, 10, 5)).toMatchObject({ ok: true });
+    expect(validateUpload({ name: "n", filename: "a.zip", target: "nodejs" }, 10, 5)).toMatchObject({ ok: true, headers: { "X-Target-Tech": "nodejs" } });
+  });
 });
 
 describe("secrets and workspaces", () => {

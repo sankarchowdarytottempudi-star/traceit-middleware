@@ -60,9 +60,12 @@ describe("upload validation", () => {
       expect(by[id]?.maturity, id).toBe("complete-unverified");
       expect(by[id]?.depth, id).toBe("partial");
     }
-    expect(by.dotnet.maturity).toBe("complete");
-    expect(by.dotnet.depth).toBe("full");
-    for (const id of ["mule", "springboot", "nodejs", "openapi"]) {
+    for (const id of ["dotnet", "springboot", "mule"]) {
+      expect(by[id]?.maturity, id).toBe("complete");
+      expect(by[id]?.depth, id).toBe("full");
+    }
+    expect(TARGET_TECHNOLOGIES.map((t) => t.id)).toEqual(["wso2", "mule", "springboot", "dotnet", "webmethods", "boomi", "workato", "nodejs", "openapi"]);
+    for (const id of ["nodejs", "openapi"]) {
       expect(by[id]?.maturity, id).toBe("skeleton");
       expect(by[id]?.depth, id).toBe("skeleton");
     }

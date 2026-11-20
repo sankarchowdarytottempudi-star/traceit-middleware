@@ -6,8 +6,8 @@ export interface GeneratedTarget { id: string; label: string; maturity: TargetMa
 
 export const GENERATED_TARGETS: GeneratedTarget[] = [
   { id: "wso2", label: "WSO2 (Ballerina service)", maturity: "complete", depth: "full", hint: "Complete generator: documents, service, tests and deployment." },
-  { id: "mule", label: "MuleSoft", maturity: "skeleton", depth: "skeleton", hint: "Project skeleton and documents." },
-  { id: "springboot", label: "Spring Boot", maturity: "skeleton", depth: "skeleton", hint: "Project skeleton and documents." },
+  { id: "mule", label: "MuleSoft", maturity: "complete", depth: "full", hint: "Complete Mule 4 project: flows, DataWeave, connections, MUnit, lessons." },
+  { id: "springboot", label: "Spring Boot", maturity: "complete", depth: "full", hint: "Complete generator: Java 21 / Spring Boot 3 project, every flow step, tests, Docker and Helm." },
   { id: "dotnet", label: ".NET", maturity: "complete", depth: "full", hint: "Complete generator: ASP.NET Core solution, flows, mappings, tests, Docker and Helm." },
   { id: "webmethods", label: "webMethods", maturity: "complete-unverified", depth: "partial", hint: "complete-unverified: an Integration Server package zip (flow services, document types, REST resource, JDBC adapter placeholders), tests, parity and lessons reports." },
   { id: "boomi", label: "Boomi", maturity: "complete-unverified", depth: "partial", hint: "complete-unverified: importable component XML (processes, connections, operations, profiles, maps), Platform API import script, tests, parity and lessons reports." },

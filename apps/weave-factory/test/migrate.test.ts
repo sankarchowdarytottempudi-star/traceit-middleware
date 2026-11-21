@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   LAND_MIN_WIDTH, ago, baseName, compact, distinct, fileSize, filterMigrations, healthLabel, healthTone, isSpec, layerKey, layoutLandscape,
-  ms, nextActions, failureView, itemKindWord, forwardStart, decisionProblem, NEW_API, newApiProblem, passOnLoses, passOnHint, placeholderLine, sourceEnvs, repoFormProblems, repoState, notMigratedYet, projectState, importPlan, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
+  ms, nextActions, isWso2Target, targetLabel, READY_DOWNLOAD, failureView, itemKindWord, forwardStart, decisionProblem, NEW_API, newApiProblem, passOnLoses, passOnHint, placeholderLine, sourceEnvs, repoFormProblems, repoState, notMigratedYet, projectState, importPlan, noteLimit, nothingOpen, sourceSummary, niceMax, outcomeTone, rebucket, splitMatch, statusLabel, statusTone, ticks, validateNewMigration,
 } from "../src/lib/migrate.ts";
 
 describe("labels and tones", () => {
@@ -114,6 +114,17 @@ describe("nextActions", () => {
     expect(a.find((x) => x.primary)?.id).toBe("scaffold");
     expect(a.find((x) => x.id === "scaffold")?.writes).toBe(true);
     expect(nextActions({ phases: phases({ document: "done" }) }).map((x) => x.id)).toEqual(["document"]);
+  });
+  it("for another platform offers check-and-package, never deploy", () => {
+    const a = nextActions({ targetTech: "webmethods", phases: phases({ document: "done", scaffold: "done" }), apiName: "orders-sys-api" });
+    expect(a.map((x) => x.id)).toEqual(["document", "scaffold", "test"]);
+    expect(a.find((x) => x.primary)?.id).toBe("test");
+    expect(a.find((x) => x.id === "test")?.label).toMatch(/webMethods project/);
+    const done = nextActions({ targetTech: "webmethods", phases: phases({ document: "done", scaffold: "done", test: "action_required", deploy: "done" }), apiName: "orders-sys-api" });
+    expect(done.find((x) => x.primary)).toBeUndefined();
+    expect(isWso2Target({})).toBe(true);
+    expect(targetLabel({ targetTech: "springboot" })).toBe("Spring Boot");
+    expect(outcomeTone(READY_DOWNLOAD)).toBe("ok");
   });
   it("offers test and deploy after generating", () => {
     const a = nextActions({ phases: phases({ document: "done", scaffold: "done" }), apiName: "orders-sys-api" });

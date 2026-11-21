@@ -93,6 +93,17 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     return reply.send(r.body);
   });
 
+  // the generated project as one zip: for another platform (webMethods, MuleSoft, ...) this is what the customer installs
+  app.get("/api/factory/migrations/:id/project", async (req, reply) => {
+    await need(req);
+    const { id } = req.params as { id: string };
+    const r = await mtRaw(mt, `/api/migrations/${encodeURIComponent(id)}/project`);
+    if (r.status >= 400 || !r.contentType.includes("zip")) { reply.code(r.status >= 400 ? r.status : 502); return { error: r.status === 404 ? "The project has not been generated yet" : "The project is not available" }; }
+    const name = (/filename="([^"]+)"/.exec(r.disposition ?? "") || [])[1] || `${id}-project.zip`;
+    reply.type("application/zip").header("content-disposition", `attachment; filename="${name.replace(/[^\w.-]/g, "_")}"`);
+    return reply.send(r.body);
+  });
+
   // "Finish this migration": what is left of the generated service, with what the old application
   // did at each point, and one decision of a person about one item (pass it on to an API, leave it
   // out, set a backend's address, keep a note). The work happens in the migration tool, on this server.

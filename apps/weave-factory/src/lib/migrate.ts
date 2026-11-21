@@ -16,11 +16,17 @@ export const LAYER_LABEL: Record<LayerKey, string> = { exp: "Experience", proc: 
 
 /** Installed on the cluster, but part of the old application is not written yet. */
 export const NOT_FINISHED = "Deployed, not finished";
+/** A project for another platform (webMethods, MuleSoft, Boomi, ...): generated, checked and packaged; the customer installs it. */
+export const READY_DOWNLOAD = "Ready to download";
+const TARGET_LABEL: Record<string, string> = { wso2: "WSO2", ballerina: "WSO2", mule: "MuleSoft", springboot: "Spring Boot", dotnet: ".NET", webmethods: "webMethods", boomi: "Boomi", workato: "Workato", openapi: "OpenAPI", nodejs: "Node.js", node: "Node.js" };
+export function targetOf(m: { targetTech?: unknown }): string { return (txt(m.targetTech) || "wso2").toLowerCase(); }
+export function isWso2Target(m: { targetTech?: unknown }): boolean { const t = targetOf(m); return t === "wso2" || t === "ballerina"; }
+export function targetLabel(m: { targetTech?: unknown }): string { const t = targetOf(m); return TARGET_LABEL[t] ?? t; }
 export function outcomeTone(outcome: unknown): Tone {
   switch (txt(outcome)) {
     case "Failed": return "bad";
     case NOT_FINISHED: return "warn";
-    case "Verified": case "Deployed": case "Complete": return "ok";
+    case "Verified": case "Deployed": case "Complete": case READY_DOWNLOAD: return "ok";
     case "Not started": case "": return "muted";
     default: return "accent";
   }
@@ -155,7 +161,7 @@ export function validateNewMigration(f: NewMigrationForm, rules: NewMigrationRul
 // ---- what can be done next on a migration
 export interface PhaseLite { key: string; status?: string; mode?: string; steps?: { key: string; status?: string }[] }
 export interface FailureLite { phase?: unknown; phaseKey?: unknown; step?: unknown; status?: unknown; detail?: unknown; output?: unknown; help?: { kind?: unknown; what?: unknown; why?: unknown; todo?: unknown; retry?: unknown } | null }
-export interface MigrationState { busy?: boolean; apiName?: unknown; sourceType?: unknown; sourceFile?: unknown; phases?: PhaseLite[]; progress?: { outcome?: unknown; failure?: FailureLite | null } | null }
+export interface MigrationState { busy?: boolean; targetTech?: unknown; apiName?: unknown; sourceType?: unknown; sourceFile?: unknown; phases?: PhaseLite[]; progress?: { outcome?: unknown; failure?: FailureLite | null } | null }
 export interface NextAction { id: "autorun" | "document" | "spec" | "scaffold" | "test" | "deploy"; label: string; hint: string; primary?: boolean; writes?: boolean }
 const phaseStatus = (m: MigrationState, key: string) => txt(m.phases?.find((p) => p.key === key)?.status) || "pending";
 export function isSpec(m: MigrationState): boolean {
@@ -174,12 +180,18 @@ export function nextActions(m: MigrationState): NextAction[] {
   }
   // A service with operations that are not migrated, or a backend without an address, is not deployed.
   const notReady = txt(m.progress?.failure?.help?.kind) === "not-ready";
-  if (sc === "done" && named) {
+  const other = !isWso2Target(m);
+  if (sc === "done" && named && other) {
+    // another platform: the tool checks and packages the project; the customer installs it on their servers
+    const lbl = targetLabel(m);
+    out.push({ id: "test", label: dep === "done" ? "Check the project again" : `Check and package the ${lbl} project`, hint: `Checks the generated ${lbl} project, counts what is still marked TODO and makes it ready to download. Nothing is installed here.`, writes: true });
+  } else if (sc === "done" && named) {
     out.push({ id: "test", label: test === "done" ? "Run the tests again" : "Build and run the tests", hint: "Builds the generated service, checks that every operation is migrated and runs its tests.", writes: true });
     if (!notReady) out.push({ id: "deploy", label: dep === "done" ? "Deploy again" : "Deploy", hint: "Builds the image and installs the service on the cluster.", writes: true });
   }
   let primary: NextAction["id"] | undefined;
   if (isSpec(m)) primary = sc !== "done" ? "spec" : test !== "done" ? "test" : dep !== "done" ? "deploy" : undefined;
+  else if (other) primary = doc !== "done" ? "document" : sc !== "done" ? "scaffold" : dep !== "done" ? "test" : undefined;
   else primary = doc !== "done" ? "document" : sc !== "done" ? "scaffold" : test !== "done" ? "test" : dep !== "done" ? "deploy" : undefined;
   return out.map((a) => ({ ...a, primary: a.id === primary }));
 }

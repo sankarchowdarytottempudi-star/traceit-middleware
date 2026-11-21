@@ -54,14 +54,14 @@ export function mtUpload(c: MtClient, path: string, headers: Record<string, stri
 }
 
 /** Fetch a document exactly as the migration tool serves it. */
-export function mtRaw(c: MtClient, path: string): Promise<{ status: number; contentType: string; body: Buffer }> {
+export function mtRaw(c: MtClient, path: string): Promise<{ status: number; contentType: string; body: Buffer; disposition?: string }> {
   const u = new URL(c.base + path);
   const lib = u.protocol === "https:" ? https : http;
   return new Promise((resolve, reject) => {
     const req = lib.request({ method: "GET", hostname: u.hostname, port: u.port, path: u.pathname + u.search, headers: { "X-Admin-Token": c.token } }, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (ch: Buffer) => chunks.push(ch));
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, contentType: String(res.headers["content-type"] || "text/plain"), body: Buffer.concat(chunks) }));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, contentType: String(res.headers["content-type"] || "text/plain"), body: Buffer.concat(chunks), disposition: String(res.headers["content-disposition"] || "") }));
     });
     req.on("error", reject);
     req.end();

@@ -76,7 +76,7 @@ try {
     let uploadUrl = "";
     await s.context.route("**/api/factory/migrations?**", (r) => { uploadUrl = r.request().url(); return r.fulfill({ status: 400, json: { error: "Stand-in: upload not sent to the tool." } }); });
     await s.goto("/migrations/new");
-    await page.getByRole("radio", { name: /Node\.js/ }).click();
+    await page.getByRole("radiogroup", { name: "Source technology" }).getByRole("radio", { name: /Node\.js/ }).click();
     const np = page.getByTestId("new-part");
     await np.waitFor();
     await np.getByTestId("new-part-on").check();

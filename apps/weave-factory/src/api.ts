@@ -77,7 +77,10 @@ export interface Migration {
   parity?: { complete?: boolean; summary?: string; flowsWithGaps?: number; totals?: ParityMap["totals"] };
   /** Where the service's settings came from: the running application's properties, or only the uploaded file. */
   settingsSource?: "runtime" | "file" | string;
+  /** Pasted code, one file or part of a project: what the documents could not know and a person must supply. */
+  partialSource?: PartialSource | null;
 }
+export interface PartialSource { source?: string; tool?: string; why?: string; unknowns?: ({ what?: string; supply?: string } | string)[]; evidence?: string[] }
 /** "Finish this migration": what is left of a generated service and what the old application did there. */
 export interface SourceCall { method: string; path: string; config: string; backend?: string }
 export interface SourceView { flow: string; file?: string; steps: number; parts: number; does: string[]; more?: number; calls: SourceCall[]; transforms: number; simple?: boolean;
@@ -113,7 +116,11 @@ export interface InferResult { rules: MappingRule[]; engine: string; needsModel:
 
 export interface SourceTechnology { id: string; label: string; upload: string; hint?: string; sourceType?: string; }
 export interface TargetTechnology { id: string; label: string; depth: string; maturity?: "complete" | "complete-unverified" | "partial" | "skeleton"; hint?: string; }
-export interface MigrateOptions { technologies: SourceTechnology[]; targets: TargetTechnology[]; extensions: string[]; maxUploadMb: number; }
+export interface PasteOptions { technologies: { id: string; label: string }[]; maxSnippets: number; maxSnippetKb: number; maxTotalKb: number }
+export interface MigrateOptions { technologies: SourceTechnology[]; targets: TargetTechnology[]; extensions: string[]; maxUploadMb: number;
+  /** One source file is wrapped into a project by the server (older servers do not send these). */
+  singleFileExtensions?: string[]; singleFileMb?: number; paste?: PasteOptions; }
+export interface PasteInput { name: string; workspace: string; target: string; technology: string; snippets: { name: string; text: string }[] }
 
 export interface Environment { id: string; name: string; workspace?: string | null; baseUrl: string; createdAt?: string; hasToken?: boolean; tokenSet?: boolean; }
 export interface TargetServer { host?: string; port?: number; username?: string; hasPassword?: boolean; passwordSet?: boolean; provisioned?: boolean; }
@@ -260,6 +267,8 @@ export const api = {
   migration: (id: string) => j<Migration>(`${F}/migrations/${enc(id)}`),
   phases: () => j<{ phases: PhaseDef[] }>(`${F}/phases`),
   options: () => j<MigrateOptions>(`${F}/migrate/options`),
+  /** "Paste code": the server wraps the snippets into a minimal project and creates the migration. */
+  pasteMigration: (input: PasteInput) => j<Migration>(`${F}/migrations/paste`, post(input)),
   run: (id: string, phase: string, confirmReplace = false) => j<RunResult>(`${F}/migrations/${enc(id)}/run/${enc(phase)}`, post(confirmReplace ? { confirmReplace: true } : {})),
   advance: (id: string, body: { phase: string; step?: string; status?: string; detail?: string }) => j<Migration>(`${F}/migrations/${enc(id)}/advance`, post(body)),
   verify: (id: string, body: { envId: string; path: string; method: string; headers?: Record<string, string>; body?: string }) => j<VerifyResult>(`${F}/migrations/${enc(id)}/verify`, post(body)),

@@ -158,6 +158,48 @@ export function validateNewMigration(f: NewMigrationForm, rules: NewMigrationRul
   return e;
 }
 
+// ---- "Paste code": snippets instead of a file
+export interface PasteSnippet { name: string; text: string }
+export interface PasteRules { maxSnippets: number; maxSnippetKb: number; maxTotalKb: number }
+export const PASTE_NAME = /^[A-Za-z0-9][A-Za-z0-9 ._:/\\-]*$/;
+export const textBytes = (s: string) => new TextEncoder().encode(s).length;
+/** Problems of the pasted pieces: per piece (by index) and for the whole set. */
+export function validatePaste(snippets: PasteSnippet[], rules: PasteRules): { pieces: Record<number, string>; all?: string } {
+  const pieces: Record<number, string> = {};
+  const filled = snippets.filter((s) => s.text.trim());
+  if (!filled.length) return { pieces, all: "Paste at least one piece of code" };
+  if (snippets.length > rules.maxSnippets) return { pieces, all: `Paste at most ${rules.maxSnippets} pieces of code` };
+  let total = 0;
+  const seen = new Map<string, number>();
+  snippets.forEach((s, i) => {
+    const b = textBytes(s.text);
+    total += b;
+    const name = s.name.trim();
+    if (!s.text.trim()) pieces[i] = "This piece is empty: paste the code or remove the piece";
+    else if (b > rules.maxSnippetKb * 1024) pieces[i] = `This piece is larger than ${rules.maxSnippetKb} KB`;
+    else if (name && (name.length > 120 || !PASTE_NAME.test(name) || name.split(/[\\/]/).includes(".."))) pieces[i] = "The file name may use letters, digits, spaces and . _ - : / only";
+    else if (name && seen.has(name.toLowerCase()) && !/^(flow\.xml|node\.ndf)$/i.test(name)) pieces[i] = `Another piece is already called ${name}`;
+    if (name) seen.set(name.toLowerCase(), i);
+  });
+  if (total > rules.maxTotalKb * 1024) return { pieces, all: `All pieces together are larger than ${Math.round(rules.maxTotalKb / 1024)} MB. Upload the project as a .zip instead.` };
+  return { pieces };
+}
+/** A file name to suggest for the technology (placeholder text only). */
+export function pasteNameHint(technology: string): string {
+  return ({ mule4: "for example orders-flow.xml or transform.dwl", webmethods: "for example flow.xml, node.ndf or orders.process:receiveOrder", boomi: "for example process.xml",
+    java: "for example OrderService.java", dotnet: "for example OrdersController.cs", node: "for example routes.js", openapi: "for example openapi.yaml", ballerina: "for example main.bal" } as Record<string, string>)[technology] ?? "for example flow.xml, transform.dwl, MyService.java, process.xml";
+}
+
+// ---- partial source (pasted code, one file, part of a project)
+export interface PartialView { why: string; source: string; unknowns: { what: string; supply: string }[] }
+export function partialOf(m: { partialSource?: unknown } | null | undefined): PartialView | null {
+  const p = m?.partialSource as { why?: unknown; source?: unknown; unknowns?: unknown } | null | undefined;
+  if (!p || typeof p !== "object") return null;
+  const unknowns = (Array.isArray(p.unknowns) ? p.unknowns : []).map((u) => (u && typeof u === "object" ? { what: txt((u as { what?: unknown }).what), supply: txt((u as { supply?: unknown }).supply) } : { what: txt(u), supply: "" })).filter((u) => u.what);
+  return { why: txt(p.why), source: txt(p.source), unknowns };
+}
+export const PARTIAL_SOURCE_WORD: Record<string, string> = { pasted: "pasted code", "single-file": "one file", fragment: "part of a project", "html-export": "an HTML documentation export" };
+
 // ---- what can be done next on a migration
 export interface PhaseLite { key: string; status?: string; mode?: string; steps?: { key: string; status?: string }[] }
 export interface FailureLite { phase?: unknown; phaseKey?: unknown; step?: unknown; status?: unknown; detail?: unknown; output?: unknown; help?: { kind?: unknown; what?: unknown; why?: unknown; todo?: unknown; retry?: unknown } | null }

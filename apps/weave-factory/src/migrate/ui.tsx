@@ -1,10 +1,10 @@
 // Small building blocks shared by the migrate screens. Styling lives in migrate.css (mf-mg-*).
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link, type LinkProps } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, ChevronLeft, GitBranch, Info, Loader2, Search, UploadCloud, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ClipboardPaste, GitBranch, Info, Loader2, Search, UploadCloud, X, XCircle } from "lucide-react";
 import { MODULES } from "../brand.tsx";
 import { txt } from "../lib/text.ts";
-import { LAYER_LABEL, healthLabel, healthTone, layerKey, type Tone } from "../lib/migrate.ts";
+import { LAYER_LABEL, PARTIAL_SOURCE_WORD, healthLabel, healthTone, layerKey, partialOf, type Tone } from "../lib/migrate.ts";
 
 const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
 
@@ -185,18 +185,42 @@ export function KV({ rows }: { rows: [string, ReactNode][] }) {
 export function errText(e: unknown): string {
   return e instanceof Error ? e.message : txt(e) || "Something went wrong";
 }
-/** The two ways a migration can start: one uploaded file, or the projects of a git repository. */
-export function SourceWays({ way }: { way: "upload" | "git" }) {
+/** The ways a migration can start: one uploaded file, the projects of a git repository, or pasted code. */
+export function SourceWays({ way }: { way: "upload" | "git" | "paste" }) {
   return (
     <nav className="mf-mg-ways" aria-label="Where the source comes from">
       <Link className="mf-mg-way" to="/migrations/new" aria-current={way === "upload" ? "page" : undefined}>
         <UploadCloud size={20} color="var(--accentText)" aria-hidden="true" />
-        <span><strong>Upload a file</strong><small>One project as a .zip or .jar, or a written specification.</small></span>
+        <span><strong>Upload a file</strong><small>One project as a .zip or .jar, one source file, or a written specification.</small></span>
       </Link>
       <Link className="mf-mg-way" to="/migrations/from-git" aria-current={way === "git" ? "page" : undefined}>
         <GitBranch size={20} color="var(--accentText)" aria-hidden="true" />
         <span><strong>From a git repository</strong><small>Every project of a repository, with its settings files. Nothing to upload.</small></span>
       </Link>
+      <Link className="mf-mg-way" to="/migrations/paste" aria-current={way === "paste" ? "page" : undefined}>
+        <ClipboardPaste size={20} color="var(--accentText)" aria-hidden="true" />
+        <span><strong>Paste code</strong><small>A flow, a DataWeave script, a service or a process, pasted as text. Read as a partial source.</small></span>
+      </Link>
     </nav>
+  );
+}
+
+/** "Partial source": the migration was made from pasted code, one file or part of a project; what it could not know. */
+export function PartialSourceNotice({ migration }: { migration: { partialSource?: unknown } | null | undefined }) {
+  const p = partialOf(migration);
+  if (!p) return null;
+  return (
+    <Notice tone="warn">
+      <strong>Partial source{p.source && PARTIAL_SOURCE_WORD[p.source] ? ` (${PARTIAL_SOURCE_WORD[p.source]})` : ""}.</strong>{" "}
+      {p.why || "The input is not the whole integration."} This is not a complete migration: the documents are limited to what the input shows.
+      {p.unknowns.length > 0 && (
+        <>
+          <span style={{ display: "block", marginTop: 6 }}>Not known from the input, to be supplied:</span>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+            {p.unknowns.map((u, i) => <li key={i}>{u.what}{u.supply ? <span className="mf-mg-muted"> - supply: {u.supply}</span> : null}</li>)}
+          </ul>
+        </>
+      )}
+    </Notice>
   );
 }

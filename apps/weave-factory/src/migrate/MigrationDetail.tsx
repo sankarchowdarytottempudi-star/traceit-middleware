@@ -6,7 +6,7 @@ import { Check, CircleDashed, Download, Eye, Loader2, Play, RotateCw, Trash2, Tr
 import { api, type ApiError, type Environment, type Migration, type OptimizeResult, type ParityResult, type Phase, type VerifyResult } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
 import { ago, baseName, clock, dateTime, failureView, isSpec, isWso2Target, ms, nextActions, outcomeTone, targetLabel, statusLabel, statusTone, type FailureView, type NextAction } from "../lib/migrate.ts";
-import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, KV, LinkBtn, Loading, Notice, Panel, Pill, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
+import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, KV, LinkBtn, Loading, Notice, Panel, PartialSourceNotice, Pill, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
 import { Markdown } from "./markdown.tsx";
 import { Finish } from "./Finish.tsx";
 import { StartParts, TrialRun } from "./Starts.tsx";
@@ -378,7 +378,7 @@ export function MigrationDetail() {
           </span>
         </div>
         <KV rows={[
-          ["Source", `${txt(m.technology) && txt(m.technology) !== "unknown" ? txt(m.technology) : txt(m.sourceType) === "spec" ? "written specification" : "not recognised yet"}${m.sourceFile ? ` · ${baseName(m.sourceFile)}` : ""}`],
+          ["Source", `${txt(m.technology) && txt(m.technology) !== "unknown" ? txt(m.technology) : txt(m.sourceType) === "spec" ? "written specification" : "not recognised yet"}${m.sourceFile ? ` · ${baseName(m.sourceFile)}` : ""}${m.partialSource ? " · partial source" : ""}`],
           ["Target", targetLabel(m)],
           ["Estimate", m.estimateDays ? `${num(m.estimateDays)} days by hand` : ""],
           ["Lessons applied", m.lessonsApplied ? String(num(m.lessonsApplied)) : ""],
@@ -387,6 +387,7 @@ export function MigrationDetail() {
           ["Test address", m.testNodePort ? <span className="mf-mono mf-mg-small mf-mg-wrap">http://{host}:{txt(m.testNodePort)}{txt(m.testBasePath)}</span> : ""],
           ["Running API", live ? <Link className="mf-mono mf-mg-name" to={`/estate/${encodeURIComponent(txt(m.apiName))}`}>{txt(m.apiName)}</Link> : ""],
         ]} />
+        <PartialSourceNotice migration={m} />
       </Panel>
 
       <TabBar tabs={tabs} value={tab} onChange={setTab} label="Sections of this migration" />

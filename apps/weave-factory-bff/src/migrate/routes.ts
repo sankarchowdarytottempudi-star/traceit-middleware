@@ -4,7 +4,9 @@
 import { sidOf } from "../auth.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "../config.js";
+import { Readable } from "node:stream";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
+import { PASTE_LIMITS, PASTE_TECHNOLOGIES, SINGLE_FILE_EXTENSIONS, decodeText, isSingleFile, pastedOf, wrapToZip } from "./paste.js";
 import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
@@ -23,7 +25,40 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
 
   app.get("/api/factory/migrate/options", async (req) => {
     await need(req);
-    return { technologies: SOURCE_TECHNOLOGIES, targets: TARGET_TECHNOLOGIES, extensions: UPLOAD_EXTENSIONS, maxUploadMb: limitMb };
+    return { technologies: SOURCE_TECHNOLOGIES, targets: TARGET_TECHNOLOGIES, extensions: UPLOAD_EXTENSIONS, maxUploadMb: limitMb,
+      singleFileExtensions: SINGLE_FILE_EXTENSIONS, singleFileMb: PASTE_LIMITS.singleFileMb,
+      paste: { technologies: PASTE_TECHNOLOGIES, maxSnippets: PASTE_LIMITS.maxSnippets, maxSnippetKb: PASTE_LIMITS.maxSnippetBytes / 1024, maxTotalKb: PASTE_LIMITS.maxTotalBytes / 1024 } };
+  });
+
+  // Read a whole (small) request body, refusing more than `max` bytes.
+  const readAll = (stream: NodeJS.ReadableStream, max: number) => new Promise<Buffer>((resolve, reject) => {
+    const parts: Buffer[] = [];
+    let n = 0;
+    stream.on("data", (c: Buffer) => { n += c.length; if (n > max) { reject(Object.assign(new Error("too large"), { statusCode: 413 })); return; } parts.push(c); });
+    stream.on("end", () => resolve(Buffer.concat(parts)));
+    stream.on("error", reject);
+  });
+  // A pasted or single-file source, wrapped into a project zip, goes to the tool like any upload.
+  const uploadWrapped = async (reply: any, headers: Record<string, string>, wrapped: { zip: Buffer; filename: string }) => {
+    try {
+      const r = await mtUpload(mt, "/api/migrations", { ...headers, "X-Filename": wrapped.filename }, Readable.from([wrapped.zip]), wrapped.zip.length);
+      return pass(reply, r);
+    } catch (e) {
+      reply.code(502);
+      return { error: "The migration tool did not accept the upload", detail: e instanceof Error ? e.message : undefined };
+    }
+  };
+
+  // "Paste code": snippets as JSON, checked, laid out as a minimal project of their technology with a PASTED.txt
+  // manifest, zipped and uploaded through the tool. The factory marks the result "partial source".
+  app.post("/api/factory/migrations/paste", { bodyLimit: PASTE_LIMITS.maxTotalBytes * 2 + 64 * 1024 }, async (req, reply) => {
+    await need(req);
+    const v = pastedOf(req.body, TARGET_TECHNOLOGIES.map((t) => t.id));
+    if (!v.ok) { reply.code(400); return { error: v.error }; }
+    const { name, workspace, target, technology, snippets } = v.value;
+    const headers: Record<string, string> = { "X-Name": name, "X-Target-Tech": target };
+    if (workspace) headers["X-Workspace"] = workspace;
+    return uploadWrapped(reply, headers, wrapToZip(snippets, technology, name, "pasted"));
   });
 
   // Upload: the body is the file itself. Scoped so the raw-stream parser applies to this route only.
@@ -37,6 +72,15 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
         req.raw.resume();
         reply.code(v.status);
         return { error: v.error };
+      }
+      // one source file: wrapped into a minimal project zip here (it is small), then uploaded like a zip
+      if (isSingleFile(v.headers["X-Filename"])) {
+        let buf: Buffer;
+        try { buf = await readAll(req.raw, PASTE_LIMITS.singleFileMb * 1024 * 1024); } catch { reply.code(413); return { error: `One source file can be at most ${PASTE_LIMITS.singleFileMb} MB.` }; }
+        if (!buf.length) { reply.code(400); return { error: "The file is empty" }; }
+        const q = req.query as Record<string, string>;
+        const tech = PASTE_TECHNOLOGIES.some((t) => t.id === q.sourceType) ? q.sourceType : "auto";
+        return uploadWrapped(reply, v.headers, wrapToZip([{ name: v.headers["X-Filename"], text: decodeText(buf) }], tech, v.headers["X-Name"], "single-file"));
       }
       try {
         const r = await mtUpload(mt, "/api/migrations", v.headers, req.raw, len);

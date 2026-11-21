@@ -34,7 +34,8 @@ export function migrateRoutes() {
       <Route path="estate" element={<EstateList />} />
       <Route path="estate/:api" element={<EstateDetail />} />
       <Route path="migrations" element={<Migrations />} />
-      <Route path="migrations/new" element={<MigrationNew />} />
+      <Route path="migrations/new" element={<MigrationNew key="upload" />} />
+      <Route path="migrations/paste" element={<MigrationNew key="paste" mode="paste" />} />
       <Route path="migrations/from-git" element={<MigrationFromGit />} />
       <Route path="migrations/:id" element={<MigrationDetail />} />
       <Route path="workspaces" element={<Workspaces />} />

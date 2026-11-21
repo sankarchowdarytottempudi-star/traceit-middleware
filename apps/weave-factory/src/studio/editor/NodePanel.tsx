@@ -1,6 +1,6 @@
 // Configuration panel of the selected step, generated from the catalog definition.
 import { useMemo, useState } from "react";
-import { Play, Power, Trash2, X } from "lucide-react";
+import { Play, Power, Trash2, X, PenLine } from "lucide-react";
 import type { FieldDef, HttpRequestSample, NodeTypeDef } from "@traceit/weave-flow";
 import { accentOf, fieldVisible, type Catalog } from "../catalog.ts";
 import { iconFor } from "../icons.ts";
@@ -13,9 +13,10 @@ import { StepDetail } from "./RunViews.tsx";
 
 interface SourceRef { file?: string; line?: number; endLine?: number; code?: string }
 
-export function NodePanel({ nodeId, catalog, defFor, onClose, onOpenMapper, onTest, sample }: {
+export function NodePanel({ nodeId, catalog, defFor, onClose, onOpenMapper, onTest, sample, onChangeInWords }: {
   nodeId: string; catalog: Catalog; defFor: (type: string) => NodeTypeDef; onClose: () => void;
   onOpenMapper: (nodeId: string, fieldKey: string) => void; onTest?: (nodeId: string) => void; sample?: HttpRequestSample | null;
+  onChangeInWords?: (nodeId: string) => void;
 }) {
   const store = useEditorStore();
   const node = useEditor((s) => s.nodes.find((n) => n.id === nodeId));
@@ -84,6 +85,7 @@ export function NodePanel({ nodeId, catalog, defFor, onClose, onOpenMapper, onTe
         {!readOnly && !isNote && (
           <footer className="ws-panel-foot">
             {onTest && def.category !== "trigger" && <Button size="sm" icon={Play} onClick={() => onTest(nodeId)} data-action="test-step">Test this step</Button>}
+            {onChangeInWords && <Button size="sm" icon={PenLine} onClick={() => onChangeInWords(nodeId)} data-action="change-in-words">Change in your own words</Button>}
             <span style={{ flex: 1 }} />
             <IconButton label={d.disabled ? "Enable step" : "Disable step"} icon={Power} active={!!d.disabled} onClick={() => store.toggleDisabled([nodeId])} />
             <IconButton label="Delete step" icon={Trash2} tone="danger" onClick={() => { store.remove([nodeId]); onClose(); }} />

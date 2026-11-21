@@ -24,6 +24,20 @@ export const LESSON_CHECKS: Record<string, LessonCheck> = {
     fix: "Retry only GET/HEAD/OPTIONS (or calls with an idempotency key). Payment and booking calls are never retried." },
   "L4.unbounded-fanout": { id: "L4.unbounded-fanout", lesson: "L4", title: "Parallel calls to one backend are not bounded",
     fix: "Bound the parallel calls (e.g. at most 4 at once) or call sequentially." },
+  "L7.zoho-empty-string": { id: "L7.zoho-empty-string", lesson: "L7", title: "Empty strings may be sent to Zoho",
+    fix: "Leave out fields whose value is \"\" (lessonsDropEmpty) before sending to Zoho." },
+  "L7.zoho-search-fields": { id: "L7.zoho-search-fields", lesson: "L7", title: "Zoho search asks for more than 50 fields",
+    fix: "Ask for at most 50 fields per search (split the call or drop unused fields)." },
+  "L7.zoho-dc-mismatch": { id: "L7.zoho-dc-mismatch", lesson: "L7", title: "Zoho accounts and API data centres differ",
+    fix: "Use the same data centre for accounts.zoho.<dc> and www.zohoapis.<dc> (a .sa token on the .in API gives 401)." },
+  "L7.zoho-auth-prefix": { id: "L7.zoho-auth-prefix", lesson: "L7", title: "Zoho Authorization header does not use 'Zoho-oauthtoken'",
+    fix: "Send 'Authorization: Zoho-oauthtoken <access token>' (refreshed from the OAuth2 refresh token)." },
+  "L7.zoho-insert-not-upsert": { id: "L7.zoho-insert-not-upsert", lesson: "L7", title: "Zoho records are inserted, not upserted",
+    fix: "POST /crm/v2/<Module>/upsert with duplicate_check_fields so a repeat does not create a duplicate." },
+  "L7.zoho-picklist": { id: "L7.zoho-picklist", lesson: "L7", title: "Zoho picklist values must exist",
+    fix: "Check picklist values against the Zoho field metadata before sending; map unknown values to an allowed one." },
+  "L8.tls-disabled": { id: "L8.tls-disabled", lesson: "L8", title: "TLS certificate validation is switched off",
+    fix: "Set tlsValidation = true (give caCertPath for a private CA)." },
 };
 
 /** Defaults new steps get (L4): explicit timeout below the gateway's 30 s, back-off 1 s then 3 s. */

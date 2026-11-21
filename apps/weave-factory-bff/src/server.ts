@@ -18,6 +18,7 @@ import { registerChanges } from "./changes/routes.js";
 import { registerReview, isReviewPath, reviewPageHeaders } from "./review/routes.js";
 import { loadReviewConfig } from "./review/config.js";
 import { registerDescribe } from "./describe/routes.js";
+import { registerEdit } from "./describe/edit.js";
 
 function resolveSpaDir(): string | null {
   if (process.env.SPA_DIR && existsSync(process.env.SPA_DIR)) return process.env.SPA_DIR;
@@ -64,6 +65,7 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   const studioCfg = { runtimeUrl: cfg.RUNTIME_URL, internalKey: cfg.RUNTIME_INTERNAL_KEY || "" };
   registerStudio(app, studioCfg, (req) => app.userFor(req), flowVersionRecorder(cfg, studioCfg));
   registerDescribe(app, studioCfg, (req) => app.userFor(req), estate);
+  registerEdit(app, studioCfg, (req) => app.userFor(req));
   registerVersions(app, cfg);
   registerChanges(app, cfg);
   const reviewCfg = loadReviewConfig();

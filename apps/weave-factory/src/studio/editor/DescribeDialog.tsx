@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, BookOpen, CheckCircle2, CircleHelp, Cpu, Plus, XCircle } from "lucide-react";
-import { STEP_PHRASES, type ConnectionTypeDef, type DescribeLine, type DocumentInfo, type DocRef, type FlowNode, type MissingConnection, type StepPhrase } from "@traceit/weave-flow";
+import { STEP_PHRASES, type ConnectionTypeDef, type DescribeLine, type DocumentInfo, type DocRef, type FlowEdge, type FlowNode, type MissingConnection, type StepPhrase } from "@traceit/weave-flow";
 import { errorText, isUnavailable, studioApi, type DescribePreview } from "../api.ts";
 import { accentOf, useCatalog } from "../catalog.ts";
 import { Badge, Button, Callout, Collapsible, cx, Field, Modal, toast } from "../ui.tsx";
@@ -62,7 +62,7 @@ export function StepPhrasesHelp({ onInsert }: { onInsert?: (example: string) => 
 }
 
 /** The draft drawn small: boxes where the canvas will put them, with the connections between them. */
-function MiniCanvas({ preview, focus, onFocus, labelOf }: { preview: DescribePreview; focus: Set<string>; onFocus: (id: string | null) => void; labelOf: (type: string) => { label: string; accent: string } }) {
+export function MiniCanvas({ preview, focus, onFocus, labelOf }: { preview: { flow: { nodes: FlowNode[]; edges: FlowEdge[] }; lines: DescribeLine[] }; focus: Set<string>; onFocus: (id: string | null) => void; labelOf: (type: string) => { label: string; accent: string } }) {
   const nodes = preview.flow.nodes;
   const SX = 0.72, SY = 0.6, W = 196, H = 62, PAD = 12;
   const pos = (n: FlowNode) => ({ x: PAD + (n.position.x - 60) * SX, y: PAD + (n.position.y - 60) * SY });

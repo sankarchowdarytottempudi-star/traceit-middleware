@@ -21,6 +21,8 @@ import { Palette } from "../editor/Palette.tsx";
 import { ConnectionsTab, MappingsTab, SettingsTab, VersionsTab } from "../editor/tabs.tsx";
 import { TestPanel } from "../editor/TestPanel.tsx";
 import { DescribeDialog } from "../editor/DescribeDialog.tsx";
+import { EditDialog } from "../editor/EditDialog.tsx";
+import type { EditTarget } from "@traceit/weave-flow";
 
 type TabId = "canvas" | "mappings" | "connections" | "executions" | "logs" | "versions" | "settings";
 const TAB_IDS: TabId[] = ["canvas", "mappings", "connections", "executions", "logs", "versions", "settings"];
@@ -141,6 +143,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
   const [mapper, setMapper] = useState<{ nodeId: string; fieldKey: string } | null>(null);
   const [deployOpen, setDeployOpen] = useState(false);
   const [describeOpen, setDescribeOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [conflict, setConflict] = useState(false);
   const desktop = bp === "desktop";
@@ -258,6 +261,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
       { id: "issues", label: issues.length ? `Problems (${issues.length})` : "No problems found", icon: AlertTriangle, onSelect: () => setIssuesOpen(true), disabled: !issues.length },
     ] : []),
     { id: "describe", label: "Add steps from a description", icon: PenLine, onSelect: () => setDescribeOpen(true), divider: bp !== "desktop" },
+    ...(base.readOnly ? [] : [{ id: "change-words", label: "Change this flow in your own words", icon: PenLine, onSelect: () => setEditTarget({ kind: "flow" }) }]),
     { id: "tidy", label: "Tidy up the layout", icon: LayoutGrid, onSelect: tidy },
     { id: "dup", label: "Make a copy", icon: Copy, onSelect: () => duplicate.mutate() },
     { id: "export", label: "Export as a file", icon: Download, onSelect: () => downloadJson(`${base.slug || "flow"}.flow.json`, store.toFlow()) },
@@ -269,7 +273,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
   const live = base.deployment?.status === "deployed";
 
   const panel = panelNode && (
-    <NodePanel nodeId={panelNode} catalog={catalog} defFor={store.defFor} sample={sample} onOpenMapper={openMapper} onTest={testNode}
+    <NodePanel nodeId={panelNode} catalog={catalog} defFor={store.defFor} sample={sample} onOpenMapper={openMapper} onTest={testNode} onChangeInWords={base.readOnly ? undefined : (id) => setEditTarget({ kind: "node", nodeId: id })}
       onClose={() => { if (desktop) setClosedFor(panelNode); else setOpenNode(null); }} />
   );
   const test = testOpen && (
@@ -309,7 +313,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
           {desktop && !paletteOff && <aside className="ws-side ws-side-left" aria-label="Steps you can add"><Palette catalog={catalog} onAdd={addStep} /></aside>}
           <div className="ws-center">
             <div className="ws-canvaswrap">
-              <FlowCanvas apiRef={canvasApi} defFor={store.defFor} onOpenNode={openNodePanel} onTestNode={testNode} compact={!desktop}
+              <FlowCanvas apiRef={canvasApi} defFor={store.defFor} onOpenNode={openNodePanel} onTestNode={testNode} onNodeMenu={base.readOnly ? undefined : (id) => setEditTarget({ kind: "node", nodeId: id })} compact={!desktop}
                 onAddStep={desktop && !paletteOff ? undefined : () => { if (desktop) { setPaletteHidden(false); setTestOpen(false); } else setPaletteOpen(true); }}
                 emptyHint={<Empty icon={Workflow} title="Start with a trigger" hint={desktop ? "Drag a step from the left onto the canvas, or click one to add it. A flow starts with a trigger, for example an HTTP Listener." : "Tap Add step and choose a trigger, for example an HTTP Listener."} />} />
               {desktop && !paletteOff && <button type="button" className="ws-side-toggle" onClick={() => setPaletteHidden(true)} aria-label="Hide the list of steps" title="Hide the list of steps">‹</button>}
@@ -337,6 +341,7 @@ function EditorInner({ store, catalog }: { store: EditorStore; catalog: Catalog 
       {test && bp === "phone" && tab === "canvas" && <Sheet title="Test" side="bottom" onClose={() => setTestOpen(false)}>{test}</Sheet>}
 
       {mapper && mapperNode && <MapperHost nodeId={mapper.nodeId} fieldKey={mapper.fieldKey} sample={sample} examples={catalog.instructionExamples} onClose={() => setMapper(null)} />}
+      {editTarget && <EditDialog flow={base} target={editTarget} dirty={dirty} onClose={() => setEditTarget(null)} onApplied={(r) => { if (r.flow) store.load(r.flow, { asSaved: true }); void qc.invalidateQueries({ queryKey: ["studio", "flows"] }); }} />}
       {describeOpen && <DescribeDialog mode="add" onClose={() => setDescribeOpen(false)} onAdd={(p) => { const n = store.addGraph(p.flow.nodes, p.flow.edges, p.entry); setTab("canvas"); window.setTimeout(() => canvasApi.current?.fit(), 80); toast(`${n} step${n === 1 ? "" : "s"} added. Save to keep them.`); }} />}
       {deployOpen && <DeployDialog onClose={() => setDeployOpen(false)} save={save} onShowNode={showNode} onOpenExecution={(id) => setTab("executions", { execution: id })} />}
       {issuesOpen && (

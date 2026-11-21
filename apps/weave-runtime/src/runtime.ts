@@ -190,7 +190,10 @@ export class Runtime {
       next.slug = body.slug;
     }
     next.revision = cur.revision + 1; next.updatedAt = new Date().toISOString(); next.updatedBy = user ?? cur.updatedBy;
-    return this.store.saveFlow(await this.prepare(next));
+    // an optional note for the version history (e.g. the words of "Change in your own words"); never stored in the flow
+    const raw = (body as { changeNote?: unknown }).changeNote;
+    const note = typeof raw === "string" && raw.trim() ? raw.trim().replace(/\s+/g, " ").slice(0, 300) : undefined;
+    return this.store.saveFlow(await this.prepare(next), note ? { note } : {});
   }
   async deleteFlow(id: string): Promise<void> {
     const f = this.getFlow(id);

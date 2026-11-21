@@ -7,7 +7,7 @@ import type {
   Execution, ExecutionSummary, Flow, FlowDeployment, FlowSummary, FlowVersion, HttpRequestSample, InvokeRequest,
   InvokeResponse, Json, LogLine, MappingPreviewResponse, MappingRule, MappingSpec, SaveConnectionRequest, StatsResponse,
   StepTrace, TestFlowRequest, TestNodeRequest, TestNodeResponse, ValidationIssue,
-  DescribeLine, DescribedFlow, DocumentInfo, MissingConnection, StepPhrase,
+  DescribeLine, DescribedFlow, DocumentInfo, MissingConnection, StepPhrase, EditTarget, EditPhrase,
 } from "@traceit/weave-flow";
 
 export class ApiError extends Error {
@@ -99,6 +99,18 @@ export interface DescribePreview {
   issues: ValidationIssue[] | null; validationError?: string; modelText?: string;
   mode?: "steps" | "document"; doc?: DocumentInfo;
 }
+// ---- "Change in your own words" (read by fixed rules on the server; Apply saves a new version)
+export interface EditChangeView { kind: string; nodeId?: string; nodeName?: string; field: string; before: unknown; after: unknown; line: number; }
+export interface EditPreview {
+  engine: "rules" | "local-model"; target: EditTarget; targetLabel: string;
+  flowId?: string; baseRevision?: number; deployedRevision?: number | null;
+  lines: DescribeLine[]; changes: EditChangeView[]; diagnoses: { line: number; text: string; lesson?: string }[];
+  lessonWarnings: { nodeId?: string; message: string; lesson: string; new?: boolean }[]; missing: MissingConnection[];
+  connection?: { id: string; name: string; before: Record<string, unknown>; after: Record<string, unknown> };
+  flow?: Flow; issues: (ValidationIssue & { new?: boolean })[] | null; validationError?: string; ok: boolean; modelText?: string;
+}
+export interface EditApplied { applied: true; note: string; flow?: Flow; previousRevision?: number; connection?: { id: string; name: string; before?: Record<string, unknown> }; deployedRevision: number | null; }
+export interface EditBody { text: string; target: EditTarget; flowId?: string; baseRevision?: number; }
 export interface DescribeInfo { phrases: StepPhrase[]; model: { enabled: boolean; configured: boolean }; }
 
 /** On/off switch of the running APIs (BFF /api/factory/power). */
@@ -168,6 +180,11 @@ export const studioApi = {
   estateApi: (api: string) => call<EstateApiDetail>("GET", `${F}/estate/${enc(api)}`),
   estateFlow: (api: string, operation?: string) => call<Flow>("GET", `${F}/estate/${enc(api)}/flow${qs({ operation })}`),
   estateLogs: (api: string, p: { tail?: number; q?: string } = {}) => call<{ lines: EstateLogLine[] }>("GET", `${F}/estate/${enc(api)}/logs${qs(p)}`),
+  editPhrases: () => call<{ phrases: EditPhrase[]; model: { enabled: boolean; configured: boolean } }>("GET", `${F}/describe/edit/phrases`),
+  editPreview: (b: EditBody) => call<EditPreview>("POST", `${F}/describe/edit`, b),
+  editModel: (b: EditBody) => call<EditPreview>("POST", `${F}/describe/edit/model`, b),
+  editApply: (b: EditBody) => call<EditApplied>("POST", `${F}/describe/edit/apply`, b),
+  editUndo: (b: { flowId?: string; revision?: number; connection?: { id: string; name: string; before?: Record<string, unknown> } }) => call<{ undone: true; flow?: Flow }>("POST", `${F}/describe/edit/undo`, b),
   describeInfo: () => call<DescribeInfo>("GET", `${F}/describe`),
   describePreview: (text: string, mode: "new" | "add" = "new") => call<DescribePreview>("POST", `${F}/describe/preview`, { text, mode }),
   describeModel: (text: string, mode: "new" | "add" = "new") => call<DescribePreview>("POST", `${F}/describe/model`, { text, mode }),

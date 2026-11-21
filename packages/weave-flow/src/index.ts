@@ -7,3 +7,4 @@ export * from "./document.js";
 export * from "./zoho.js";
 export * from "./valuetable.js";
 export * from "./lessons.js";
+export * from "./edit.js";

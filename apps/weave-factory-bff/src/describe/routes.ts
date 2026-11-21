@@ -208,11 +208,11 @@ export function isLocalModelUrl(url: string): boolean {
   return h === "localhost" || h === "::1" || /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^[a-z0-9-]+$/i.test(h);
 }
 
-export async function askModel(dc: DescribeConfig, text: string, ctx: DescribeContext, fetchImpl: typeof fetch = fetch): Promise<{ ok: true; lines: string } | { ok: false; status: number; title: string; detail?: string }> {
+export async function askModel(dc: DescribeConfig, text: string, ctx: DescribeContext, fetchImpl: typeof fetch = fetch, prompt?: { system: string; user: string }): Promise<{ ok: true; lines: string } | { ok: false; status: number; title: string; detail?: string }> {
   if (!dc.modelEnabled) return { ok: false, status: 404, title: "Drafting with the local model is switched off on this server" };
   if (!dc.modelUrl) return { ok: false, status: 503, title: "The local model is not configured", detail: "Set CHANGE_MODEL_URL to the self-hosted model's address to use it. The step reader works without it." };
   if (!isLocalModelUrl(dc.modelUrl)) return { ok: false, status: 503, title: "The local model address is not on this network", detail: "Only a self-hosted model reached over the local network may be used." };
-  const p = modelPrompt(text, ctx);
+  const p = prompt ?? modelPrompt(text, ctx);
   let res: Response;
   try {
     res = await fetchImpl(`${dc.modelUrl}/v1/chat/completions`, {

@@ -171,11 +171,13 @@ interface CanvasProps {
   onOpenNode: (id: string) => void;
   onTestNode?: (id: string) => void;
   onAddStep?: () => void;
+  /** right-click on a step: change it in your own words */
+  onNodeMenu?: (id: string) => void;
   compact?: boolean;
   apiRef?: Ref<CanvasApi>;
   emptyHint?: React.ReactNode;
 }
-function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = false, apiRef, emptyHint }: CanvasProps) {
+function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, onNodeMenu, compact = false, apiRef, emptyHint }: CanvasProps) {
   const store = useEditorStore();
   const nodes = useEditor((s) => s.nodes);
   const edges = useEditor((s) => s.edges);
@@ -320,6 +322,7 @@ function CanvasInner({ defFor, onOpenNode, onTestNode, onAddStep, compact = fals
           onConnect={onConnect} isValidConnection={isValid}
           onNodeDragStop={commit} onSelectionDragStop={commit}
           // Small screens have no room for a settings column: a tap on a step opens its settings as a sheet.
+          onNodeContextMenu={onNodeMenu ? (e, n) => { if (n.type === "note") return; e.preventDefault(); onNodeMenu(n.id); } : undefined}
           onNodeClick={compact ? (e, n) => { if (n.type !== "note" && !e.shiftKey && !e.metaKey && !e.ctrlKey) onOpenNode(n.id); } : undefined}
           nodesDraggable={!readOnly} nodesConnectable={!readOnly} edgesFocusable={!readOnly} elementsSelectable
           deleteKeyCode={null} multiSelectionKeyCode={["Meta", "Control", "Shift"]} selectionKeyCode="Shift"

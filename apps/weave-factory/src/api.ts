@@ -274,8 +274,8 @@ export const api = {
   deleteMigration: (id: string) => j<{ ok: boolean }>(`${F}/migrations/${enc(id)}`, { method: "DELETE" }),
   docs: (id: string) => j<{ docs: { name: string }[] }>(`${F}/migrations/${enc(id)}/docs`),
   doc: (id: string, name: string) => text(`${F}/migrations/${enc(id)}/docs/${enc(name)}`),
-  docUrl: (id: string, name: string) => `${F}/migrations/${enc(id)}/docs/${enc(name)}?download=1`,
-  projectUrl: (id: string) => `${F}/migrations/${enc(id)}/project`,
+  docUrl: (id: string, name: string) => at(`${F}/migrations/${enc(id)}/docs/${enc(name)}?download=1`),
+  projectUrl: (id: string) => at(`${F}/migrations/${enc(id)}/project`),
 
   repos: () => j<{ repos: Repo[] }>(`${F}/repos`),
   connectRepo: (body: { name: string; url: string; branch?: string; username?: string; token?: string }) => j<Repo>(`${F}/repos`, post(body)),

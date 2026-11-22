@@ -7,10 +7,12 @@ import type { Config } from "../config.js";
 import { Readable } from "node:stream";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
 import { INTEGRATION_FILE_EXTENSIONS, PASTE_LIMITS, PASTE_TECHNOLOGIES, SINGLE_FILE_EXTENSIONS, decodeText, isSingleFile, pastedOf, wrapToZip } from "./paste.js";
-import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, headerSafe, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
+import { REQUIREMENT_DOC_MB, REQUIREMENT_EXTENSIONS, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, headerSafe, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 /** Largest corrected analysis workbook accepted (bytes). */
 export const CORRECTIONS_MAX = 10 * 1024 * 1024;
+/** Largest reviewed requirements workbook accepted (bytes). */
+export const REQUIREMENTS_MAX = 10 * 1024 * 1024;
 
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
@@ -30,6 +32,7 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     await need(req);
     return { technologies: SOURCE_TECHNOLOGIES, targets: TARGET_TECHNOLOGIES, extensions: UPLOAD_EXTENSIONS, maxUploadMb: limitMb,
       singleFileExtensions: SINGLE_FILE_EXTENSIONS, integrationFileExtensions: INTEGRATION_FILE_EXTENSIONS, singleFileMb: PASTE_LIMITS.singleFileMb,
+      requirements: { extensions: REQUIREMENT_EXTENSIONS, maxMb: Math.min(limitMb, REQUIREMENT_DOC_MB) },
       paste: { technologies: PASTE_TECHNOLOGIES, maxSnippets: PASTE_LIMITS.maxSnippets, maxSnippetKb: PASTE_LIMITS.maxSnippetBytes / 1024, maxTotalKb: PASTE_LIMITS.maxTotalBytes / 1024 } };
   });
 
@@ -77,7 +80,8 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
         return { error: v.error };
       }
       // one source file: wrapped into a minimal project zip here (it is small), then uploaded like a zip
-      if (isSingleFile(v.headers["X-Filename"])) {
+      // (a requirement document goes to the tool as it is: the factory reads it)
+      if (v.headers["X-Source-Type"] !== "requirements" && isSingleFile(v.headers["X-Filename"])) {
         let buf: Buffer;
         try { buf = await readAll(req.raw, PASTE_LIMITS.singleFileMb * 1024 * 1024); } catch { reply.code(413); return { error: `One source file can be at most ${PASTE_LIMITS.singleFileMb} MB.` }; }
         if (!buf.length) { reply.code(400); return { error: "The file is empty" }; }
@@ -185,6 +189,58 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
       if (who) headers["X-User"] = headerSafe(String(who)).slice(0, 80);
       try {
         const r = await mtUpload(mt, `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/corrections`, headers, Readable.from([buf]), buf.length);
+        return pass(reply, r);
+      } catch (e) {
+        reply.code(502);
+        return { ok: false, error: "The migration tool did not accept the workbook", detail: e instanceof Error ? e.message : undefined };
+      }
+    });
+  });
+
+  // New from requirements: the review workbook and the blank template go down, the reviewed workbook goes up.
+  // The factory reads and applies them in the migration tool, on this server. Workbooks are small: read whole.
+  const workbook = async (reply: any, path: string, fallback: string) => {
+    const r = await mtRaw(mt, path);
+    if (r.status >= 400 || r.status === 0) {
+      let error = "The workbook is not available right now";
+      try { const e = JSON.parse(r.body.toString("utf8")) as { error?: unknown }; if (typeof e?.error === "string" && e.error) error = e.error; } catch { /* not JSON */ }
+      reply.code(r.status || 502);
+      return { error };
+    }
+    if (!/spreadsheetml|octet-stream/.test(r.contentType)) { reply.code(502); return { error: "The migration tool did not send a workbook" }; }
+    const name = (/filename="([^"]+)"/.exec(r.disposition ?? "") || [])[1] || fallback;
+    reply.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").header("content-disposition", `attachment; filename="${name.replace(/[^\w.-]/g, "_")}"`);
+    return reply.send(r.body);
+  };
+  app.get("/api/factory/requirements/template.xlsx", async (req, reply) => {
+    await need(req);
+    return workbook(reply, "/api/requirements/template.xlsx", "requirements-template.xlsx");
+  });
+  app.get("/api/factory/migrations/:id/requirements.xlsx", async (req, reply) => {
+    await need(req);
+    const { id } = req.params as { id: string };
+    return workbook(reply, `/api/migrations/${encodeURIComponent(id)}/requirements.xlsx`, `${id}-requirements-review.xlsx`);
+  });
+  app.get("/api/factory/migrations/:id/requirements-template.xlsx", async (req, reply) => {
+    await need(req);
+    const { id } = req.params as { id: string };
+    return workbook(reply, `/api/migrations/${encodeURIComponent(id)}/requirements-template.xlsx`, "requirements-template.xlsx");
+  });
+  app.register(async (scope) => {
+    scope.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));
+    scope.post("/api/factory/migrations/:id/requirements", { bodyLimit: REQUIREMENTS_MAX + 64 * 1024 }, async (req, reply) => {
+      await need(req);
+      const len = req.headers["content-length"] ? Number(req.headers["content-length"]) : undefined;
+      if (len !== undefined && len > REQUIREMENTS_MAX) { req.raw.resume(); reply.code(413); return { ok: false, error: "The workbook is larger than 10 MB." }; }
+      let buf: Buffer;
+      try { buf = await readAll(req.raw, REQUIREMENTS_MAX); } catch { reply.code(413); return { ok: false, error: "The workbook is larger than 10 MB." }; }
+      if (!buf.length) { reply.code(400); return { ok: false, error: "No workbook was sent. Choose the reviewed .xlsx file and upload it." }; }
+      if (buf.length < 4 || buf.readUInt32LE(0) !== 0x04034b50) { reply.code(400); return { ok: false, error: "This is not an Excel workbook (.xlsx). Upload the review workbook you downloaded, saved as .xlsx." }; }
+      const headers: Record<string, string> = {};
+      const who = typeof (app as any).userFor === "function" ? await (app as any).userFor(req) : null;
+      if (who) headers["X-User"] = headerSafe(String(who)).slice(0, 80);
+      try {
+        const r = await mtUpload(mt, `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/requirements`, headers, Readable.from([buf]), buf.length);
         return pass(reply, r);
       } catch (e) {
         reply.code(502);

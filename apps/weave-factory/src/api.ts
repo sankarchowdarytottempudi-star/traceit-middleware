@@ -85,7 +85,23 @@ export interface Migration {
   checkOnly?: boolean;
   /** Corrections a person made to the analysis (Excel workbook), oldest first. */
   corrections?: CorrectionRecord[];
+  /** New from requirements (sourceType "requirements"): what the factory read from the requirement document. */
+  requirements?: RequirementsState | null;
 }
+/** A service built from a requirement document: what was read, the reviews, and the last generation. */
+export interface RequirementsState {
+  name?: string; document?: string; readAt?: string; readAgainAt?: string; model?: string;
+  counts?: Record<string, number>;
+  coverage?: { requirementStatements?: number; turnedIntoItems?: number; leftAsOpenQuestions?: number; contextOnly?: number };
+  openQuestions?: number;
+  reviews?: RequirementsReview[];
+  generated?: { at?: string; target?: string; service?: string; line?: string; openQuestions?: number } | null;
+  /** The review changed the requirements after the service was generated: generate again. */
+  changedSinceGenerate?: boolean;
+}
+export interface RequirementsChange { action?: string; id?: string; sheet?: string; row?: number; fields?: string[]; answer?: string }
+export interface RequirementsReview { at?: string; by?: string; changes?: number; openQuestions?: number; summary?: RequirementsChange[] }
+export interface RequirementsResult { ok: boolean; message?: string; changes?: RequirementsChange[]; openQuestions?: number; review?: RequirementsReview }
 /** Corrections of the analysis: counts of one corrected workbook. */
 export interface CorrectionCounts { changed: number; added: number; deleted: number; marked: number }
 export interface CorrectionChange { sheet?: string; id?: string; action?: string; summary?: string }
@@ -131,7 +147,9 @@ export interface TargetTechnology { id: string; label: string; depth: string; ma
 export interface PasteOptions { technologies: { id: string; label: string }[]; maxSnippets: number; maxSnippetKb: number; maxTotalKb: number }
 export interface MigrateOptions { technologies: SourceTechnology[]; targets: TargetTechnology[]; extensions: string[]; maxUploadMb: number;
   /** One source file is wrapped into a project by the server (older servers do not send these). */
-  singleFileExtensions?: string[]; integrationFileExtensions?: string[]; singleFileMb?: number; paste?: PasteOptions; }
+  singleFileExtensions?: string[]; integrationFileExtensions?: string[]; singleFileMb?: number; paste?: PasteOptions;
+  /** New from requirements: the document types and size the server accepts (older servers do not send it). */
+  requirements?: { extensions: string[]; maxMb: number }; }
 export interface PasteInput { name: string; workspace: string; target: string; technology: string; snippets: { name: string; text: string }[] }
 
 export interface Environment { id: string; name: string; workspace?: string | null; baseUrl: string; createdAt?: string; hasToken?: boolean; tokenSet?: boolean; }
@@ -286,6 +304,44 @@ export function uploadCorrections(id: string, file: File, onProgress?: (fraction
   return { promise, abort: () => xhr.abort() };
 }
 
+/** A reviewed requirements workbook: applied to the spec; row errors come back with status 400 and change nothing. */
+export function uploadRequirements(id: string, file: File, onProgress?: (fraction: number) => void): { promise: Promise<RequirementsResult>; abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<RequirementsResult>((resolve, reject) => {
+    xhr.open("POST", at(`/api/factory/migrations/${encodeURIComponent(id)}/requirements`));
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
+    xhr.onerror = () => reject(new Error("The upload was interrupted. Check your connection and try again."));
+    xhr.onabort = () => reject(Object.assign(new Error("Upload cancelled"), { aborted: true }));
+    xhr.onload = () => {
+      let body: any = null;
+      try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300 && body && body.ok) { resolve(body as RequirementsResult); return; }
+      const msg = (body && (body.error || body.detail)) || (xhr.status === 413 ? "The workbook is larger than 10 MB." : `The workbook was not accepted (${xhr.status})`);
+      reject(Object.assign(new Error(String(msg)), { status: xhr.status, body }));
+    };
+    xhr.send(file);
+  });
+  return { promise, abort: () => xhr.abort() };
+}
+
+/** The review workbook of a requirements migration, or the blank requirement template (no id). */
+export async function requirementsWorkbook(id: string | null, which: "review" | "template" = "review"): Promise<{ blob: Blob; filename: string }> {
+  const path = which === "template"
+    ? (id ? `/api/factory/migrations/${encodeURIComponent(id)}/requirements-template.xlsx` : "/api/factory/requirements/template.xlsx")
+    : `/api/factory/migrations/${encodeURIComponent(id ?? "")}/requirements.xlsx`;
+  const r = await fetch(at(path), { credentials: "include" });
+  if (!r.ok) {
+    let detail = "";
+    try { const p = await r.json(); detail = p.error ?? ""; } catch { /* ignore */ }
+    throw Object.assign(new Error(detail || (r.status === 401 ? "Sign in again to download the workbook." : `The workbook is not available right now (${r.status}).`)), { status: r.status });
+  }
+  const fallback = which === "template" ? "requirements-template.xlsx" : `${id}-requirements-review.xlsx`;
+  const filename = (/filename="([^"]+)"/.exec(r.headers.get("content-disposition") || "") || [])[1] || fallback;
+  return { blob: await r.blob(), filename };
+}
+
 /** The analysis of one API as an editable Excel workbook; a plain-words error when there is none. */
 export async function correctionsWorkbook(id: string): Promise<{ blob: Blob; filename: string }> {
   const r = await fetch(at(`/api/factory/migrations/${encodeURIComponent(id)}/corrections.xlsx`), { credentials: "include" });
@@ -334,6 +390,8 @@ export const api = {
   projectUrl: (id: string) => at(`${F}/migrations/${enc(id)}/project`),
   packageUrl: (id: string) => at(`${F}/migrations/${enc(id)}/package`),
   correctionsUrl: (id: string) => at(`${F}/migrations/${enc(id)}/corrections.xlsx`),
+  requirementsUrl: (id: string) => at(`${F}/migrations/${enc(id)}/requirements.xlsx`),
+  requirementsTemplateUrl: () => at(`${F}/requirements/template.xlsx`),
 
   repos: () => j<{ repos: Repo[] }>(`${F}/repos`),
   connectRepo: (body: { name: string; url: string; branch?: string; username?: string; token?: string }) => j<Repo>(`${F}/repos`, post(body)),

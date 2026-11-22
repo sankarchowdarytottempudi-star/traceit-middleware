@@ -203,14 +203,58 @@ export const PARTIAL_SOURCE_WORD: Record<string, string> = { pasted: "pasted cod
 // ---- what can be done next on a migration
 export interface PhaseLite { key: string; status?: string; mode?: string; steps?: { key: string; status?: string }[] }
 export interface FailureLite { phase?: unknown; phaseKey?: unknown; step?: unknown; status?: unknown; detail?: unknown; output?: unknown; help?: { kind?: unknown; what?: unknown; why?: unknown; todo?: unknown; retry?: unknown } | null }
-export interface MigrationState { busy?: boolean; targetTech?: unknown; apiName?: unknown; sourceType?: unknown; sourceFile?: unknown; phases?: PhaseLite[]; progress?: { outcome?: unknown; failure?: FailureLite | null } | null }
-export interface NextAction { id: "autorun" | "document" | "spec" | "scaffold" | "test" | "deploy"; label: string; hint: string; primary?: boolean; writes?: boolean }
+export interface MigrationState { busy?: boolean; targetTech?: unknown; apiName?: unknown; sourceType?: unknown; sourceFile?: unknown; phases?: PhaseLite[]; progress?: { outcome?: unknown; failure?: FailureLite | null } | null;
+  requirements?: { openQuestions?: unknown; changedSinceGenerate?: unknown } | null }
+export interface NextAction { id: "autorun" | "document" | "spec" | "scaffold" | "test" | "deploy" | "generate"; label: string; hint: string; primary?: boolean; writes?: boolean }
 const phaseStatus = (m: MigrationState, key: string) => txt(m.phases?.find((p) => p.key === key)?.status) || "pending";
 export function isSpec(m: MigrationState): boolean {
   return txt(m.sourceType) === "spec" || txt(m.sourceFile).endsWith(".spec.json");
 }
+/** "New from requirements": the service is built from a requirement document, not migrated from source code. */
+export function isRequirements(m: { sourceType?: unknown }): boolean {
+  return txt(m.sourceType) === "requirements";
+}
+export const REQUIREMENT_EXTENSIONS = [".docx", ".xlsx", ".md", ".txt", ".pdf"];
+/** "3 open questions" / "1 open question" / "no open questions". */
+export function openQuestionsText(n: unknown): string {
+  const k = Math.max(0, Math.round(num(n)));
+  return k === 0 ? "no open questions" : `${k} open question${k === 1 ? "" : "s"}`;
+}
+/** The form of a new migration from a requirement document: name, workspace and the document. */
+export function validateRequirementsForm(f: { name: string; workspace: string; file: { name: string; size: number } | null }, maxMb: number, extensions = REQUIREMENT_EXTENSIONS): Partial<Record<"name" | "workspace" | "file", string>> {
+  const e: Partial<Record<"name" | "workspace" | "file", string>> = {};
+  const name = f.name.trim();
+  if (!name) e.name = "Give it a name";
+  else if (name.length > 120) e.name = "Keep the name under 120 characters";
+  else if (/[^\x20-\x7E]/.test(name)) e.name = "Use plain letters, digits and punctuation in the name";
+  if (!f.workspace.trim()) e.workspace = "Choose a workspace or type a new one";
+  else if (/[^\x20-\x7E]/.test(f.workspace)) e.workspace = "Use plain letters, digits and punctuation in the workspace name";
+  if (!f.file) { e.file = "Choose the requirement document"; return e; }
+  const ext = (/\.[a-z0-9]+$/i.exec(f.file.name)?.[0] || "").toLowerCase();
+  if (!extensions.includes(ext)) e.file = `A requirement document must be ${extensions.join(", ")}.`;
+  else if (f.file.size <= 0) e.file = "The file is empty";
+  else if (f.file.size > maxMb * 1024 * 1024) e.file = `The file is larger than ${maxMb} MB`;
+  return e;
+}
+function requirementsActions(m: MigrationState): NextAction[] {
+  const doc = phaseStatus(m, "document"), sc = phaseStatus(m, "scaffold"), test = phaseStatus(m, "test"), dep = phaseStatus(m, "deploy");
+  const lbl = targetLabel(m), other = !isWso2Target(m), oq = openQuestionsText(m.requirements?.openQuestions);
+  const out: NextAction[] = [{ id: "document", label: doc === "done" ? "Read the requirement document again" : "Read the requirement document",
+    hint: doc === "done" ? "Reads the document again from the start: answers given in a review workbook are not kept." : "Reads the document on this server. Every item cites the sentence it came from; anything unclear becomes a question for you." }];
+  if (doc === "done") out.push({ id: "generate", label: sc === "done" ? `Generate the ${lbl} service again` : `Generate the ${lbl} service`,
+    hint: `Builds the ${lbl} ${other ? "project" : "service"} from the requirements as they are now (${oq} not answered; they stay listed in the project).`, writes: true });
+  if (sc === "done" && other) out.push({ id: "test", label: dep === "done" ? "Check the project again" : `Check and package the ${lbl} project`, hint: `Checks the generated ${lbl} project and makes it ready to download. Nothing is installed here.`, writes: true });
+  else if (sc === "done") {
+    out.push({ id: "test", label: test === "done" ? "Run the tests again" : "Build and run the tests", hint: "Builds the generated service and runs its tests.", writes: true });
+    if (txt(m.progress?.failure?.help?.kind) !== "not-ready") out.push({ id: "deploy", label: dep === "done" ? "Deploy again" : "Deploy", hint: "Builds the image and installs the service on the cluster.", writes: true });
+  }
+  const primary: NextAction["id"] | undefined = doc !== "done" ? "document" : sc !== "done" || m.requirements?.changedSinceGenerate ? "generate"
+    : other ? (dep !== "done" ? "test" : undefined) : test !== "done" ? "test" : dep !== "done" ? "deploy" : undefined;
+  return out.map((a) => ({ ...a, primary: a.id === primary }));
+}
 /** The steps the migration tool can run, in the order they make sense, with the first sensible one marked primary. */
 export function nextActions(m: MigrationState): NextAction[] {
+  if (isRequirements(m)) return requirementsActions(m);
   const doc = phaseStatus(m, "document"), sc = phaseStatus(m, "scaffold"), test = phaseStatus(m, "test"), dep = phaseStatus(m, "deploy");
   const named = !!txt(m.apiName);
   const out: NextAction[] = [];
@@ -248,8 +292,9 @@ export function failureView(m: MigrationState): FailureView | null {
   const key = txt(f.phaseKey);
   const id: NextAction["id"] | undefined = txt(h.kind) === "not-ready" ? "test"
     : key === "document" || key === "upload" ? (isSpec(m) ? "spec" : "document")
-    : key === "scaffold" ? (isSpec(m) ? "spec" : "scaffold") : key === "test" ? "test" : key === "deploy" ? "deploy" : undefined;
-  const offered = id ? nextActions({ ...m, progress: null }).some((a) => a.id === id) : false;
+    : key === "scaffold" ? (isRequirements(m) ? "generate" : isSpec(m) ? "spec" : "scaffold") : key === "test" ? "test" : key === "deploy" ? "deploy" : undefined;
+  // a requirement document that cannot be read (a scanned PDF) is not read by trying again: a text copy is needed
+  const offered = id && txt(h.kind) !== "requirements-unreadable" ? nextActions({ ...m, progress: null }).some((a) => a.id === id) : false;
   const todo = Array.isArray(h.todo) ? h.todo.map((t) => txt(t)).filter(Boolean) : [];
   return {
     blocked,

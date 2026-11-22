@@ -272,7 +272,7 @@ a.mf-mg-node:hover, .mf-mg-node-on { border-color: var(--accent); box-shadow: 0 
 }
 
 /* ---- where the source comes from (upload or git repository) */
-.mf-mg-ways { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); max-width: 860px; margin-bottom: 16px; }
+.mf-mg-ways { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); max-width: 860px; margin-bottom: 16px; }
 .mf-mg-way { text-decoration: none; color: var(--text); padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
 .mf-mg-way:hover { border-color: var(--border2); }
 .mf-mg-way[aria-current="page"] { border-color: var(--accent); background: var(--accentSoft); box-shadow: 0 0 0 1px var(--accent); }

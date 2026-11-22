@@ -50,7 +50,7 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
 
   // A step that writes a service (generate, test, deploy, scale) must not land on a service that
   // another migration already produced unless the user says so explicitly.
-  const WRITES = new Set(["scaffold", "test", "deploy", "autorun", "spec", "optimize"]);
+  const WRITES = new Set(["scaffold", "test", "deploy", "autorun", "spec", "optimize", "generate"]);
   async function guard(id: string, step: string, body: unknown): Promise<{ status: number; json: unknown } | null> {
     if (!WRITES.has(step) || (body as { confirmReplace?: boolean } | null)?.confirmReplace === true) return null;
     const r = await mtRequest(mt, "GET", "/api/migrations");
@@ -82,7 +82,8 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
     // Optimising takes no body; the other actions carry the user's request.
     return fwd(req, reply, "POST", `/api/migrations/${encodeURIComponent(id)}/${action}`, action === "optimize" ? undefined : req.body);
   });
-  const PHASES = new Set(["document", "scaffold", "test", "deploy", "autorun", "spec"]);
+  // "generate": a service built from a reviewed requirement document (genspec, then the check and the delivery)
+  const PHASES = new Set(["document", "scaffold", "test", "deploy", "autorun", "spec", "generate"]);
   app.post("/api/factory/migrations/:id/run/:phase", async (req, reply) => {
     const { id, phase } = req.params as { id: string; phase: string };
     if (!PHASES.has(phase)) { reply.code(404); return { error: "unknown step" }; }

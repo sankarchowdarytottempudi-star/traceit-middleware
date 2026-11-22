@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CircleDashed, Download, Eye, Loader2, Play, RotateCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { api, type ApiError, type Environment, type Migration, type OptimizeResult, type ParityResult, type Phase, type VerifyResult } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
-import { ago, baseName, clock, dateTime, failureView, isSpec, ms, nextActions, outcomeTone, targetLabel, statusLabel, statusTone, type FailureView, type NextAction } from "../lib/migrate.ts";
+import { ago, baseName, clock, dateTime, failureView, isRequirements, isSpec, isWso2Target, ms, nextActions, outcomeTone, targetLabel, statusLabel, statusTone, type FailureView, type NextAction } from "../lib/migrate.ts";
 import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, KV, LinkBtn, Loading, Notice, Panel, PartialSourceNotice, Pill, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
 import { Markdown } from "./markdown.tsx";
 import { Finish } from "./Finish.tsx";
@@ -15,6 +15,7 @@ import { ParityPanel, RuntimeProps } from "./Parity.tsx";
 import { ProjectPart } from "./Part.tsx";
 import { Corrections } from "./Corrections.tsx";
 import { Delivery } from "./Delivery.tsx";
+import { Requirements } from "./Requirements.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
 const TABS: Tab[] = ["progress", "documents", "checks", "feedback"];
@@ -287,6 +288,7 @@ function Feedback({ m }: { m: Migration }) {
 const CONFIRM_TEXT: Record<string, { title: string; label: string; body: string }> = {
   spec: { title: "Generate from the specification?", label: "Generate", body: "The documents and the service code of this migration are written again from the uploaded specification. Nothing is deployed." },
   scaffold: { title: "Generate the service?", label: "Generate the service", body: "The service code of this migration is written from the documents and the mapping. If it was generated before, it is replaced. Nothing is deployed." },
+  generate: { title: "Generate the service from the requirements?", label: "Generate", body: "The service is built from the requirements as they are now, for the chosen target. Open questions that are not answered stay listed in the project (README and REQUIREMENTS-TODO.md). If it was generated before, it is replaced. Nothing is installed." },
   autorun: { title: "Read the source and generate the service?", label: "Run both steps", body: "The source is read, the documents are written, and the service code is generated. Nothing is deployed." },
   test: { title: "Build and run the tests?", label: "Run the tests", body: "The generated service is built and its tests are run on this server. This takes a few minutes and uses the build machine; nothing is deployed." },
   deploy: { title: "Deploy to the cluster?", label: "Deploy", body: "The image is built and the service is installed on the cluster. If a service with this name is already running, it is replaced by this version." },
@@ -334,7 +336,8 @@ export function MigrationDetail() {
   const pct = Math.round(num(p.overallPercent) * 10) / 10;
   const outcome = txt(p.outcome) || "In progress";
   const now = txt(p.currentStep), next = txt(p.nextStep);
-  const canAuto = !isSpec(m) && txt((m.phases ?? []).find((x) => x.key === "document")?.status) !== "done";
+  const req = isRequirements(m);
+  const canAuto = !isSpec(m) && !req && txt((m.phases ?? []).find((x) => x.key === "document")?.status) !== "done";
   const start = (a: NextAction["id"] | "autorun") => { setNote(""); run.reset(); if (a === "document") run.mutate({ phase: "document" }); else setAsk(a); };
   const tabs: TabDef<Tab>[] = [{ id: "progress", label: "Progress" }, { id: "documents", label: "Documents" }, { id: "checks", label: "Verify and compare" }, { id: "feedback", label: "Feedback" }];
   const host = typeof location !== "undefined" ? location.hostname : "";
@@ -360,7 +363,7 @@ export function MigrationDetail() {
           </span>
         </div>
         <KV rows={[
-          ["Source", `${txt(m.technology) && txt(m.technology) !== "unknown" ? txt(m.technology) : txt(m.sourceType) === "spec" ? "written specification" : "not recognised yet"}${m.sourceFile ? ` · ${baseName(m.sourceFile)}` : ""}${m.partialSource ? " · partial source" : ""}`],
+          ["Source", `${req ? "requirement document (no source code)" : txt(m.technology) && txt(m.technology) !== "unknown" ? txt(m.technology) : txt(m.sourceType) === "spec" ? "written specification" : "not recognised yet"}${m.sourceFile ? ` · ${baseName(m.sourceFile)}` : ""}${m.partialSource ? " · partial source" : ""}`],
           ["Target", targetLabel(m)],
           ["Estimate", m.estimateDays ? `${num(m.estimateDays)} days by hand` : ""],
           ["Lessons applied", m.lessonsApplied ? String(num(m.lessonsApplied)) : ""],
@@ -376,14 +379,16 @@ export function MigrationDetail() {
       {tab === "progress" && (
         <div className="mf-mg-stack">
           {failure && !m.busy && <WhatNow v={failure} disabled={!!m.busy} busy={run.isPending && run.variables?.phase === failure.retry?.id} onRetry={(a) => start(a)} />}
+          <Requirements m={m} onRun={(a) => start(a)} running={run.isPending && run.variables?.phase === "generate"} />
           <Delivery m={m} />
           <ProjectPart m={m} />
-          <Finish m={m} onRun={(a) => start(a)} />
-          <StartParts m={m} onRun={(a) => start(a)} />
+          {/* built from requirements: there is no old application to compare with or to take settings from */}
+          {(!req || isWso2Target(m)) && <Finish m={m} onRun={(a) => start(a)} />}
+          {(!req || isWso2Target(m)) && <StartParts m={m} onRun={(a) => start(a)} />}
           <TrialRun m={m} />
           {m.apiName && m.serviceDir ? <ChangeRequests api={txt(m.apiName)} migrationId={m.id} /> : null}
-          <ParityPanel m={m} />
-          <RuntimeProps m={m} onRun={(a) => start(a)} />
+          {!req && <ParityPanel m={m} />}
+          {!req && <RuntimeProps m={m} onRun={(a) => start(a)} />}
           <Panel title="What you can do next">
             {m.busy ? <Notice><span className="mf-mg-row" style={{ gap: 8 }}><Loader2 size={14} className="mf-spin" aria-hidden="true" />A step is running. This screen updates by itself; the activity below shows what is happening.</span></Notice> : null}
             <div className="mf-mg-stack" style={{ gap: 10 }}>

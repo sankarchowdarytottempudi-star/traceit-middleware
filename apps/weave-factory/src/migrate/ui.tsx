@@ -1,7 +1,7 @@
 // Small building blocks shared by the migrate screens. Styling lives in migrate.css (mf-mg-*).
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link, type LinkProps } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ClipboardPaste, GitBranch, Info, Loader2, Search, UploadCloud, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ClipboardPaste, FileText, GitBranch, Info, Loader2, Search, UploadCloud, X, XCircle } from "lucide-react";
 import { MODULES } from "../brand.tsx";
 import { txt } from "../lib/text.ts";
 import { LAYER_LABEL, PARTIAL_SOURCE_WORD, healthLabel, healthTone, layerKey, partialOf, type Tone } from "../lib/migrate.ts";
@@ -186,7 +186,7 @@ export function errText(e: unknown): string {
   return e instanceof Error ? e.message : txt(e) || "Something went wrong";
 }
 /** The ways a migration can start: one uploaded file, the projects of a git repository, or pasted code. */
-export function SourceWays({ way }: { way: "upload" | "git" | "paste" }) {
+export function SourceWays({ way }: { way: "upload" | "git" | "paste" | "requirements" }) {
   return (
     <nav className="mf-mg-ways" aria-label="Where the source comes from">
       <Link className="mf-mg-way" to="/migrations/new" aria-current={way === "upload" ? "page" : undefined}>
@@ -200,6 +200,10 @@ export function SourceWays({ way }: { way: "upload" | "git" | "paste" }) {
       <Link className="mf-mg-way" to="/migrations/paste" aria-current={way === "paste" ? "page" : undefined}>
         <ClipboardPaste size={20} color="var(--accentText)" aria-hidden="true" />
         <span><strong>Paste code</strong><small>A flow, a DataWeave script, a service or a process, pasted as text. Read as a partial source.</small></span>
+      </Link>
+      <Link className="mf-mg-way" to="/migrations/from-requirements" aria-current={way === "requirements" ? "page" : undefined} data-testid="way-requirements">
+        <FileText size={20} color="var(--accentText)" aria-hidden="true" />
+        <span><strong>From requirements</strong><small>A requirement document (.docx, .xlsx, .md, .txt, .pdf). A service is drafted from it for you to review. No source code.</small></span>
       </Link>
     </nav>
   );

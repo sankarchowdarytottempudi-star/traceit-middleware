@@ -13,6 +13,7 @@ import { EstateList } from "./EstateList.tsx";
 import { EstateDetail } from "./EstateDetail.tsx";
 import { MigrationNew } from "./MigrationNew.tsx";
 import { MigrationFromGit } from "./MigrationFromGit.tsx";
+import { MigrationFromRequirements } from "./MigrationFromRequirements.tsx";
 import { MigrationDetail } from "./MigrationDetail.tsx";
 import { ServersPage } from "../servers/Servers.tsx";
 import { ReleasesPage } from "../servers/Releases.tsx";
@@ -37,6 +38,7 @@ export function migrateRoutes() {
       <Route path="migrations/new" element={<MigrationNew key="upload" />} />
       <Route path="migrations/paste" element={<MigrationNew key="paste" mode="paste" />} />
       <Route path="migrations/from-git" element={<MigrationFromGit />} />
+      <Route path="migrations/from-requirements" element={<MigrationFromRequirements />} />
       <Route path="migrations/:id" element={<MigrationDetail />} />
       <Route path="workspaces" element={<Workspaces />} />
       <Route path="workspaces/:id/servers" element={<ServersPage />} />

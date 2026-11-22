@@ -71,14 +71,15 @@ try {
     return json(route, 200, { ok: true });
   });
 
-  // ------------------------------------------------------------ 1. two ways to start
-  s.step("1. A migration can start from an upload or from a git repository");
+  // ------------------------------------------------------------ 1. the ways to start
+  s.step("1. A migration can start from an upload, a git repository, pasted code or a requirement document");
   await s.goto("/migrations/new");
   const ways = page.getByRole("navigation", { name: "Where the source comes from" });
   await ways.waitFor();
   const wayNames = (await ways.getByRole("link").allInnerTexts()).map((t) => t.toLowerCase());
-  s.check(wayNames.length === 3 && wayNames.some((t) => t.includes("upload")) && wayNames.some((t) => t.includes("git")) && wayNames.some((t) => t.includes("paste")),
-    "the three ways (upload, git repository, paste code) are offered on the new-migration screen");
+  s.check(wayNames.length === 4 && wayNames.some((t) => t.includes("upload")) && wayNames.some((t) => t.includes("git")) && wayNames.some((t) => t.includes("paste"))
+    && wayNames.some((t) => t.includes("from requirements")),
+    "the four ways (upload, git repository, paste code, from requirements) are offered on the new-migration screen", wayNames.join(" | "));
   s.check((await ways.locator('[aria-current="page"]').innerText()).includes("Upload a file"), "the upload is the way that is open");
   s.check(await page.getByRole("button", { name: "Choose the file to upload" }).isVisible(), "the upload itself is still there");
   s.check((await s.overflow()) === 0, "nothing runs off the side of the page");

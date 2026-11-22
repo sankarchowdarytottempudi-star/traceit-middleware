@@ -51,10 +51,11 @@ export function Delivery({ m }: { m: Migration }) {
     <Panel title={`Your ${lbl} project`} actions={<Pill tone={packed ? "ok" : "muted"}>{packed ? "Ready to download" : "Not checked yet"}</Pill>}>
       <div className="mf-mg-stack" style={{ gap: 10 }} data-testid="delivery">
         <p className="mf-mg-sub mf-mg-wrap" style={{ fontSize: 13.5, margin: 0 }}>
-          This migration produces a {lbl} project. It is not installed here: {pkg ? `import the package into ${lbl}` : `download it and install it on your own ${lbl} servers`}. {targetOf(m) === "workato"
+          {m.sourceType === "requirements" ? `This service, built from requirements, is a ${lbl} project.` : `This migration produces a ${lbl} project.`} It is not installed here: {pkg ? `import the package into ${lbl}` : `download it and install it on your own ${lbl} servers`}. {targetOf(m) === "workato"
             ? "README.md says how; PARITY.md (section \"TODO and approximated steps\") lists the steps a person still has to finish; manual-assets/ lists the connections and settings to create; tests/ has the test cases."
             : "README.md says how; TODO.md lists the steps a person still has to finish; SETTINGS.md lists the values to set; TEST-CASES.md has the tests."}
         </p>
+        {m.sourceType === "requirements" && <span className="mf-mg-hint mf-mg-wrap" data-testid="delivery-requirements-note">REQUIREMENTS-TODO.md lists the rules kept as TODO and the open questions that are not answered.</span>}
         {ready?.detail ? <Notice tone={txt(ready.status) === "done" ? "ok" : "warn"}>{txt(ready.detail)}</Notice> : null}
         {pkg && (
           <div className="mf-mg-actions">

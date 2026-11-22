@@ -35,6 +35,11 @@ export const TARGET_TECHNOLOGIES: TargetTech[] = GENERATED_TARGETS.map((t) => ({
 // result is marked "partial source"
 export const UPLOAD_EXTENSIONS = [".zip", ".jar", ".json", ...SINGLE_FILE_EXTENSIONS, ...INTEGRATION_FILE_EXTENSIONS];
 
+// "New from requirements": a requirement document the factory reads on this server into a reviewable spec.
+export const REQUIREMENT_EXTENSIONS = [".docx", ".xlsx", ".md", ".txt", ".pdf"];
+/** Largest requirement document accepted (bytes). */
+export const REQUIREMENT_DOC_MB = 25;
+
 /** Header values go to the migration tool as plain ASCII. */
 export function headerSafe(s: string, max = 120): string {
   return s.replace(/[^\x20-\x7e]/g, "-").replace(/["\\]/g, "").trim().slice(0, max);
@@ -49,6 +54,18 @@ export function validateUpload(q: { name?: string; workspace?: string; filename?
   if (!name) return { ok: false, status: 400, error: "Give the migration a name" };
   if (!filename) return { ok: false, status: 400, error: "Choose the file to upload" };
   const ext = (/\.[a-z0-9]+$/i.exec(filename)?.[0] || "").toLowerCase();
+  if (q.sourceType === "requirements") {
+    // a requirement document: its own types, never wrapped or split like a source upload
+    if (!REQUIREMENT_EXTENSIONS.includes(ext)) return { ok: false, status: 400, error: `A requirement document must be ${REQUIREMENT_EXTENSIONS.join(", ")} (a PDF with text, not a scan).` };
+    if (!TARGET_TECHNOLOGIES.some((t) => t.id === target)) return { ok: false, status: 400, error: "Unknown target technology" };
+    if (length === undefined || !Number.isFinite(length)) return { ok: false, status: 411, error: "The upload has no size; try again" };
+    if (length <= 0) return { ok: false, status: 400, error: "The file is empty" };
+    const max = Math.min(limitMb, REQUIREMENT_DOC_MB);
+    if (length > max * 1024 * 1024) return { ok: false, status: 413, error: `A requirement document can be at most ${max} MB` };
+    const headers: Record<string, string> = { "X-Name": name, "X-Filename": filename, "X-Target-Tech": target, "X-Source-Type": "requirements" };
+    if (workspace) headers["X-Workspace"] = workspace;
+    return { ok: true, headers };
+  }
   if (!UPLOAD_EXTENSIONS.includes(ext)) return { ok: false, status: 400, error: `This file type is not accepted. Upload a .zip or .jar of the project, a .json specification, one source file (${SINGLE_FILE_EXTENSIONS.join(" ")}) or one integration file (${INTEGRATION_FILE_EXTENSIONS.join(" ")}).` };
   const spec = q.sourceType === "spec";
   if (spec && ext !== ".json") return { ok: false, status: 400, error: "A written specification must be a .json file" };

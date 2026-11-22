@@ -11,7 +11,7 @@ describe("delivery panel", () => {
   it("puts the Workato import package first and marks the project download as not for importing", () => {
     render(<Delivery m={mig()} />);
     const pkg = screen.getByTestId("delivery-package");
-    expect(pkg.textContent).toBe("Workato import package (.zip) — import this file in Workato");
+    expect(pkg.textContent).toBe("Workato import package (.zip)");
     expect(pkg.className).toContain("mf-mg-btn-pri");
     const project = screen.getByTestId("delivery-project");
     expect(project.className).not.toContain("mf-mg-btn-pri");

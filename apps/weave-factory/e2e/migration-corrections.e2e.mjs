@@ -117,7 +117,7 @@ try {
     const delivery = page.locator('[data-testid="delivery"]');
     await delivery.waitFor();
     const pkg = delivery.locator('[data-testid="delivery-package"]');
-    s.check((await pkg.innerText()).trim() === "Workato import package (.zip) — import this file in Workato", "the package button names the file to import in Workato", await pkg.innerText());
+    s.check((await pkg.innerText()).trim() === "Workato import package (.zip)", "the package button names the file to import in Workato", await pkg.innerText());
     s.check(/mf-mg-btn-pri/.test((await pkg.getAttribute("class")) || ""), "the package is the primary button");
     const order = await delivery.evaluate((el) => {
       const a = el.querySelector('[data-testid="delivery-package"]'), b = el.querySelector('[data-testid="delivery-project"]');

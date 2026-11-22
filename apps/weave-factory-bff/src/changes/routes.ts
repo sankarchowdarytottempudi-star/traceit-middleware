@@ -7,7 +7,7 @@ import type { Config } from "../config.js";
 import { mtRequest, type MtClient } from "../mt.js";
 import { withoutSecrets } from "../migrate/options.js";
 
-const API = /^[a-z0-9][a-z0-9-]{1,61}$/;
+const API = /^[A-Za-z0-9][A-Za-z0-9_-]{1,99}$/;   // webMethods / Boomi API names keep capitals and underscores (no dots or slashes)
 const CID = /^[0-9a-f]{12}$/;
 const OP = /^(GET|POST|PUT|PATCH|DELETE) \/\S{0,300}$/;
 

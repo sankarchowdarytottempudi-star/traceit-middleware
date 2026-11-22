@@ -16,7 +16,7 @@ export function hasPackage(m: Migration): boolean {
 }
 
 export function packageLabel(m: Migration): string {
-  return targetOf(m) === "workato" ? "Workato import package (.zip) — import this file in Workato" : `${targetLabel(m)} package (.zip)`;
+  return targetOf(m) === "workato" ? "Workato import package (.zip)" : `${targetLabel(m)} package (.zip)`;
 }
 
 // fetched first, so "there is no package" is said in words instead of being saved as a file
@@ -51,13 +51,18 @@ export function Delivery({ m }: { m: Migration }) {
     <Panel title={`Your ${lbl} project`} actions={<Pill tone={packed ? "ok" : "muted"}>{packed ? "Ready to download" : "Not checked yet"}</Pill>}>
       <div className="mf-mg-stack" style={{ gap: 10 }} data-testid="delivery">
         <p className="mf-mg-sub mf-mg-wrap" style={{ fontSize: 13.5, margin: 0 }}>
-          This migration produces a {lbl} project. It is not installed here: {pkg ? `import the package into ${lbl}` : `download it and install it on your own ${lbl} servers`}. README.md says how; TODO.md lists the steps a person still has to finish; SETTINGS.md lists the values to set; TEST-CASES.md has the tests.
+          This migration produces a {lbl} project. It is not installed here: {pkg ? `import the package into ${lbl}` : `download it and install it on your own ${lbl} servers`}. {targetOf(m) === "workato"
+            ? "README.md says how; PARITY.md (section \"TODO and approximated steps\") lists the steps a person still has to finish; manual-assets/ lists the connections and settings to create; tests/ has the test cases."
+            : "README.md says how; TODO.md lists the steps a person still has to finish; SETTINGS.md lists the values to set; TEST-CASES.md has the tests."}
         </p>
         {ready?.detail ? <Notice tone={txt(ready.status) === "done" ? "ok" : "warn"}>{txt(ready.detail)}</Notice> : null}
         {pkg && (
           <div className="mf-mg-actions">
             <Btn kind="primary" data-testid="delivery-package" icon={<PackageCheck size={15} aria-hidden="true" />} busy={getting} onClick={getPackage}
-              style={{ minWidth: 0, whiteSpace: "normal", height: "auto", minHeight: 38, padding: "8px 14px", textAlign: "left" }}>{packageLabel(m)}</Btn>
+              style={{ minWidth: 0, maxWidth: "100%", whiteSpace: "normal", height: "auto", minHeight: 38, padding: "8px 14px", textAlign: "left" }}>{packageLabel(m)}</Btn>
+            <span className="mf-mg-hint mf-mg-wrap" data-testid="delivery-package-note">{targetOf(m) === "workato"
+              ? "Import this file in Workato (Tools > Recipe lifecycle management > Import package)."
+              : `Import this file into ${targetLabel(m)}.`}</span>
           </div>
         )}
         {err && <Notice tone="bad"><span data-testid="delivery-package-error">{err}</span></Notice>}

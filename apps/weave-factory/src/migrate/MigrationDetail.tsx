@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CircleDashed, Download, Eye, Loader2, Play, RotateCw, Trash2, TriangleAlert, X } from "lucide-react";
+import { Check, CircleDashed, Download, Eye, Loader2, Pencil, Play, RotateCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { api, type ApiError, type Environment, type Migration, type OptimizeResult, type ParityResult, type Phase, type VerifyResult } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
 import { ago, baseName, clock, dateTime, failureView, isRequirements, isSpec, isWso2Target, ms, nextActions, outcomeTone, targetLabel, statusLabel, statusTone, type FailureView, type NextAction } from "../lib/migrate.ts";
@@ -16,6 +16,8 @@ import { ProjectPart } from "./Part.tsx";
 import { Corrections } from "./Corrections.tsx";
 import { Delivery } from "./Delivery.tsx";
 import { Requirements } from "./Requirements.tsx";
+import { Decisions } from "./Decisions.tsx";
+import { DocEditor, editable, editedLabel } from "./DocEditor.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
 const TABS: Tab[] = ["progress", "documents", "checks", "feedback"];
@@ -101,8 +103,15 @@ function Activity({ m }: { m: Migration }) {
 }
 
 // ---- documents
-function Documents({ id }: { id: string }) {
+function Documents({ m }: { m: Migration }) {
+  const id = m.id;
   const docs = useQuery({ queryKey: ["migration-docs", id], queryFn: () => api.docs(id) });
+  // documents a person replaced with their own version (an older tool has no such list: none then)
+  const edits = useQuery({ queryKey: ["migration-doc-edits", id], queryFn: () => api.docEdits(id).catch(() => []), enabled: !!m.apiName && m.sourceType !== "requirements" && !m.checkOnly });
+  const editOf = (name: string) => (edits.data ?? []).find((e) => e.doc === name) ?? ((m.docEdits ?? []).includes(name) ? { doc: name } : undefined);
+  const [editing, setEditing] = useState<string | null>(null);
+  const editorBox = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (editing) editorBox.current?.scrollIntoView?.({ block: "start", behavior: "smooth" }); }, [editing]);
   const [view, setView] = useState<string | null>(null);
   const body = useQuery({ queryKey: ["migration-doc", id, view], queryFn: () => api.doc(id, view!), enabled: !!view });
   const list = docs.data?.docs ?? [];
@@ -113,14 +122,17 @@ function Documents({ id }: { id: string }) {
       ) : (
         <div className="mf-mg-list">
           {list.map((d) => (
-            <div key={d.name} className="mf-mg-item"><div className="mf-mg-item-head" style={{ cursor: "default" }}>
-              <span className="mf-mono mf-mg-item-title">{txt(d.name)}</span>
+            <div key={d.name} className="mf-mg-item" data-testid="doc-item" data-doc={d.name}><div className="mf-mg-item-head" style={{ cursor: "default", flexWrap: "wrap" }}>
+              <span className="mf-mono mf-mg-item-title mf-mg-wrap">{txt(d.name)}</span>
+              {editOf(d.name) && <Pill tone="accent"><span data-testid="doc-edited">{editedLabel(editOf(d.name))}</span></Pill>}
               <Btn small icon={<Eye size={14} aria-hidden="true" />} onClick={() => setView(d.name)}>View</Btn>
+              {editable(d.name) && <Btn small icon={<Pencil size={14} aria-hidden="true" />} onClick={() => setEditing(d.name)} aria-label={`Edit ${d.name}`} data-testid="doc-edit">Edit</Btn>}
               <a className="mf-btn mf-mg-btn mf-mg-btn-sm" href={api.docUrl(id, d.name)} download={d.name}><Download size={14} aria-hidden="true" />Download</a>
             </div></div>
           ))}
         </div>
       )}
+      {editing && <div ref={editorBox}><DocEditor key={editing} m={m} name={editing} edit={editOf(editing)} onClose={() => setEditing(null)} /></div>}
       {view && (
         <Dialog wide title={view} onClose={() => setView(null)} footer={<><a className="mf-btn mf-mg-btn" href={api.docUrl(id, view)} download={view}><Download size={15} aria-hidden="true" />Download</a><Btn kind="primary" onClick={() => setView(null)}>Close</Btn></>}>
           {body.isLoading ? <Loading rows={3} h={40} /> : body.isError ? <Failed what="This document cannot be shown." error={body.error} onRetry={() => body.refetch()} /> :
@@ -341,12 +353,13 @@ export function MigrationDetail() {
   const start = (a: NextAction["id"] | "autorun") => { setNote(""); run.reset(); if (a === "document") run.mutate({ phase: "document" }); else setAsk(a); };
   const tabs: TabDef<Tab>[] = [{ id: "progress", label: "Progress" }, { id: "documents", label: "Documents" }, { id: "checks", label: "Verify and compare" }, { id: "feedback", label: "Feedback" }];
   const host = typeof location !== "undefined" ? location.hostname : "";
+  const openDecisions = num(m.decisionsCounts?.open);
 
   return (
     <>
       <Head area="Migrations" areaTo="/migrations" back={{ to: "/migrations", label: "All migrations" }} title={txt(m.name) || txt(m.apiName) || m.id}
         subtitle={<span className="mf-mg-row" style={{ gap: 8 }}>
-          <Pill tone={outcomeTone(outcome)}>{outcome}</Pill>{m.parity && m.parity.complete === false && <Pill tone="bad" title="Flows of the old application with items the new service does not do yet. See &quot;Old code, item by item&quot;.">{num(m.parity.flowsWithGaps)} flow{num(m.parity.flowsWithGaps) === 1 ? "" : "s"} with gaps</Pill>}{num(p.partsOff) > 0 && <Pill tone="warn" title="Parts that start by themselves (timer, queue, topic) and are switched off: the service does not do that work yet.">{num(p.partsOff)} part{num(p.partsOff) === 1 ? "" : "s"} switched off</Pill>}{m.busy && <Pill tone="accent"><Loader2 size={12} className="mf-spin" aria-hidden="true" />A step is running</Pill>}
+          <Pill tone={outcomeTone(outcome)}>{outcome}</Pill>{m.parity && m.parity.complete === false && <Pill tone="bad" title="Flows of the old application with items the new service does not do yet. See &quot;Old code, item by item&quot;.">{num(m.parity.flowsWithGaps)} flow{num(m.parity.flowsWithGaps) === 1 ? "" : "s"} with gaps</Pill>}{num(p.partsOff) > 0 && <Pill tone="warn" title="Parts that start by themselves (timer, queue, topic) and are switched off: the service does not do that work yet.">{num(p.partsOff)} part{num(p.partsOff) === 1 ? "" : "s"} switched off</Pill>}{openDecisions > 0 && <button type="button" className="mf-mg-pill mf-mg-pill-warn" style={{ cursor: "pointer", border: 0 }} onClick={() => setTab("documents")} data-testid="decisions-badge" title="Steps where the agent needs a person's choice. Open the Documents tab to answer them.">{openDecisions} open decision{openDecisions === 1 ? "" : "s"}</button>}{m.busy && <Pill tone="accent"><Loader2 size={12} className="mf-spin" aria-hidden="true" />A step is running</Pill>}
           {m.apiName ? <span className="mf-mono mf-mg-small">{txt(m.apiName)}</span> : null}{m.workspace ? <span className="mf-mg-small">{txt(m.workspace)}</span> : null}
         </span>}
         actions={<>
@@ -398,6 +411,12 @@ export function MigrationDetail() {
                   <span className="mf-mg-hint mf-mg-grow" style={{ flexBasis: 220, paddingTop: 9 }}>{a.hint}</span>
                 </div>
               ))}
+              {openDecisions > 0 && (
+                <div className="mf-mg-row" style={{ alignItems: "flex-start" }} data-testid="decisions-next">
+                  <Btn onClick={() => setTab("documents")} style={{ minWidth: 0, whiteSpace: "normal", height: "auto", minHeight: 38, padding: "8px 14px", textAlign: "left" }}>Answer the open decisions ({openDecisions})</Btn>
+                  <span className="mf-mg-hint mf-mg-grow" style={{ flexBasis: 220, paddingTop: 9 }}>The agent stopped at {openDecisions === 1 ? "one step" : `${openDecisions} steps`} where it needs a person's choice. The migration is rebuilt with your answers.</span>
+                </div>
+              )}
               {canAuto && <div className="mf-mg-row"><button type="button" className="mf-mg-back" disabled={!!m.busy} onClick={() => start("autorun")}>Or run reading and generating in one go</button></div>}
             </div>
             {note && <Notice>{note}</Notice>}
@@ -410,7 +429,7 @@ export function MigrationDetail() {
           </div>
         </div>
       )}
-      {tab === "documents" && <div className="mf-mg-stack"><Documents id={id} /><Corrections m={m} /></div>}
+      {tab === "documents" && <div className="mf-mg-stack"><Decisions m={m} /><Documents m={m} /><Corrections m={m} /></div>}
       {tab === "checks" && <Checks m={m} onChanged={refresh} />}
       {tab === "feedback" && <Feedback m={m} />}
 

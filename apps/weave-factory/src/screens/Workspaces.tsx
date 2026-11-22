@@ -8,6 +8,7 @@ import { api, type Environment, type Workspace } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
 import { outcomeTone } from "../lib/migrate.ts";
 import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, LinkBtn, Loading, Notice, Pill, Stat, errText, useTitle } from "../migrate/ui.tsx";
+import { TargetPlatforms } from "./TargetPlatforms.tsx";
 
 const TIERS: [string, string][] = [["dev", "Development"], ["qa", "Test (QA)"], ["uat", "Acceptance (UAT)"], ["prod", "Production"]];
 const isShared = (w: Workspace) => w.name === "Unassigned";
@@ -232,6 +233,7 @@ export function Workspaces() {
           {shared && (shared.environments.length > 0 || shared.migrations.length > 0) && <WorkspaceCard w={shared} />}
         </>
       )}
+      {!ws.isLoading && <TargetPlatforms />}
       {creating && <NewWorkspaceDialog existing={all.map((w) => w.name)} onClose={() => setCreating(false)} />}
     </>
   );

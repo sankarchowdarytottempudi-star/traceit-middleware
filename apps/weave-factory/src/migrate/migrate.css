@@ -286,3 +286,6 @@ a.mf-mg-node:hover, .mf-mg-node-on { border-color: var(--accent); box-shadow: 0 
 .mf-mg-proj { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; min-width: 0; }
 .mf-mg-proj > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mf-mg-plain-list { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.5; }
+/* a checkbox or radio whose label may be long: it wraps instead of running off a phone screen */
+.mf-mg-check.mf-mg-check-wrap { white-space: normal; align-items: flex-start; min-width: 0; max-width: 100%; overflow-wrap: anywhere; line-height: 1.4; }
+.mf-mg-check.mf-mg-check-wrap input { flex: 0 0 auto; margin-top: 1px; }

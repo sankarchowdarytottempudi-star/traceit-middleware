@@ -7,6 +7,7 @@ import type { Config } from "../config.js";
 import { Readable } from "node:stream";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
 import { INTEGRATION_FILE_EXTENSIONS, PASTE_LIMITS, PASTE_TECHNOLOGIES, SINGLE_FILE_EXTENSIONS, decodeText, isSingleFile, pastedOf, wrapToZip } from "./paste.js";
+import { DECISIONS_MAX, DOCUMENT_MAX, TARGETS, answersOf, docEditOf, docNameOk, migrationOptionsOf, targetAccountOf } from "./decisions.js";
 import { REQUIREMENT_DOC_MB, REQUIREMENT_EXTENSIONS, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, headerSafe, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 /** Largest corrected analysis workbook accepted (bytes). */
@@ -291,6 +292,98 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     const d = decisionOf(req.body);
     if (!d.ok) { reply.code(400); return { error: d.error }; }
     return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/resolve`, d.decision));
+  });
+
+  // ---- the agent's open decisions, a person's version of a document, target platform accounts, the import
+  // Who did it travels with every change (X-User), so the tool can say "answered by" / "edited by".
+  const byWho = async (req: FastifyRequest): Promise<Record<string, string>> => {
+    const who = typeof (app as any).userFor === "function" ? await (app as any).userFor(req) : null;
+    return who ? { "X-User": headerSafe(String(who)).slice(0, 80) } : {};
+  };
+  const midOf = (req: FastifyRequest) => encodeURIComponent((req.params as { id: string }).id);
+  const toolDown = (reply: any, what: string) => { reply.code(502); return { ok: false, error: `The migration tool did not answer. ${what}` }; };
+
+  app.get("/api/factory/migrations/:id/decisions", async (req, reply) => {
+    await need(req);
+    try { return pass(reply, await mtRequest(mt, "GET", `/api/migrations/${midOf(req)}/decisions`)); } catch { return toolDown(reply, "Try again in a moment."); }
+  });
+  app.post("/api/factory/migrations/:id/decisions", { bodyLimit: DECISIONS_MAX }, async (req, reply) => {
+    await need(req);
+    const v = answersOf(req.body);
+    if (!v.ok) { reply.code(400); return { ok: false, error: v.error }; }
+    try { return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${midOf(req)}/decisions`, { answers: v.answers }, await byWho(req))); } catch { return toolDown(reply, "The answers were not saved."); }
+  });
+
+  app.get("/api/factory/migrations/:id/documents/edits", async (req, reply) => {
+    await need(req);
+    try { return pass(reply, await mtRequest(mt, "GET", `/api/migrations/${midOf(req)}/documents/edits`)); } catch { return toolDown(reply, "Try again in a moment."); }
+  });
+  app.get("/api/factory/migrations/:id/documents/:name/source", async (req, reply) => {
+    await need(req);
+    const { name } = req.params as { name: string };
+    if (!docNameOk(name)) { reply.code(404); return { error: "No such document" }; }
+    const r = await mtRaw(mt, `/api/migrations/${midOf(req)}/documents/${encodeURIComponent(name)}/source`);
+    if (r.status >= 400 || r.status === 0) {
+      let error = r.status === 404 ? "This document has not been produced yet" : "The document is not available right now";
+      try { const e = JSON.parse(r.body.toString("utf8")) as { error?: unknown }; if (typeof e?.error === "string" && e.error) error = e.error; } catch { /* not JSON */ }
+      reply.code(r.status || 502);
+      return { error };
+    }
+    reply.type("text/plain; charset=utf-8");
+    return reply.send(r.body);
+  });
+  app.put("/api/factory/migrations/:id/documents/:name/source", { bodyLimit: DOCUMENT_MAX + 64 * 1024 }, async (req, reply) => {
+    await need(req);
+    const { name } = req.params as { name: string };
+    if (!docNameOk(name)) { reply.code(404); return { error: "No such document" }; }
+    const v = docEditOf(req.body);
+    if (!v.ok) { reply.code(v.status); return { ok: false, error: v.error }; }
+    try { return pass(reply, await mtRequest(mt, "PUT", `/api/migrations/${midOf(req)}/documents/${encodeURIComponent(name)}/source`, v.edit, await byWho(req))); } catch { return toolDown(reply, "Your changes were not saved."); }
+  });
+  app.delete("/api/factory/migrations/:id/documents/:name/source", async (req, reply) => {
+    await need(req);
+    const { name } = req.params as { name: string };
+    if (!docNameOk(name)) { reply.code(404); return { error: "No such document" }; }
+    try { return pass(reply, await mtRequest(mt, "DELETE", `/api/migrations/${midOf(req)}/documents/${encodeURIComponent(name)}/source`, undefined, await byWho(req))); } catch { return toolDown(reply, "Nothing was changed."); }
+  });
+
+  // The import into Boomi / Workato with the saved account, and the switch to do it after each build.
+  app.post("/api/factory/migrations/:id/import", async (req, reply) => {
+    await need(req);
+    try { return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${midOf(req)}/import`, {}, await byWho(req))); } catch { return toolDown(reply, "Nothing was imported."); }
+  });
+  app.post("/api/factory/migrations/:id/options", async (req, reply) => {
+    await need(req);
+    const v = migrationOptionsOf(req.body);
+    if (!v.ok) { reply.code(400); return { ok: false, error: v.error }; }
+    try { return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${midOf(req)}/options`, v.options, await byWho(req))); } catch { return toolDown(reply, "Nothing was changed."); }
+  });
+
+  // Target platform accounts of this workspace. Tokens are write-only; the tool sends ids back masked.
+  const targetOf = (req: FastifyRequest): string | null => { const t = (req.params as { target?: string }).target ?? ""; return (TARGETS as readonly string[]).includes(t) ? t : null; };
+  app.get("/api/factory/target-accounts", async (req, reply) => {
+    await need(req);
+    try { return pass(reply, await mtRequest(mt, "GET", "/api/target-accounts")); } catch { return toolDown(reply, "Try again in a moment."); }
+  });
+  app.put("/api/factory/target-accounts/:target", { bodyLimit: 64 * 1024 }, async (req, reply) => {
+    await need(req);
+    const t = targetOf(req);
+    if (!t) { reply.code(404); return { error: "Unknown target platform" }; }
+    const v = targetAccountOf(t, req.body);
+    if (!v.ok) { reply.code(400); return { ok: false, error: v.error }; }
+    try { return pass(reply, await mtRequest(mt, "PUT", `/api/target-accounts/${t}`, v.account, await byWho(req))); } catch { return toolDown(reply, "The account was not saved."); }
+  });
+  app.delete("/api/factory/target-accounts/:target", async (req, reply) => {
+    await need(req);
+    const t = targetOf(req);
+    if (!t) { reply.code(404); return { error: "Unknown target platform" }; }
+    try { return pass(reply, await mtRequest(mt, "DELETE", `/api/target-accounts/${t}`, undefined, await byWho(req))); } catch { return toolDown(reply, "Nothing was removed."); }
+  });
+  app.post("/api/factory/target-accounts/:target/test", async (req, reply) => {
+    await need(req);
+    const t = targetOf(req);
+    if (!t) { reply.code(404); return { error: "Unknown target platform" }; }
+    try { return pass(reply, await mtRequest(mt, "POST", `/api/target-accounts/${t}/test`, {})); } catch { return toolDown(reply, "The connection was not tested."); }
   });
 
   // Environments a migrated API is verified against (the token is write-only).

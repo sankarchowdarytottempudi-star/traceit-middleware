@@ -1,11 +1,13 @@
 // A project for another platform: it is not installed here. The customer imports the package file
 // into the platform (Workato refuses the whole project zip: "'testcases' is not a supported asset
 // type"); the project zip with documents, tests and settings is the second, separate download.
-import { useState } from "react";
-import { Download, PackageCheck } from "lucide-react";
-import { api, type Migration } from "../api.ts";
-import { txt } from "../lib/text.ts";
-import { isWso2Target, targetLabel, targetOf } from "../lib/migrate.ts";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Download, PackageCheck, UploadCloud } from "lucide-react";
+import { api, type ApiError, type ImportResult, type Migration } from "../api.ts";
+import { num, txt } from "../lib/text.ts";
+import { dateTime, isWso2Target, targetLabel, targetOf } from "../lib/migrate.ts";
 import { Btn, Notice, Panel, Pill, errText } from "./ui.tsx";
 
 /** Platforms whose generator writes one file to import; others show it only when the tool found one. */
@@ -32,6 +34,93 @@ async function saveFrom(url: string, fallback: string) {
   const a = document.createElement("a");
   a.href = href; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(href), 30000);
+}
+
+/** Platforms the finished project can be imported into straight from here (with a saved account). */
+export const IMPORTABLE = new Set(["boomi", "workato"]);
+export const canImport = (m: Migration): boolean => IMPORTABLE.has(targetOf(m)) && !!m.serviceDir;
+
+/** The last import in one line, and the tone it is shown in. */
+export function importStatus(r: ImportResult | null | undefined, label: string): { text: string; tone: "ok" | "warn" | "bad" } | null {
+  if (!r || !r.status) return null;
+  const created = num(r.created), total = num(r.total);
+  const where = `${label}${txt(r.folder) ? ` folder ${txt(r.folder)}` : ""}`;
+  const when = r.at ? ` (${dateTime(r.at)})` : "";
+  if (r.status === "imported") return { tone: "ok", text: `Imported ${created} of ${total} components into ${where}.${when}` };
+  if (r.status === "partial") return { tone: "warn", text: `Imported ${created} of ${total} components into ${where}. ${total - created || (r.failures ?? []).length} could not be imported.${when}` };
+  return { tone: "bad", text: `Nothing was imported into ${label}.${when}` };
+}
+
+function ImportSection({ m }: { m: Migration }) {
+  const qc = useQueryClient();
+  const lbl = targetLabel(m);
+  const accounts = useQuery({ queryKey: ["target-accounts"], queryFn: api.targetAccounts, retry: false, staleTime: 30000 });
+  const account = (accounts.data ?? []).find((a) => a.target === targetOf(m));
+  // the tool also says on the migration whether an account is set up (when the account list is not available)
+  const noAccount = accounts.isSuccess ? !account?.configured : m.import?.accountConfigured === false;
+  const autoNow = !!(m.autoImport ?? m.import?.autoImport);
+  const [auto, setAuto] = useState(autoNow);
+  useEffect(() => setAuto(autoNow), [autoNow]);
+  const [starting, setStarting] = useState(false);
+  const [started, setStarted] = useState("");
+  const [err, setErr] = useState("");
+  const [autoErr, setAutoErr] = useState("");
+  const [savingAuto, setSavingAuto] = useState(false);
+  const phase = (m.phases || []).find((p) => p.key === "import");
+  const importing = txt(m.import?.status) === "running" || txt(phase?.status) === "running";
+  const busy = !!m.busy || !!m.queued;
+  const result = m.importResult ?? m.import?.result ?? null;
+  const status = importStatus(result, lbl);
+  const failures = result?.failures ?? [];
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["migration", m.id] }); qc.invalidateQueries({ queryKey: ["migrations"] }); };
+  const start = () => {
+    setErr(""); setStarted(""); setStarting(true);
+    api.importNow(m.id)
+      .then((r) => { setStarted(txt(r?.message) || `The import into ${lbl} has started. This page shows the result when it is done.`); refresh(); })
+      .catch((e: ApiError) => setErr(e.status === 409 ? (txt(e.body?.error) || "A step of this migration is running. Import when it has finished.") : errText(e)))
+      .finally(() => setStarting(false));
+  };
+  const toggle = (on: boolean) => {
+    setAutoErr(""); setAuto(on); setSavingAuto(true);
+    api.setMigrationOptions(m.id, { autoImport: on })
+      .then(refresh)
+      .catch((e: ApiError) => { setAuto(!on); setAutoErr(errText(e)); })
+      .finally(() => setSavingAuto(false));
+  };
+  return (
+    <div className="mf-mg-sec" data-testid="delivery-import">
+      <h3>Import into {lbl}</h3>
+      <p className="mf-mg-small mf-mg-wrap" style={{ margin: 0, lineHeight: 1.5 }}>
+        Put the components of this project straight into your {lbl} account, in a folder of their own.
+      </p>
+      {noAccount && (
+        <Notice tone="warn"><span className="mf-mg-wrap" data-testid="delivery-import-noaccount">No {lbl} account is set up yet. Add it under <Link to="/workspaces#target-platforms">Workspaces &gt; Target platforms</Link>, then import from here.</span></Notice>
+      )}
+      <div className="mf-mg-actions">
+        <Btn kind="primary" icon={<UploadCloud size={15} aria-hidden="true" />} disabled={noAccount || busy || importing} busy={starting} onClick={start} data-testid="delivery-import-now">Import now</Btn>
+        <label className="mf-mg-check mf-mg-check-wrap">
+          <input type="checkbox" checked={auto} disabled={savingAuto || (noAccount && !auto)} onChange={(e) => toggle(e.target.checked)} data-testid="delivery-import-auto" />
+          <span>Import automatically after each build</span>
+        </label>
+      </div>
+      {importing && <span className="mf-mg-hint mf-mg-wrap" data-testid="delivery-import-running">Importing into {lbl}. This page updates by itself.</span>}
+      {!importing && busy && <span className="mf-mg-hint mf-mg-wrap">A step of this migration is running. Import when it has finished.</span>}
+      {autoErr && <Notice tone="bad"><span data-testid="delivery-import-auto-error">{autoErr}</span></Notice>}
+      {err && <Notice tone="bad"><span className="mf-mg-wrap" data-testid="delivery-import-error">{err}</span></Notice>}
+      {started && !err && <Notice tone="ok"><span className="mf-mg-wrap" data-testid="delivery-import-started">{started}</span></Notice>}
+      {status && (
+        <Notice tone={status.tone}>
+          <span className="mf-mg-wrap" data-testid="delivery-import-status">{status.text}</span>
+          {failures.length > 0 && (
+            <ul className="mf-mg-small mf-mg-wrap" data-testid="delivery-import-failures" style={{ margin: "6px 0 0", paddingLeft: 18, lineHeight: 1.5 }}>
+              {failures.map((f, i) => <li key={i}><strong>{txt(f.component) || txt(f.file) || "A component"}</strong>{txt(f.file) && txt(f.component) ? <span className="mf-mono"> ({txt(f.file)})</span> : null}: {txt(f.reason) || `${lbl} gave no reason.`}</li>)}
+            </ul>
+          )}
+        </Notice>
+      )}
+      <span className="mf-mg-hint mf-mg-wrap" data-testid="delivery-import-note">Nothing is deployed or switched on: schedules and listeners stay off.</span>
+    </div>
+  );
 }
 
 export function Delivery({ m }: { m: Migration }) {
@@ -73,6 +162,7 @@ export function Delivery({ m }: { m: Migration }) {
           </a>
           {pkg && <span className="mf-mg-hint mf-mg-wrap" data-testid="delivery-project-note">documents, tests and settings — not for importing</span>}
         </div>
+        {canImport(m) && <ImportSection m={m} />}
       </div>
     </Panel>
   );

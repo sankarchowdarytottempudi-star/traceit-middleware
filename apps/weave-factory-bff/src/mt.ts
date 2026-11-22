@@ -6,12 +6,12 @@ import { URL } from "node:url";
 
 export interface MtClient { base: string; token: string; }
 
-export function mtRequest(c: MtClient, method: string, path: string, body?: unknown):
+export function mtRequest(c: MtClient, method: string, path: string, body?: unknown, extra?: Record<string, string>):
   Promise<{ status: number; json: unknown }> {
   const u = new URL(path.startsWith("http") ? path : c.base + path);
   const data = body === undefined ? undefined : JSON.stringify(body);
   const lib = u.protocol === "https:" ? https : http;
-  const headers: Record<string, string> = { "X-Admin-Token": c.token, Accept: "application/json" };
+  const headers: Record<string, string> = { ...(extra ?? {}), "X-Admin-Token": c.token, Accept: "application/json" };
   // The migration tool reads exactly Content-Length bytes and does not understand chunked bodies,
   // so the length must always be stated; without it every JSON body arrives there empty.
   if (data !== undefined) { headers["Content-Type"] = "application/json"; headers["Content-Length"] = String(Buffer.byteLength(data)); }

@@ -87,6 +87,16 @@ export interface Migration {
   corrections?: CorrectionRecord[];
   /** New from requirements (sourceType "requirements"): what the factory read from the requirement document. */
   requirements?: RequirementsState | null;
+  /** Documents a person replaced with their own version (names). */
+  docEdits?: string[];
+  /** Steps where the agent stopped for a person's choice. */
+  decisionsCounts?: { open: number; answered: number } | null;
+  /** Boomi / Workato: import into the saved account after each build. */
+  autoImport?: boolean;
+  /** The last import into the target platform. */
+  importResult?: ImportResult | null;
+  /** The import step (Boomi / Workato) as the tool summarises it. */
+  import?: ImportState | null;
 }
 /** A service built from a requirement document: what was read, the reviews, and the last generation. */
 export interface RequirementsState {
@@ -102,6 +112,36 @@ export interface RequirementsState {
 export interface RequirementsChange { action?: string; id?: string; sheet?: string; row?: number; fields?: string[]; answer?: string }
 export interface RequirementsReview { at?: string; by?: string; changes?: number; openQuestions?: number; summary?: RequirementsChange[] }
 export interface RequirementsResult { ok: boolean; message?: string; changes?: RequirementsChange[]; openQuestions?: number; review?: RequirementsReview }
+// ---- open decisions of the agent, edited documents, target platform accounts and the import there
+export type DecisionKind = "connector" | "builtin" | "java" | "dynamic-call" | "unknown";
+export type AnswerType = "connector" | "expression" | "code" | "call" | "drop" | "manual";
+export type DecisionAnswer =
+  | { type: "connector"; connector: string; operation: string }
+  | { type: "expression"; text: string }
+  | { type: "code"; language: string; text: string }
+  | { type: "call"; services: string[] }
+  | { type: "drop" }
+  | { type: "manual" };
+export type DecisionScope = "api" | "workspace";
+export interface DecisionOption { connector: string; operation: string; label?: string }
+/** One step where the agent stopped because a person has to choose. */
+export interface AgentDecision {
+  id: string; where?: string; flow?: string; source?: string; kind?: DecisionKind | string; construct?: string; summary?: string; why?: string;
+  answerTypes?: AnswerType[]; options?: DecisionOption[]; answer?: DecisionAnswer | null; answeredBy?: string | null; answeredAt?: string | null; scope?: DecisionScope | string | null; note?: string | null;
+}
+export interface DecisionsView { api?: string; decisions: AgentDecision[]; counts?: { open: number; answered: number } }
+export interface DecisionAnswerInput { id: string; answer: DecisionAnswer; scope: DecisionScope; note?: string }
+export interface DecisionRowError { id?: string; problem?: string }
+/** A document a person replaced with their own version (kept when the migration is rebuilt). */
+export interface DocEdit { doc: string; by?: string; at?: string; note?: string; size?: number }
+/** A target platform account of this workspace. The token never comes back; ids come back masked. */
+export interface TargetAccount { target: string; label?: string; configured: boolean; hasToken?: boolean; accountId?: string; user?: string; apiBase?: string; updated?: string; updatedBy?: string; folderParentId?: string; parentFolderId?: string }
+export interface BoomiAccountInput { accountId: string; user: string; token: string; apiBase?: string; folderParentId?: string }
+export interface WorkatoAccountInput { apiBase: string; token: string; parentFolderId?: string }
+export interface ImportFailure { component?: string; file?: string; reason?: string }
+export interface ImportResult { target?: string; status?: "imported" | "partial" | "failed" | string; created?: number; total?: number; folder?: string; folderId?: string; failures?: ImportFailure[]; at?: string; packageId?: string }
+/** The import step of a Boomi / Workato migration as the tool summarises it. */
+export interface ImportState { key?: string; title?: string; status?: "pending" | "running" | "done" | "partial" | "failed" | string; detail?: string; result?: ImportResult | null; autoImport?: boolean; accountConfigured?: boolean; available?: boolean; label?: string }
 /** Corrections of the analysis: counts of one corrected workbook. */
 export interface CorrectionCounts { changed: number; added: number; deleted: number; marked: number }
 export interface CorrectionChange { sheet?: string; id?: string; action?: string; summary?: string }
@@ -393,6 +433,25 @@ export const api = {
   requirementsUrl: (id: string) => at(`${F}/migrations/${enc(id)}/requirements.xlsx`),
   requirementsTemplateUrl: () => at(`${F}/requirements/template.xlsx`),
 
+  // the agent's open decisions; documents a person edits; the target platform accounts and the import there
+  decisions: (id: string) => j<DecisionsView>(`${F}/migrations/${enc(id)}/decisions`),
+  answerDecisions: (id: string, answers: DecisionAnswerInput[]) => j<{ ok: boolean; applied?: number }>(`${F}/migrations/${enc(id)}/decisions`, post({ answers })),
+  docSource: (id: string, name: string) => text(`${F}/migrations/${enc(id)}/documents/${enc(name)}/source`),
+  saveDocSource: (id: string, name: string, body: { text: string; note?: string }) => j<{ ok?: boolean }>(`${F}/migrations/${enc(id)}/documents/${enc(name)}/source`, { method: "PUT", body: JSON.stringify(body) }),
+  revertDoc: (id: string, name: string) => j<{ ok?: boolean }>(`${F}/migrations/${enc(id)}/documents/${enc(name)}/source`, { method: "DELETE" }),
+  docEdits: async (id: string): Promise<DocEdit[]> => {
+    const r = await j<DocEdit[] | { edits?: DocEdit[] }>(`${F}/migrations/${enc(id)}/documents/edits`);
+    return Array.isArray(r) ? r : Array.isArray(r?.edits) ? r.edits : [];
+  },
+  targetAccounts: async (): Promise<TargetAccount[]> => {
+    const r = await j<TargetAccount[] | { accounts?: TargetAccount[] }>(`${F}/target-accounts`);
+    return Array.isArray(r) ? r : Array.isArray(r?.accounts) ? r.accounts : [];
+  },
+  saveTargetAccount: (target: string, body: BoomiAccountInput | WorkatoAccountInput) => j<TargetAccount>(`${F}/target-accounts/${enc(target)}`, { method: "PUT", body: JSON.stringify(body) }),
+  removeTargetAccount: (target: string) => j<{ ok?: boolean }>(`${F}/target-accounts/${enc(target)}`, { method: "DELETE" }),
+  testTargetAccount: (target: string) => j<{ ok: boolean; message?: string }>(`${F}/target-accounts/${enc(target)}/test`, post({})),
+  importNow: (id: string) => j<{ ok?: boolean; message?: string }>(`${F}/migrations/${enc(id)}/import`, post({})),
+  setMigrationOptions: (id: string, body: { autoImport: boolean }) => j<{ ok?: boolean }>(`${F}/migrations/${enc(id)}/options`, post(body)),
   repos: () => j<{ repos: Repo[] }>(`${F}/repos`),
   connectRepo: (body: { name: string; url: string; branch?: string; username?: string; token?: string }) => j<Repo>(`${F}/repos`, post(body)),
   readRepo: (id: string, body: { token?: string } = {}) => j<Repo>(`${F}/repos/${enc(id)}/refresh`, post(body)),

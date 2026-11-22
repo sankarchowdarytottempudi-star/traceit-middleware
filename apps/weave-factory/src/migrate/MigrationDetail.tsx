@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CircleDashed, Download, Eye, Loader2, Play, RotateCw, Trash2, TriangleAlert, X } from "lucide-react";
 import { api, type ApiError, type Environment, type Migration, type OptimizeResult, type ParityResult, type Phase, type VerifyResult } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
-import { ago, baseName, clock, dateTime, failureView, isSpec, isWso2Target, ms, nextActions, outcomeTone, targetLabel, statusLabel, statusTone, type FailureView, type NextAction } from "../lib/migrate.ts";
+import { ago, baseName, clock, dateTime, failureView, isSpec, ms, nextActions, outcomeTone, targetLabel, statusLabel, statusTone, type FailureView, type NextAction } from "../lib/migrate.ts";
 import { Bar, Btn, Confirm, Dialog, Empty, Failed, Field, Head, KV, LinkBtn, Loading, Notice, Panel, PartialSourceNotice, Pill, TabBar, errText, useTitle, type TabDef } from "./ui.tsx";
 import { Markdown } from "./markdown.tsx";
 import { Finish } from "./Finish.tsx";
@@ -13,6 +13,8 @@ import { StartParts, TrialRun } from "./Starts.tsx";
 import { ChangeRequests } from "../changes/ChangeRequests.tsx";
 import { ParityPanel, RuntimeProps } from "./Parity.tsx";
 import { ProjectPart } from "./Part.tsx";
+import { Corrections } from "./Corrections.tsx";
+import { Delivery } from "./Delivery.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
 const TABS: Tab[] = ["progress", "documents", "checks", "feedback"];
@@ -94,26 +96,6 @@ function Activity({ m }: { m: Migration }) {
         return <div key={i} className="mf-mg-logline"><span className="mf-mg-logtime" title={txt(l.t)}>{clock(l.t, true)}</span><span className={`mf-mg-loglevel mf-mg-lv-${lv}`}>{lv === "none" ? "" : lv}</span><span className="mf-mg-logtext">{txt(l.line)}</span></div>;
       })}
     </div>
-  );
-}
-
-// ---- a project for another platform: download it, the customer installs it on their own servers
-function Delivery({ m }: { m: Migration }) {
-  if (isWso2Target(m) || !m.serviceDir) return null;
-  const lbl = targetLabel(m);
-  const step = (ph: string, st: string) => (m.phases || []).find((p) => p.key === ph)?.steps?.find((s: { key: string }) => s.key === st) as { status?: string; detail?: string } | undefined;
-  const ready = step("test", "ready"), image = step("deploy", "image");
-  const packed = txt(image?.status) === "done";
-  return (
-    <Panel title={`Your ${lbl} project`} actions={<Pill tone={packed ? "ok" : "muted"}>{packed ? "Ready to download" : "Not checked yet"}</Pill>}>
-      <div className="mf-mg-stack" style={{ gap: 10 }} data-testid="delivery">
-        <p className="mf-mg-sub mf-mg-wrap" style={{ fontSize: 13.5, margin: 0 }}>
-          This migration produces a {lbl} project. It is not installed here: download it and install it on your own {lbl} servers. README.md says how; TODO.md lists the steps a person still has to finish; SETTINGS.md lists the values to set; TEST-CASES.md has the tests.
-        </p>
-        {ready?.detail ? <Notice tone={txt(ready.status) === "done" ? "ok" : "warn"}>{txt(ready.detail)}</Notice> : null}
-        <div className="mf-mg-actions"><a className="mf-btn mf-mg-btn" href={api.projectUrl(m.id)} download><Download size={15} aria-hidden="true" />Download the {lbl} project (.zip)</a></div>
-      </div>
-    </Panel>
   );
 }
 
@@ -423,7 +405,7 @@ export function MigrationDetail() {
           </div>
         </div>
       )}
-      {tab === "documents" && <Documents id={id} />}
+      {tab === "documents" && <div className="mf-mg-stack"><Documents id={id} /><Corrections m={m} /></div>}
       {tab === "checks" && <Checks m={m} onChanged={refresh} />}
       {tab === "feedback" && <Feedback m={m} />}
 

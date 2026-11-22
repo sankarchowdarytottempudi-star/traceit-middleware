@@ -7,7 +7,10 @@ import type { Config } from "../config.js";
 import { Readable } from "node:stream";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
 import { INTEGRATION_FILE_EXTENSIONS, PASTE_LIMITS, PASTE_TECHNOLOGIES, SINGLE_FILE_EXTENSIONS, decodeText, isSingleFile, pastedOf, wrapToZip } from "./paste.js";
-import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
+import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, headerSafe, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
+
+/** Largest corrected analysis workbook accepted (bytes). */
+export const CORRECTIONS_MAX = 10 * 1024 * 1024;
 
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
@@ -144,6 +147,66 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     const r = await mtRaw(mt, `/api/migrations/${encodeURIComponent(id)}/project`);
     if (r.status >= 400 || !r.contentType.includes("zip")) { reply.code(r.status >= 400 ? r.status : 502); return { error: r.status === 404 ? "The project has not been generated yet" : "The project is not available" }; }
     const name = (/filename="([^"]+)"/.exec(r.disposition ?? "") || [])[1] || `${id}-project.zip`;
+    reply.type("application/zip").header("content-disposition", `attachment; filename="${name.replace(/[^\w.-]/g, "_")}"`);
+    return reply.send(r.body);
+  });
+
+  // Corrections: the analysis of one API as an editable Excel workbook, and the corrected workbook
+  // back. The migration tool has the factory check and keep the corrections, then writes the
+  // documents and the project again with them. The workbook is small, so it is read whole here.
+  app.get("/api/factory/migrations/:id/corrections.xlsx", async (req, reply) => {
+    await need(req);
+    const { id } = req.params as { id: string };
+    const r = await mtRaw(mt, `/api/migrations/${encodeURIComponent(id)}/corrections.xlsx`);
+    if (r.status >= 400 || r.status === 0) {
+      let error = "The workbook is not available right now";
+      try { const e = JSON.parse(r.body.toString("utf8")) as { error?: unknown }; if (typeof e?.error === "string" && e.error) error = e.error; } catch { /* not JSON */ }
+      reply.code(r.status || 502);
+      return { error };
+    }
+    if (!/spreadsheetml|octet-stream/.test(r.contentType)) { reply.code(502); return { error: "The migration tool did not send a workbook" }; }
+    const name = (/filename="([^"]+)"/.exec(r.disposition ?? "") || [])[1] || `${id}-corrections.xlsx`;
+    reply.type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").header("content-disposition", `attachment; filename="${name.replace(/[^\w.-]/g, "_")}"`);
+    return reply.send(r.body);
+  });
+  app.register(async (scope) => {
+    scope.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));
+    scope.post("/api/factory/migrations/:id/corrections", { bodyLimit: CORRECTIONS_MAX + 64 * 1024 }, async (req, reply) => {
+      await need(req);
+      const len = req.headers["content-length"] ? Number(req.headers["content-length"]) : undefined;
+      if (len !== undefined && len > CORRECTIONS_MAX) { req.raw.resume(); reply.code(413); return { ok: false, error: "The workbook is larger than 10 MB." }; }
+      let buf: Buffer;
+      try { buf = await readAll(req.raw, CORRECTIONS_MAX); } catch { reply.code(413); return { ok: false, error: "The workbook is larger than 10 MB." }; }
+      if (!buf.length) { reply.code(400); return { ok: false, error: "No workbook was sent. Choose the corrected .xlsx file and upload it." }; }
+      // an Excel workbook is a zip: anything else is refused here without bothering the tool
+      if (buf.length < 4 || buf.readUInt32LE(0) !== 0x04034b50) { reply.code(400); return { ok: false, error: "This is not an Excel workbook (.xlsx). Upload the workbook you downloaded, saved as .xlsx." }; }
+      const headers: Record<string, string> = {};
+      const who = typeof (app as any).userFor === "function" ? await (app as any).userFor(req) : null;
+      if (who) headers["X-User"] = headerSafe(String(who)).slice(0, 80);
+      try {
+        const r = await mtUpload(mt, `/api/migrations/${encodeURIComponent((req.params as { id: string }).id)}/corrections`, headers, Readable.from([buf]), buf.length);
+        return pass(reply, r);
+      } catch (e) {
+        reply.code(502);
+        return { ok: false, error: "The migration tool did not accept the workbook", detail: e instanceof Error ? e.message : undefined };
+      }
+    });
+  });
+
+  // only the file the target platform imports (a Workato package, a webMethods IS package, ...): the project
+  // zip above also holds documents, tests and settings, which such a platform refuses
+  app.get("/api/factory/migrations/:id/package", async (req, reply) => {
+    await need(req);
+    const { id } = req.params as { id: string };
+    const r = await mtRaw(mt, `/api/migrations/${encodeURIComponent(id)}/package`);
+    if (r.status >= 400 || r.status === 0) {
+      let error = "The package is not available right now";
+      try { const e = JSON.parse(r.body.toString("utf8")) as { error?: unknown }; if (typeof e?.error === "string" && e.error) error = e.error; } catch { /* not JSON */ }
+      reply.code(r.status || 502);
+      return { error };
+    }
+    if (!r.contentType.includes("zip")) { reply.code(502); return { error: "The migration tool did not send a package" }; }
+    const name = (/filename="([^"]+)"/.exec(r.disposition ?? "") || [])[1] || `${id}-package.zip`;
     reply.type("application/zip").header("content-disposition", `attachment; filename="${name.replace(/[^\w.-]/g, "_")}"`);
     return reply.send(r.body);
   });

@@ -2,7 +2,7 @@
 // by itself; this list tells the user what to upload and what happens to anything else.
 import { scopeHeaderOf } from "./partspec.js";
 import { GENERATED_TARGETS, type TargetMaturity } from "./targets.generated.js";
-import { PASTE_LIMITS, SINGLE_FILE_EXTENSIONS, isSingleFile } from "./paste.js";
+import { INTEGRATION_FILE_EXTENSIONS, PASTE_LIMITS, SINGLE_FILE_EXTENSIONS, isSingleFile } from "./paste.js";
 export interface SourceTech { id: string; label: string; upload: string; hint?: string; sourceType?: "spec"; }
 // depth: "full" for a complete writer (kept for older screens); maturity is the generator's own word.
 export interface TargetTech { id: string; label: string; maturity: TargetMaturity; depth: "full" | "partial" | "skeleton"; hint: string; }
@@ -33,7 +33,7 @@ export const TARGET_TECHNOLOGIES: TargetTech[] = GENERATED_TARGETS.map((t) => ({
 
 // one source file is accepted too: the server wraps it into a minimal project zip (paste.ts) and the
 // result is marked "partial source"
-export const UPLOAD_EXTENSIONS = [".zip", ".jar", ".json", ...SINGLE_FILE_EXTENSIONS];
+export const UPLOAD_EXTENSIONS = [".zip", ".jar", ".json", ...SINGLE_FILE_EXTENSIONS, ...INTEGRATION_FILE_EXTENSIONS];
 
 /** Header values go to the migration tool as plain ASCII. */
 export function headerSafe(s: string, max = 120): string {
@@ -49,7 +49,7 @@ export function validateUpload(q: { name?: string; workspace?: string; filename?
   if (!name) return { ok: false, status: 400, error: "Give the migration a name" };
   if (!filename) return { ok: false, status: 400, error: "Choose the file to upload" };
   const ext = (/\.[a-z0-9]+$/i.exec(filename)?.[0] || "").toLowerCase();
-  if (!UPLOAD_EXTENSIONS.includes(ext)) return { ok: false, status: 400, error: `This file type is not accepted. Upload a .zip or .jar of the project, a .json specification, or one source file (${SINGLE_FILE_EXTENSIONS.join(" ")}).` };
+  if (!UPLOAD_EXTENSIONS.includes(ext)) return { ok: false, status: 400, error: `This file type is not accepted. Upload a .zip or .jar of the project, a .json specification, one source file (${SINGLE_FILE_EXTENSIONS.join(" ")}) or one integration file (${INTEGRATION_FILE_EXTENSIONS.join(" ")}).` };
   const spec = q.sourceType === "spec";
   if (spec && ext !== ".json") return { ok: false, status: 400, error: "A written specification must be a .json file" };
   if (!spec && ext === ".json") return { ok: false, status: 400, error: "A .json file is only accepted as a written specification. Put an OpenAPI file in a .zip." };

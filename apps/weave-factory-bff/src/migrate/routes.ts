@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "../config.js";
 import { Readable } from "node:stream";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
-import { PASTE_LIMITS, PASTE_TECHNOLOGIES, SINGLE_FILE_EXTENSIONS, decodeText, isSingleFile, pastedOf, wrapToZip } from "./paste.js";
+import { INTEGRATION_FILE_EXTENSIONS, PASTE_LIMITS, PASTE_TECHNOLOGIES, SINGLE_FILE_EXTENSIONS, decodeText, isSingleFile, pastedOf, wrapToZip } from "./paste.js";
 import { SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
@@ -26,7 +26,7 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
   app.get("/api/factory/migrate/options", async (req) => {
     await need(req);
     return { technologies: SOURCE_TECHNOLOGIES, targets: TARGET_TECHNOLOGIES, extensions: UPLOAD_EXTENSIONS, maxUploadMb: limitMb,
-      singleFileExtensions: SINGLE_FILE_EXTENSIONS, singleFileMb: PASTE_LIMITS.singleFileMb,
+      singleFileExtensions: SINGLE_FILE_EXTENSIONS, integrationFileExtensions: INTEGRATION_FILE_EXTENSIONS, singleFileMb: PASTE_LIMITS.singleFileMb,
       paste: { technologies: PASTE_TECHNOLOGIES, maxSnippets: PASTE_LIMITS.maxSnippets, maxSnippetKb: PASTE_LIMITS.maxSnippetBytes / 1024, maxTotalKb: PASTE_LIMITS.maxTotalBytes / 1024 } };
   });
 

@@ -119,7 +119,7 @@ export interface TargetTechnology { id: string; label: string; depth: string; ma
 export interface PasteOptions { technologies: { id: string; label: string }[]; maxSnippets: number; maxSnippetKb: number; maxTotalKb: number }
 export interface MigrateOptions { technologies: SourceTechnology[]; targets: TargetTechnology[]; extensions: string[]; maxUploadMb: number;
   /** One source file is wrapped into a project by the server (older servers do not send these). */
-  singleFileExtensions?: string[]; singleFileMb?: number; paste?: PasteOptions; }
+  singleFileExtensions?: string[]; integrationFileExtensions?: string[]; singleFileMb?: number; paste?: PasteOptions; }
 export interface PasteInput { name: string; workspace: string; target: string; technology: string; snippets: { name: string; text: string }[] }
 
 export interface Environment { id: string; name: string; workspace?: string | null; baseUrl: string; createdAt?: string; hasToken?: boolean; tokenSet?: boolean; }

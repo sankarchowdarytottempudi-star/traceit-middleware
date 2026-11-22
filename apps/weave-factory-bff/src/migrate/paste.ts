@@ -22,6 +22,10 @@ export type PasteTech = (typeof PASTE_TECHNOLOGIES)[number]["id"];
 const TECH_IDS = PASTE_TECHNOLOGIES.map((t) => t.id) as readonly string[];
 
 /** Single files the New migration screen accepts; the server wraps each into a project zip. */
+/** One-file integrations read whole by the factory's plug-in readers (passed through unchanged, never wrapped as a partial
+ *  snippet): TIBCO BW6 process, BizTalk map / orchestration, SSIS package, XSLT stylesheet, SAP CPI iFlow. Logic App and
+ *  Step Functions definitions are .json, which is accepted already. */
+export const INTEGRATION_FILE_EXTENSIONS = [".bwp", ".btm", ".odx", ".dtsx", ".xsl", ".xslt", ".iflw"];
 export const SINGLE_FILE_EXTENSIONS = [".xml", ".html", ".htm", ".dwl", ".java", ".groovy", ".cs", ".js", ".ts", ".yaml", ".yml", ".wsdl", ".xsd", ".bal", ".properties"];
 export const PASTE_LIMITS = { maxSnippets: 20, maxSnippetBytes: 1024 * 1024, maxTotalBytes: 2 * 1024 * 1024, maxNameLength: 120, singleFileMb: 10 };
 

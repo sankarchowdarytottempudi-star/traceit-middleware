@@ -9,7 +9,7 @@ import cookie from "@fastify/cookie";
 import { registerRoutes } from "../src/routes";
 import { registerMigrate } from "../src/migrate/routes";
 import { validateUpload, UPLOAD_EXTENSIONS } from "../src/migrate/options";
-import { PASTE_LIMITS, crc32, decodeText, layout, pastedOf, sniff, sniffAll, slug, wrapToZip, zipFiles } from "../src/migrate/paste";
+import { INTEGRATION_FILE_EXTENSIONS, isSingleFile, PASTE_LIMITS, crc32, decodeText, layout, pastedOf, sniff, sniffAll, slug, wrapToZip, zipFiles } from "../src/migrate/paste";
 import type { Config } from "../src/config";
 
 const MT = "http://localhost:30900";
@@ -153,6 +153,13 @@ describe("single files on the upload", () => {
     expect(validateUpload({ name: "n", filename: "a.exe" }, 10, 5)).toMatchObject({ ok: false, status: 400 });
     expect(validateUpload({ name: "n", filename: "a.java" }, 11 * 1024 * 1024, 500)).toMatchObject({ ok: false, status: 413 });
     expect(validateUpload({ name: "n", filename: "a.zip" }, 11 * 1024 * 1024, 500)).toMatchObject({ ok: true });
+  });
+  it("accepts one-file integrations (TIBCO, BizTalk, SSIS, XSLT, SAP CPI) and passes them through whole", () => {
+    for (const e of INTEGRATION_FILE_EXTENSIONS) {
+      expect(UPLOAD_EXTENSIONS).toContain(e);
+      expect(validateUpload({ name: "n", filename: `a${e}` }, 10, 5)).toMatchObject({ ok: true });
+      expect(isSingleFile(`a${e}`)).toBe(false);          // never wrapped as a partial snippet
+    }
   });
 });
 

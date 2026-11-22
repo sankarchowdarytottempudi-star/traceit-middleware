@@ -214,7 +214,7 @@ export function MigrationNew({ mode = "upload" }: { mode?: "upload" | "paste" })
             )}
             {show("file") && <span className="mf-mg-err" role="alert">{show("file")}</span>}
             {single && <Notice tone="warn">One source file is wrapped into a minimal project on the server and read as a <strong>partial source</strong>: the documents list what the file cannot show (connections, schedules, called services, ...).</Notice>}
-            <span className="mf-mg-hint">To upload a folder, compress it into a .zip first. One source file{opts.data.singleFileExtensions?.length ? ` (${opts.data.singleFileExtensions.join(" ")}, up to ${opts.data.singleFileMb ?? 10} MB)` : ""} is accepted as it is. The file stays on this server: it is read here and is not sent anywhere else.</span>
+            <span className="mf-mg-hint">To upload a folder, compress it into a .zip first. One source file{opts.data.singleFileExtensions?.length ? ` (${opts.data.singleFileExtensions.join(" ")}, up to ${opts.data.singleFileMb ?? 10} MB)` : ""} is accepted as it is. Integration files (TIBCO .bwp, BizTalk .btm, SSIS .dtsx, XSLT .xsl, SAP CPI .iflw, Logic App or Step Functions .json) are read whole. A .zip may hold several APIs of different technologies: each one becomes its own migration. The file stays on this server: it is read here and is not sent anywhere else.</span>
             {!isSpec && <label className="mf-mg-check" style={{ whiteSpace: "normal" }}><input type="checkbox" checked={startNow} disabled={uploading} onChange={(e) => setStartNow(e.target.checked)} />Read the source and write the documents as soon as the upload finishes</label>}
           </Panel>
           )}

@@ -202,7 +202,7 @@ function DecisionCard({ d, draft, editing, problem, disabled, onChange, onEdit }
 
 export function Decisions({ m }: { m: Migration }) {
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["migration-decisions", m.id], queryFn: () => api.decisions(m.id), retry: false, enabled: (!!m.apiName || !!m.decisionsCounts) && m.sourceType !== "requirements" && !m.checkOnly });
+  const q = useQuery({ queryKey: ["migration-decisions", m.id], queryFn: () => api.decisions(m.id), retry: false, enabled: (!!m.serviceDir || !!m.decisionsCounts) && m.sourceType !== "requirements" && !m.checkOnly });
   const [filter, setFilter] = useState<Filter>("open");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [editing, setEditing] = useState<Set<string>>(new Set());

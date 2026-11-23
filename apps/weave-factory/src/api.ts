@@ -451,6 +451,7 @@ export const api = {
   removeTargetAccount: (target: string) => j<{ ok?: boolean }>(`${F}/target-accounts/${enc(target)}`, { method: "DELETE" }),
   testTargetAccount: (target: string) => j<{ ok: boolean; message?: string }>(`${F}/target-accounts/${enc(target)}/test`, post({})),
   importNow: (id: string) => j<{ ok?: boolean; message?: string }>(`${F}/migrations/${enc(id)}/import`, post({})),
+  renameApi: (id: string, name: string) => j<{ ok?: boolean; message?: string; apiName?: string }>(`${F}/migrations/${enc(id)}/rename`, post({ name })),
   setMigrationOptions: (id: string, body: { autoImport: boolean }) => j<{ ok?: boolean }>(`${F}/migrations/${enc(id)}/options`, post(body)),
   repos: () => j<{ repos: Repo[] }>(`${F}/repos`),
   connectRepo: (body: { name: string; url: string; branch?: string; username?: string; token?: string }) => j<Repo>(`${F}/repos`, post(body)),

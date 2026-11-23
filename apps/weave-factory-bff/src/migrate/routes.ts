@@ -7,7 +7,7 @@ import type { Config } from "../config.js";
 import { Readable } from "node:stream";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
 import { INTEGRATION_FILE_EXTENSIONS, PASTE_LIMITS, PASTE_TECHNOLOGIES, SINGLE_FILE_EXTENSIONS, decodeText, isSingleFile, pastedOf, wrapToZip } from "./paste.js";
-import { DECISIONS_MAX, DOCUMENT_MAX, TARGETS, answersOf, docEditOf, docNameOk, migrationOptionsOf, targetAccountOf } from "./decisions.js";
+import { DECISIONS_MAX, DOCUMENT_MAX, TARGETS, answersOf, docEditOf, docNameOk, migrationOptionsOf, targetAccountOf, renameOf } from "./decisions.js";
 import { REQUIREMENT_DOC_MB, REQUIREMENT_EXTENSIONS, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, headerSafe, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 /** Largest corrected analysis workbook accepted (bytes). */
@@ -357,6 +357,14 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     const v = migrationOptionsOf(req.body);
     if (!v.ok) { reply.code(400); return { ok: false, error: v.error }; }
     try { return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${midOf(req)}/options`, v.options, await byWho(req))); } catch { return toolDown(reply, "Nothing was changed."); }
+  });
+
+  // Another API name for this migration: the source is read and generated again under it (nothing of another migration changes).
+  app.post("/api/factory/migrations/:id/rename", async (req, reply) => {
+    await need(req);
+    const v = renameOf(req.body);
+    if (!v.ok) { reply.code(400); return { ok: false, error: v.error }; }
+    try { return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${midOf(req)}/rename`, { name: v.name }, await byWho(req))); } catch { return toolDown(reply, "Nothing was renamed."); }
   });
 
   // Target platform accounts of this workspace. Tokens are write-only; the tool sends ids back masked.

@@ -18,6 +18,8 @@ import { Delivery } from "./Delivery.tsx";
 import { Requirements } from "./Requirements.tsx";
 import { Decisions } from "./Decisions.tsx";
 import { DocEditor, editable, editedLabel } from "./DocEditor.tsx";
+import { NameInUse, RenameDialog, renamable } from "./Rename.tsx";
+import { CheckCorrect, type CorrectWhere } from "./CheckCorrect.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
 const TABS: Tab[] = ["progress", "documents", "checks", "feedback"];
@@ -103,13 +105,13 @@ function Activity({ m }: { m: Migration }) {
 }
 
 // ---- documents
-function Documents({ m }: { m: Migration }) {
+function Documents({ m, initialEdit }: { m: Migration; initialEdit?: string | null }) {
   const id = m.id;
   const docs = useQuery({ queryKey: ["migration-docs", id], queryFn: () => api.docs(id) });
   // documents a person replaced with their own version (an older tool has no such list: none then)
   const edits = useQuery({ queryKey: ["migration-doc-edits", id], queryFn: () => api.docEdits(id).catch(() => []), enabled: !!m.apiName && m.sourceType !== "requirements" && !m.checkOnly });
   const editOf = (name: string) => (edits.data ?? []).find((e) => e.doc === name) ?? ((m.docEdits ?? []).includes(name) ? { doc: name } : undefined);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(initialEdit && editable(initialEdit) ? initialEdit : null);
   const editorBox = useRef<HTMLDivElement>(null);
   useEffect(() => { if (editing) editorBox.current?.scrollIntoView?.({ block: "start", behavior: "smooth" }); }, [editing]);
   const [view, setView] = useState<string | null>(null);
@@ -132,7 +134,7 @@ function Documents({ m }: { m: Migration }) {
           ))}
         </div>
       )}
-      {editing && <div ref={editorBox}><DocEditor key={editing} m={m} name={editing} edit={editOf(editing)} onClose={() => setEditing(null)} /></div>}
+      {editing && list.some((d) => d.name === editing) && <div ref={editorBox}><DocEditor key={editing} m={m} name={editing} edit={editOf(editing)} onClose={() => setEditing(null)} /></div>}
       {view && (
         <Dialog wide title={view} onClose={() => setView(null)} footer={<><a className="mf-btn mf-mg-btn" href={api.docUrl(id, view)} download={view}><Download size={15} aria-hidden="true" />Download</a><Btn kind="primary" onClick={() => setView(null)}>Close</Btn></>}>
           {body.isLoading ? <Loading rows={3} h={40} /> : body.isError ? <Failed what="This document cannot be shown." error={body.error} onRetry={() => body.refetch()} /> :
@@ -313,7 +315,15 @@ export function MigrationDetail() {
   const qc = useQueryClient();
   const [sp, setSp] = useSearchParams();
   const tab = (TABS.includes(sp.get("tab") as Tab) ? sp.get("tab") : "progress") as Tab;
-  const setTab = (t: Tab) => { const n = new URLSearchParams(); if (t !== "progress") n.set("tab", t); setSp(n, { replace: true }); };
+  const setTab = (t: Tab, extra?: Record<string, string>) => { const n = new URLSearchParams(); if (t !== "progress") n.set("tab", t); for (const [k, v] of Object.entries(extra ?? {})) n.set(k, v); setSp(n, { replace: true }); };
+  // from "Check and correct" on the Progress tab: the Documents and corrections tab at the right place
+  const openCorrect = (where: CorrectWhere) => setTab("documents", where === "mapping" ? { edit: "MAPPING.md" } : where === "workbook" ? { focus: "corrections" } : where === "decisions" ? { focus: "decisions" } : {});
+  const focus = sp.get("focus");
+  useEffect(() => {
+    if (tab !== "documents" || !focus) return;
+    const t = setTimeout(() => document.querySelector(`[data-testid="${focus === "decisions" ? "decisions" : "corrections"}"]`)?.scrollIntoView?.({ block: "start", behavior: "smooth" }), 250);
+    return () => clearTimeout(t);
+  }, [tab, focus]);
   const mq = useQuery({ queryKey: ["migration", id], queryFn: () => api.migration(id), enabled: !!id, refetchInterval: (q) => (q.state.data?.busy ? 2500 : 15000) });
   const m = mq.data;
   useTitle(txt(m?.name) || "Migration");
@@ -322,6 +332,7 @@ export function MigrationDetail() {
 
   const [ask, setAsk] = useState<NextAction["id"] | "autorun" | null>(null);
   const [replace, setReplace] = useState<{ phase: string; text: string } | null>(null);
+  const [renaming, setRenaming] = useState(false);
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState("");
   const refresh = () => { qc.invalidateQueries({ queryKey: ["migration", id] }); qc.invalidateQueries({ queryKey: ["migrations"] }); qc.invalidateQueries({ queryKey: ["migration-docs", id] }); };
@@ -351,7 +362,7 @@ export function MigrationDetail() {
   const req = isRequirements(m);
   const canAuto = !isSpec(m) && !req && txt((m.phases ?? []).find((x) => x.key === "document")?.status) !== "done";
   const start = (a: NextAction["id"] | "autorun") => { setNote(""); run.reset(); if (a === "document") run.mutate({ phase: "document" }); else setAsk(a); };
-  const tabs: TabDef<Tab>[] = [{ id: "progress", label: "Progress" }, { id: "documents", label: "Documents" }, { id: "checks", label: "Verify and compare" }, { id: "feedback", label: "Feedback" }];
+  const tabs: TabDef<Tab>[] = [{ id: "progress", label: "Progress" }, { id: "documents", label: "Documents and corrections" }, { id: "checks", label: "Verify and compare" }, { id: "feedback", label: "Feedback" }];
   const host = typeof location !== "undefined" ? location.hostname : "";
   const openDecisions = num(m.decisionsCounts?.open);
 
@@ -364,6 +375,7 @@ export function MigrationDetail() {
         </span>}
         actions={<>
           {live && <LinkBtn to={`/estate/${encodeURIComponent(txt(m.apiName))}`}>Open the running API</LinkBtn>}
+          {renamable(m) && !live && <Btn icon={<Pencil size={15} aria-hidden="true" />} onClick={() => setRenaming(true)} data-testid="rename-open">Rename the API</Btn>}
           <Btn kind="danger" icon={<Trash2 size={15} aria-hidden="true" />} onClick={() => { del.reset(); setAsking(true); }}>Delete</Btn>
         </>} />
 
@@ -402,6 +414,7 @@ export function MigrationDetail() {
           {m.apiName && m.serviceDir ? <ChangeRequests api={txt(m.apiName)} migrationId={m.id} /> : null}
           {!req && <ParityPanel m={m} />}
           {!req && <RuntimeProps m={m} onRun={(a) => start(a)} />}
+          <CheckCorrect m={m} open={openCorrect} />
           <Panel title="What you can do next">
             {m.busy ? <Notice><span className="mf-mg-row" style={{ gap: 8 }}><Loader2 size={14} className="mf-spin" aria-hidden="true" />A step is running. This screen updates by itself; the activity below shows what is happening.</span></Notice> : null}
             <div className="mf-mg-stack" style={{ gap: 10 }}>
@@ -429,7 +442,7 @@ export function MigrationDetail() {
           </div>
         </div>
       )}
-      {tab === "documents" && <div className="mf-mg-stack"><Decisions m={m} /><Documents m={m} /><Corrections m={m} /></div>}
+      {tab === "documents" && <div className="mf-mg-stack"><Decisions m={m} /><Documents m={m} initialEdit={sp.get("edit")} /><Corrections m={m} /></div>}
       {tab === "checks" && <Checks m={m} onChanged={refresh} />}
       {tab === "feedback" && <Feedback m={m} />}
 
@@ -441,11 +454,10 @@ export function MigrationDetail() {
         </Confirm>
       )}
       {replace && (
-        <Confirm danger title="This API name is already in use" confirmLabel="Replace it" busy={run.isPending} onClose={() => setReplace(null)} onConfirm={() => run.mutate({ phase: replace.phase, confirm: true })}>
-          <span>{replace.text}</span>
-          <span className="mf-mg-muted">Continuing overwrites what the other migration produced under that name.</span>
-        </Confirm>
+        <NameInUse m={m} text={replace.text} busy={run.isPending} onClose={() => setReplace(null)} onReplace={() => run.mutate({ phase: replace.phase, confirm: true })}
+          onRenamed={(msg) => { setReplace(null); setNote(msg); refresh(); }} />
       )}
+      {renaming && <RenameDialog m={m} onClose={() => setRenaming(false)} onRenamed={(msg) => { setRenaming(false); setNote(msg); refresh(); }} />}
       {asking && (
         <Confirm danger title="Delete this migration?" confirmLabel="Delete" busy={del.isPending} onClose={() => setAsking(false)} onConfirm={() => del.mutate()}
           error={del.isError ? (del.error.status === 409 ? errText(del.error) : `It could not be deleted. ${errText(del.error)}`) : undefined}>

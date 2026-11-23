@@ -98,6 +98,16 @@ export function targetAccountOf(target: string, body: unknown): { ok: true; acco
   return { ok: false, error: "Unknown target platform." };
 }
 
+/** A person's own API name for a migration (instead of replacing another migration's API of the same name). */
+export function renameOf(body: unknown): { ok: true; name: string } | { ok: false; error: string } {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const name = typeof b.name === "string" ? b.name.trim() : "";
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(name) || name.endsWith(".")) {
+    return { ok: false, error: "Use 1 to 80 letters, digits, '-', '_' or '.', starting with a letter or digit (no spaces or slashes)." };
+  }
+  return { ok: true, name };
+}
+
 /** Options of one migration a person can switch from the screen. */
 export function migrationOptionsOf(body: unknown): { ok: true; options: { autoImport: boolean } } | { ok: false; error: string } {
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;

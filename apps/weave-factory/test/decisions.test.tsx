@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Decisions, answerOf, buildAnswers, draftOf, servicesOf, type Draft } from "../src/migrate/Decisions.tsx";
 import type { AgentDecision, Migration } from "../src/api.ts";
 
-const mig = (over: Partial<Migration> = {}): Migration => ({ id: "m1", name: "orders", apiName: "orders-api", phases: [], progress: { overallPercent: 40, majorPhase: "Generate", done: false, outcome: "In progress" }, ...over });
+const mig = (over: Partial<Migration> = {}): Migration => ({ id: "m1", name: "orders", apiName: "orders-api", serviceDir: "services/orders-api", phases: [], progress: { overallPercent: 40, majorPhase: "Generate", done: false, outcome: "In progress" }, ...over });
 const DECISIONS: AgentDecision[] = [
   { id: "d1", flow: "ProcessOrder", where: "step 4: Send to SAP", source: "flows/order.xml:42", kind: "connector", construct: "sap:execute-rfc", summary: "Sends the order to SAP.", why: "No SAP connector is known for this target.",
     answerTypes: ["connector", "manual"], options: [{ connector: "sap", operation: "rfc-call", label: "SAP · call an RFC" }, { connector: "http", operation: "post", label: "HTTP · POST" }], answer: null },

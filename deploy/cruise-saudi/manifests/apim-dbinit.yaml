@@ -1,0 +1,48 @@
+# Creates the WSO2 API Manager tables in PostgreSQL from the scripts shipped inside the APIM image
+# (dbscripts/postgresql.sql -> shared_db, dbscripts/apimgt/postgresql.sql -> apim_db).
+# Idempotent: a database that already has its tables is left alone; each script runs in one
+# transaction, so a failed run leaves nothing half-created.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: apim-dbinit
+  namespace: @@NS_APIM@@
+  labels: { app.kubernetes.io/part-of: cruise-saudi-weave }
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      initContainers:
+        - name: scripts
+          image: @@APIM_IMAGE@@
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "cp -r /home/wso2carbon/wso2am-4.5.0/dbscripts/. /scripts/"]
+          resources: { limits: { cpu: 500m, memory: 256Mi } }
+          volumeMounts: [ { name: scripts, mountPath: /scripts } ]
+      containers:
+        - name: psql
+          image: @@PG_IMAGE@@
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: PGOPTIONS, value: "-c client_min_messages=warning" }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: apim-db, key: apim-password } }
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              until pg_isready -h apim-postgres -U apimadmin >/dev/null 2>&1; do echo "waiting for postgres"; sleep 3; done
+              has(){ psql -h apim-postgres -U apimadmin -d "$1" -tAc "select to_regclass('$2') is not null"; }
+              if [ "$(has shared_db reg_resource)" = t ]; then echo "shared_db: tables present"; else
+                echo "shared_db: creating tables"; psql -h apim-postgres -U apimadmin -d shared_db -q -v ON_ERROR_STOP=1 --single-transaction -f /scripts/postgresql.sql; fi
+              if [ "$(has apim_db am_api)" = t ]; then echo "apim_db: tables present"; else
+                echo "apim_db: creating tables"; psql -h apim-postgres -U apimadmin -d apim_db -q -v ON_ERROR_STOP=1 --single-transaction -f /scripts/apimgt/postgresql.sql; fi
+              echo "shared_db tables: $(psql -h apim-postgres -U apimadmin -d shared_db -tAc "select count(*) from information_schema.tables where table_schema='public'")"
+              echo "apim_db tables:   $(psql -h apim-postgres -U apimadmin -d apim_db -tAc "select count(*) from information_schema.tables where table_schema='public'")"
+          resources: { limits: { cpu: 500m, memory: 256Mi } }
+          volumeMounts: [ { name: scripts, mountPath: /scripts, readOnly: true } ]
+      volumes:
+        - { name: scripts, emptyDir: {} }

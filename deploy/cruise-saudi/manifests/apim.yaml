@@ -1,0 +1,167 @@
+# WSO2 API Manager 4.5.0 all-in-one (control plane + gateway), state in PostgreSQL.
+# Volume @@DATA@@/apim on the host: database/ (local registry), solr/ (search index),
+# security/ (keystores generated for this installation). Logs: @@DATA_ROOT@@/logs/apim.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: @@PREFIX@@apim-data
+  labels: { app.kubernetes.io/part-of: cruise-saudi-weave }
+spec:
+  capacity: { storage: @@APIM_DATA_SIZE@@ }
+  accessModes: ["ReadWriteOnce"]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef: { namespace: @@NS_APIM@@, name: wso2am-data }
+  hostPath: { path: @@DATA@@/apim, type: DirectoryOrCreate }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wso2am-data
+  namespace: @@NS_APIM@@
+  labels: { app.kubernetes.io/part-of: cruise-saudi-weave }
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: ""
+  volumeName: @@PREFIX@@apim-data
+  resources: { requests: { storage: @@APIM_DATA_SIZE@@ } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wso2am
+  namespace: @@NS_APIM@@
+  labels: { app: wso2am, app.kubernetes.io/part-of: cruise-saudi-weave }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }          # never two processes on the same volume
+  selector: { matchLabels: { app: wso2am } }
+  template:
+    metadata:
+      labels: { app: wso2am }
+      annotations:
+        weave/config-hash: "@@APIM_CONF_HASH@@"   # a config change rolls the pod
+    spec:
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 120
+      initContainers:
+        - name: prepare
+          image: @@APIM_IMAGE@@
+          imagePullPolicy: IfNotPresent
+          securityContext: { runAsUser: 0, runAsGroup: 0 }
+          env:
+            - { name: APIM_DOMAIN, value: "@@APIM_DOMAIN@@" }
+            - name: KS_PASS
+              valueFrom: { secretKeyRef: { name: apim-db, key: keystore-password } }
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              DATA=/data; H=/home/wso2carbon/wso2am-4.5.0; KT=/opt/java/openjdk/bin/keytool
+              mkdir -p "$DATA/database" "$DATA/solr" "$DATA/security"
+              # per-node embedded databases (local registry, message broker store, metrics): seeded once
+              # from the image, which ships them with their tables (API Manager does not create them).
+              # APIM_DB and SHARED_DB live in PostgreSQL.
+              if [ ! -f "$DATA/database/.weave-localdb" ]; then
+                for db in WSO2CARBON_DB WSO2MB_DB WSO2METRICS_DB; do cp -f "$H/repository/database/$db.mv.db" "$DATA/database/"; done
+                rm -f "$DATA"/database/*.trace.db
+                touch "$DATA/database/.weave-localdb"
+                echo "prepare: local registry database seeded from the image"
+              fi
+              if [ ! -f "$DATA/security/.weave-keystore" ]; then
+                echo "prepare: generating this installation's key pair (replaces the public default key)"
+                rm -rf "$DATA/security.new"; mkdir -p "$DATA/security.new"
+                cp -a "$H/repository/resources/security/." "$DATA/security.new/"
+                cd "$DATA/security.new"
+                # a NEW keystore with only this installation's key pair (the image's file holds the
+                # publicly known default key); key password = store password
+                rm -f wso2carbon.jks
+                $KT -genkeypair -alias wso2carbon -keyalg RSA -keysize 2048 -validity 3650 -storetype JKS \
+                  -dname "CN=localhost, OU=Weave, O=Cruise Saudi" -ext "SAN=dns:localhost,dns:$APIM_DOMAIN,ip:127.0.0.1" \
+                  -keystore wso2carbon.jks -storepass "$KS_PASS" -keypass "$KS_PASS"
+                $KT -exportcert -rfc -alias wso2carbon -keystore wso2carbon.jks -storepass "$KS_PASS" -file /tmp/weave.pem
+                $KT -delete -alias wso2carbon -keystore client-truststore.jks -storepass wso2carbon || true
+                $KT -importcert -noprompt -alias wso2carbon -file /tmp/weave.pem -keystore client-truststore.jks -storepass wso2carbon
+                touch .weave-keystore
+                cd /; rm -rf "$DATA/security"; mv "$DATA/security.new" "$DATA/security"
+              fi
+              chown -R 10001:10001 "$DATA"
+              chown 10001:10001 /logs; chmod 755 /logs; chmod -R a+rX /logs
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: logs, mountPath: /logs }
+      containers:
+        - name: wso2am
+          image: @@APIM_IMAGE@@
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: JVM_MEM_OPTS, value: "-Xms1024m -Xmx@@APIM_JVM_HEAP@@" }
+          ports:
+            - { containerPort: 9443, name: mgmt }
+            - { containerPort: 8243, name: gw-https }
+            - { containerPort: 8280, name: gw-http }
+          resources:
+            requests: { cpu: "1", memory: 2Gi }
+            limits: { cpu: "@@APIM_CPU_LIMIT@@", memory: @@APIM_MEMORY_LIMIT@@ }
+          startupProbe:         # @@APIM_STARTUP_MINUTES@@ minutes to boot before liveness/readiness take over
+            tcpSocket: { port: 9443 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: @@APIM_STARTUP_FAILURES@@
+          readinessProbe:       # ready once the gateway has deployed its API artifacts
+            httpGet: { scheme: HTTPS, port: 9443, path: /api/am/gateway/v2/server-startup-healthcheck }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:        # forgiving: a restart is never free with one replica
+            httpGet: { scheme: HTTPS, port: 9443, path: /services/Version }
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          lifecycle:
+            preStop:            # PID 1 is a bash wrapper that does not forward SIGTERM
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    PID=$(cat /home/wso2carbon/wso2am-4.5.0/wso2carbon.pid 2>/dev/null) || exit 0
+                    kill -TERM "$PID" 2>/dev/null || exit 0
+                    for i in $(seq 1 100); do kill -0 "$PID" 2>/dev/null || exit 0; sleep 1; done
+          volumeMounts:
+            - { name: conf, mountPath: /home/wso2carbon/wso2-config-volume/repository/conf }
+            - { name: data, mountPath: /home/wso2carbon/wso2am-4.5.0/repository/database, subPath: database }
+            - { name: data, mountPath: /home/wso2carbon/wso2am-4.5.0/solr, subPath: solr }
+            - { name: data, mountPath: /home/wso2carbon/wso2am-4.5.0/repository/resources/security, subPath: security }
+            - { name: logs, mountPath: /home/wso2carbon/wso2am-4.5.0/repository/logs }
+            - { name: jdbc, mountPath: /home/wso2carbon/wso2am-4.5.0/repository/components/lib/postgresql-jdbc.jar, readOnly: true }
+      volumes:
+        - name: conf
+          projected:
+            sources:
+              - secret: { name: apim-conf, items: [ { key: deployment.toml, path: deployment.toml } ] }
+              - configMap: { name: apim-log4j2, items: [ { key: log4j2.properties, path: log4j2.properties } ] }
+        - name: data
+          persistentVolumeClaim: { claimName: wso2am-data }
+        - name: logs
+          hostPath: { path: @@DATA_ROOT@@/logs/apim, type: DirectoryOrCreate }
+        - name: jdbc
+          hostPath: { path: @@DATA_ROOT@@/apim-lib/postgresql-jdbc.jar, type: File }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wso2am
+  namespace: @@NS_APIM@@
+  labels: { app.kubernetes.io/part-of: cruise-saudi-weave }
+spec:
+  type: NodePort
+  selector: { app: wso2am }
+  ports:
+    - { name: mgmt, port: 9443, targetPort: mgmt, nodePort: @@APIM_MGMT_NODEPORT@@ }
+    - { name: gw-https, port: 8243, targetPort: gw-https, nodePort: @@GATEWAY_HTTPS_NODEPORT@@ }
+    - { name: gw-http, port: 8280, targetPort: gw-http, nodePort: @@GATEWAY_HTTP_NODEPORT@@ }

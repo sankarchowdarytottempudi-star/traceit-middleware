@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { WeaveMark, THREAD_A, THREAD_B, WeaveLockup, PRODUCT_NAME, MODULES, TAGLINE, COMPANY_LINE, weaveColors } from "./src/index.ts";
@@ -53,5 +53,22 @@ describe("constants + colors", () => {
   });
   it("gives gold/ink per theme", () => {
     expect(weaveColors("light").goldA).toBe("#8A5A08"); expect(weaveColors("dark").ink).toBe("#F2F7FB");
+  });
+});
+
+describe("Cruise Saudi edition (VITE_WEAVE_EDITION=cruise-saudi)", () => {
+  it("names Cruise Saudi everywhere and never TraceIT or Tottempudi", async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_WEAVE_EDITION", "cruise-saudi");
+    const b = await import("./src/index.ts");
+    expect(b.PRODUCT_NAME).toBe("Cruise Saudi Weave");
+    expect(b.COMPANY_LINE).toBe("Cruise Saudi Weave is proprietary software of Cruise Saudi");
+    expect(b.SIGN_IN_LABEL).toBe("Sign in");
+    const { container } = render(<><b.WeaveLockup /><b.OwnerLogo /></>);
+    expect(container.textContent).toContain("by Cruise Saudi");
+    expect(container.textContent).toContain("CRUISE SAUDI");
+    expect(container.innerHTML).not.toMatch(/traceit|tottempudi/i);
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 });

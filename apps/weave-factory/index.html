@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="/icons/icon-180.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0C1B2A" />
-    <title>TraceIT Weave</title>
+    <title>Weave</title>
     <script>
       try {
         var m = localStorage.getItem("theme") || "auto";
@@ -26,7 +26,7 @@
         function heal(why) {
           try { if (!sessionStorage.getItem("weave-heal")) { sessionStorage.setItem("weave-heal", "1"); location.reload(); return; } } catch (e) {}
           var r = document.getElementById("root");
-          if (r && !r.firstChild) r.innerHTML = '<div style="font-family:system-ui,sans-serif;max-width:420px;margin:20vh auto;text-align:center;color:#0C1B2A"><h1 style="font-size:20px">TraceIT Weave could not load</h1><p style="color:#5b6470">' + why + '. Please reload the page.</p><p><a href="" style="color:#8A5A08;font-weight:600">Reload</a></p></div>';
+          if (r && !r.firstChild) r.innerHTML = '<div style="font-family:system-ui,sans-serif;max-width:420px;margin:20vh auto;text-align:center;color:#0C1B2A"><h1 style="font-size:20px">Weave could not load</h1><p style="color:#5b6470">' + why + '. Please reload the page.</p><p><a href="" style="color:#8A5A08;font-weight:600">Reload</a></p></div>';
         }
         window.addEventListener("error", function (e) { var t = e.target; if (t && t.tagName === "SCRIPT") heal("The application script failed to load"); }, true);
         window.addEventListener("load", function () { setTimeout(function () { var r = document.getElementById("root"); if (r && !r.firstChild) heal("The application did not start"); else { try { sessionStorage.removeItem("weave-heal"); } catch (e) {} } }, 6000); });

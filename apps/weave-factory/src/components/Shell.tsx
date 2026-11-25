@@ -6,7 +6,7 @@ import { Boxes, ExternalLink, Info, Menu, PanelLeftClose, PanelLeftOpen, X } fro
 import type { NavGroup, NavItem } from "../nav.ts";
 import { studioNav } from "../studio/routes.tsx";
 import { migrateNav } from "../migrate/routes.tsx";
-import { BRAND, WEAVE_GATEWAY_URL, WeaveMark, WeaveLockup, TraceItLogo, PRODUCT_NAME, TAGLINE, COMPANY_LINE } from "../brand.tsx";
+import { BRAND, WEAVE_GATEWAY_URL, WeaveMark, WeaveLockup, OwnerLogo, PRODUCT_NAME, TAGLINE, COMPANY_LINE } from "../brand.tsx";
 import { useTheme } from "../theme.tsx";
 import { ThemeSwitch } from "./ThemeSwitch.tsx";
 import { api } from "../api.ts";
@@ -59,12 +59,12 @@ export function Shell() {
           <strong className="mf-disp mf-topbar-title">{currentLabel(loc.pathname)}</strong>
         </span>
         <span style={{ flex: 1 }} />
-        <span className="mf-topbar-brand"><TraceItLogo variant="wordmark" theme={resolved} height={16} /></span>
+        <span className="mf-topbar-brand"><OwnerLogo variant="wordmark" theme={resolved} height={16} /></span>
       </header>
       {open && <div className="mf-side-scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
       <aside className={`mf-side mf-s ${open ? "mf-side-open" : ""}`} aria-label="Main navigation">
         <div className="mf-side-head">
-          <span className="mf-side-logo"><TraceItLogo variant="wordmark" theme={resolved} height={22} /></span>
+          <span className="mf-side-logo"><OwnerLogo variant="wordmark" theme={resolved} height={22} /></span>
           <button className="mf-topbtn mf-side-close" aria-label="Close menu" onClick={() => setOpen(false)}><X size={18} /></button>
           <button className="mf-topbtn mf-side-rail" aria-label={rail ? "Expand sidebar" : "Collapse sidebar"} title={rail ? "Expand sidebar" : "Collapse sidebar"} onClick={toggleRail}>
             {rail ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}

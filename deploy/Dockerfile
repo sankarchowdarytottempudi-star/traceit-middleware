@@ -10,6 +10,9 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 ARG VITE_WEAVE_FACTORY_URL=""
 ENV VITE_WEAVE_FACTORY_URL=$VITE_WEAVE_FACTORY_URL
+# product edition: "traceit" (default) or "cruise-saudi"
+ARG VITE_WEAVE_EDITION="traceit"
+ENV VITE_WEAVE_EDITION=$VITE_WEAVE_EDITION
 RUN pnpm --filter gateway-admin build && pnpm --filter gateway-admin-bff build
 RUN pnpm --filter gateway-admin-bff deploy --prod /prod-bff
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { LayoutDashboard, Gauge, Server, Boxes, ShieldCheck, Inbox, ExternalLink, Info, ChartColumn, Activity, ScrollText, Menu, X, Waypoints, Factory } from "lucide-react";
-import { BRAND, MODULES, WEAVE_FACTORY_URL, WeaveMark, WeaveLockup, TraceItLogo, PRODUCT_NAME, TAGLINE, COMPANY_LINE } from "../brand.tsx";
+import { BRAND, MODULES, WEAVE_FACTORY_URL, WeaveMark, WeaveLockup, OwnerLogo, PRODUCT_NAME, TAGLINE, COMPANY_LINE } from "../brand.tsx";
 import { useTheme } from "../theme.tsx";
 import { ThemeSwitch } from "./ThemeSwitch.tsx";
 import { apiClient } from "../api.ts";
@@ -54,7 +54,7 @@ export function Shell() {
 
       <aside id="gw-sidebar" className={`mf-side mf-s gw-side ${menu ? "gw-open" : ""}`}>
         <div style={{ padding: "2px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <TraceItLogo variant="wordmark" theme={resolved} height={22} />
+          <OwnerLogo variant="wordmark" theme={resolved} height={22} />
           <button type="button" className="gw-iconbtn gw-sideclose" style={{ width: 32, height: 32 }} aria-label="Close menu" onClick={() => setMenu(false)}><X size={16} aria-hidden="true" /></button>
         </div>
 

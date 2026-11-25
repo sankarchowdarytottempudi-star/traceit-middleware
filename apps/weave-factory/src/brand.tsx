@@ -1,6 +1,6 @@
-/** One place for product identity. This app is the "Factory" area of TraceIT Weave. */
-export { PRODUCT_NAME, MODULES, TAGLINE, COMPANY_LINE } from "@traceit/weave-brand";
-export { WeaveMark, WeaveLockup, TraceItLogo } from "@traceit/weave-brand";
+/** One place for product identity. This app is the "Factory" area of Weave. */
+export { PRODUCT_NAME, MODULES, TAGLINE, COMPANY_LINE, SIGN_IN_LABEL, OWNER_NAME } from "@traceit/weave-brand";
+export { WeaveMark, WeaveLockup, TraceItLogo, OwnerLogo } from "@traceit/weave-brand";
 import { MODULES, PRODUCT_NAME } from "@traceit/weave-brand";
 
 export const BRAND = { name: PRODUCT_NAME, section: "Weave", area: MODULES.factory } as const;

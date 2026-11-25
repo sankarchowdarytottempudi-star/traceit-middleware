@@ -1,6 +1,7 @@
 import { useId } from "react";
 import type { BrandTheme } from "./constants.ts";
 import { weaveColors } from "./colors.ts";
+import { PRODUCT_NAME } from "./constants.ts";
 
 /** Exact paths from BRAND.md (viewBox 0 0 64 64, stroke 4.2, round caps). */
 export const THREAD_A = "M8 46 C16 22 23 16 32 32 S48 44 56 18";
@@ -8,7 +9,7 @@ export const THREAD_B = "M8 18 C16 42 23 48 32 32 S48 20 56 46";
 
 export interface WeaveMarkProps { size?: number; theme?: BrandTheme; animated?: boolean; live?: boolean; title?: string; }
 
-export function WeaveMark({ size = 24, theme = "light", animated = false, live = false, title = "TraceIT Weave" }: WeaveMarkProps) {
+export function WeaveMark({ size = 24, theme = "light", animated = false, live = false, title = PRODUCT_NAME }: WeaveMarkProps) {
   const id = useId().replace(/:/g, "");
   const c = weaveColors(theme);
   const gid = `wg-${id}`;

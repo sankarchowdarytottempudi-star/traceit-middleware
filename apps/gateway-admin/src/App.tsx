@@ -2,7 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Shell } from "./components/Shell.tsx";
 import { apiClient } from "./api.ts";
-import { WeaveLockup, WeaveMark, TAGLINE, COMPANY_LINE } from "./brand.tsx";
+import { WeaveLockup, WeaveMark, TAGLINE, COMPANY_LINE, SIGN_IN_LABEL } from "./brand.tsx";
 import { useTheme } from "./theme.tsx";
 import { Overview } from "./screens/Overview.tsx";
 import { RateLimits } from "./screens/RateLimits.tsx";
@@ -23,7 +23,7 @@ function SignIn() {
         <WeaveMark size={56} theme={resolved} animated live />
         <WeaveLockup variant="primary" theme={resolved} height={48} />
         <p style={{ margin: 0, color: "var(--muted)" }}>{TAGLINE}</p>
-        <a className="mf-btn mf-pri" href="/api/auth/login" style={{ height: 44, padding: "0 22px", display: "inline-flex", alignItems: "center", borderRadius: 10, background: "var(--accent)", color: "var(--onAccent)", fontWeight: 600, textDecoration: "none" }}>Sign in with WSO2</a>
+        <a className="mf-btn mf-pri" href="/api/auth/login" style={{ height: 44, padding: "0 22px", display: "inline-flex", alignItems: "center", borderRadius: 10, background: "var(--accent)", color: "var(--onAccent)", fontWeight: 600, textDecoration: "none" }}>{SIGN_IN_LABEL}</a>
         <p style={{ margin: 0, fontSize: 12, color: "var(--faint)" }}>{COMPANY_LINE}</p>
       </div>
     </div>

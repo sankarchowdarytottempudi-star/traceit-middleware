@@ -1,92 +1,50 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
-import crypto from "node:crypto";
+import type { FastifyInstance } from "fastify";
 import type { Config } from "./config.js";
 import type { SessionStore } from "./sessionStore.js";
-import { authorizeUrl, exchangeCode, passwordGrant, pkce, refreshToken, type TokenSet } from "./wso2.js";
+import { authorizeUrl, exchangeCode, passwordGrant, refreshToken } from "./wso2.js";
+import { registerAccess, type Access, type Rule } from "./access/plugin.js";
+import { productName, readAuthSettings, type AuthSettings } from "./access/settings.js";
+import { cachedServiceToken } from "./access/serviceToken.js";
+import { cleanRoles } from "./access/roles.js";
 
 export interface ClientCreds { clientId: string; clientSecret: string; }
-interface Session { tokens: TokenSet; expiresAt: number; user: string; }
 
-const SESSION_TTL = 86400;   // 1 day; refresh token kept server-side in the store
-const PKCE_TTL = 600;
 const SCOPE = "openid apim:admin apim:api_view apim:api_manage apim:tier_view apim:tier_manage apim:admin_settings apim:environment_manage " +
   "apim:environment_read apim:keymanagers_manage apim:workflow_approve apim:api_governance_view apim:api_governance_manage";
 
-export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCreds, store: SessionStore) {
+/** What each Gateway address needs. Users and access: admin; everything else under /api: gateway. */
+export function gatewayRule(path: string): Rule {
+  if (path.startsWith("/api/auth/")) return "public";
+  if (path.startsWith("/api/access/")) return "admin";
+  return "gateway";
+}
+
+export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCreds, store: SessionStore, settings?: AuthSettings): Access {
   const redirectUri = `${cfg.PUBLIC_BASE_URL}/api/auth/callback`;
   const w = { baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem }; // server-side (localhost; cert CN matches)
   const publicBase = cfg.APIM_PUBLIC_URL; // browser-facing only
 
-  async function tokenFor(sid: string): Promise<string | null> {
-    const s = await store.get<Session>(`sess:${sid}`);
-    if (!s) return null;
-    if (Date.now() < s.expiresAt - 30_000) return s.tokens.access_token;
-    if (!s.tokens.refresh_token) return s.tokens.access_token;
-    try {
-      const t = await refreshToken(w, creds.clientId, creds.clientSecret, s.tokens.refresh_token);
-      const next: Session = { tokens: t, expiresAt: Date.now() + t.expires_in * 1000, user: s.user };
-      await store.set(`sess:${sid}`, next, SESSION_TTL);
-      return t.access_token;
-    } catch { await store.del(`sess:${sid}`); return null; }
-  }
-  app.decorate("tokenFor", tokenFor);
+  // Service-account token (APIM_DCR user, password grant): used by the loopback dev mode and for
+  // people who sign in with Microsoft or a Weave account (they are not API Manager users).
+  const serviceToken = cachedServiceToken(() => passwordGrant(w, creds.clientId, creds.clientSecret, cfg.APIM_DCR_USERNAME, cfg.APIM_DCR_PASSWORD, SCOPE));
 
   // Loopback dev mode (automated UI tests): only when bound to 127.0.0.1 AND DEV_AUTH_USER is set.
-  // index.ts refuses to start with DEV_AUTH_USER on any other host. No browser sign-in; the BFF
-  // calls the gateway with a token obtained from the service credentials already in the env.
+  // index.ts refuses to start with DEV_AUTH_USER on any other host. DEV_AUTH_ROLES narrows the roles.
   const devUser = process.env.HOST === "127.0.0.1" ? (process.env.DEV_AUTH_USER || "") : "";
-  // Asked for again every minute: the gateway hands back the same token while it is valid and a
-  // new one when it has expired or been revoked, so a stale token never sticks for long.
-  let devTok: { token: string; expiresAt: number } | null = null;
-  let devPending: Promise<string> | null = null;
-  async function devToken(): Promise<string> {
-    if (devTok && Date.now() < devTok.expiresAt) return devTok.token;
-    if (!devPending) {
-      devPending = passwordGrant(w, creds.clientId, creds.clientSecret, cfg.APIM_DCR_USERNAME, cfg.APIM_DCR_PASSWORD, SCOPE)
-        .then((t) => { devTok = { token: t.access_token, expiresAt: Date.now() + Math.max(5, Math.min(60, t.expires_in - 30)) * 1000 }; return t.access_token; })
-        .finally(() => { devPending = null; });
-    }
-    return devPending;
-  }
-  app.decorate("tokenForRequest", async (req: FastifyRequest) => {
-    if (devUser) return devToken();
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
-    return sid ? tokenFor(sid) : null;
+  const access = registerAccess(app, {
+    app: "gateway", area: "Gateway console", product: productName(process.env),
+    cookieName: "sid", basePath: "", store, settings: settings ?? readAuthSettings(process.env, cfg.PUBLIC_BASE_URL),
+    wso2: {
+      authorizeUrl: (state, challenge) => authorizeUrl(publicBase, creds.clientId, redirectUri, challenge, state, SCOPE),
+      exchange: (code, verifier) => exchangeCode(w, creds.clientId, creds.clientSecret, code, redirectUri, verifier),
+      refresh: (rt) => refreshToken(w, creds.clientId, creds.clientSecret, rt),
+      serviceToken,
+    },
+    rule: gatewayRule, adminApi: true,
+    devUser, devRoles: process.env.DEV_AUTH_ROLES !== undefined ? cleanRoles(process.env.DEV_AUTH_ROLES) : undefined,
   });
-
-  app.get("/api/auth/login", async (_req, reply) => {
-    const { verifier, challenge } = pkce();
-    const state = crypto.randomBytes(16).toString("hex");
-    await store.set(`pkce:${state}`, { verifier }, PKCE_TTL);
-    reply.redirect(authorizeUrl(publicBase, creds.clientId, redirectUri, challenge, state, SCOPE));
-  });
-
-  app.get("/api/auth/callback", async (req, reply) => {
-    const { code, state } = req.query as { code?: string; state?: string };
-    const p = state ? await store.get<{ verifier: string }>(`pkce:${state}`) : null;
-    if (!code || !p) return reply.code(400).send({ type: "about:blank", title: "Bad callback", status: 400 });
-    await store.del(`pkce:${state}`);
-    const t = await exchangeCode(w, creds.clientId, creds.clientSecret, code, redirectUri, p.verifier);
-    const sid = crypto.randomBytes(24).toString("hex");
-    let user = "wso2-user";
-    try { const [, body] = t.access_token.split("."); if (body) user = JSON.parse(Buffer.from(body, "base64url").toString()).sub ?? user; } catch { /* opaque token */ }
-    await store.set(`sess:${sid}`, { tokens: t, expiresAt: Date.now() + t.expires_in * 1000, user }, SESSION_TTL);
-    reply.setCookie("sid", sid, { httpOnly: true, secure: true, sameSite: "lax", path: "/", signed: true });
-    reply.redirect("/");
-  });
-
-  app.post("/api/auth/logout", async (req, reply) => {
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
-    if (sid) await store.del(`sess:${sid}`);
-    reply.clearCookie("sid", { path: "/" });
-    reply.send({ ok: true });
-  });
-
-  app.get("/api/auth/me", async (req, reply) => {
-    if (devUser) return { user: devUser, role: "admin" };
-    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
-    const s = sid ? await store.get<Session>(`sess:${sid}`) : null;
-    if (!s) return reply.code(401).send({ type: "about:blank", title: "Not signed in", status: 401 });
-    return { user: s.user, role: "admin" };
-  });
+  app.decorate("tokenFor", access.tokenFor);
+  app.decorate("tokenForRequest", access.tokenForRequest);
+  app.decorate("access", access);
+  return access;
 }

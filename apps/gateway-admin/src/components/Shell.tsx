@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Gauge, Server, Boxes, ShieldCheck, Inbox, ExternalLink, Info, ChartColumn, Activity, ScrollText, Menu, X, Waypoints, Factory } from "lucide-react";
+import { LayoutDashboard, Gauge, Server, Boxes, ShieldCheck, Inbox, ExternalLink, Info, ChartColumn, Activity, ScrollText, Menu, X, Waypoints, Factory, UsersRound, LogOut } from "lucide-react";
 import { BRAND, MODULES, WEAVE_FACTORY_URL, WeaveMark, WeaveLockup, OwnerLogo, PRODUCT_NAME, TAGLINE, COMPANY_LINE } from "../brand.tsx";
 import { useTheme } from "../theme.tsx";
 import { ThemeSwitch } from "./ThemeSwitch.tsx";
-import { apiClient } from "../api.ts";
+import { apiClient, rolesOf } from "../api.ts";
 
 const gatewayGroups: { title: string; items: { to: string; label: string; icon: typeof Gauge; end?: boolean }[] }[] = [
   { title: "OBSERVE", items: [
@@ -29,7 +29,15 @@ export function Shell() {
   const [menu, setMenu] = useState(false);
   const loc = useLocation();
   const me = useQuery({ queryKey: ["me"], queryFn: apiClient.me, retry: false });
-  const comp = useQuery({ queryKey: ["compliance"], queryFn: apiClient.compliance, retry: false });
+  const roles = rolesOf(me.data);
+  const canGateway = roles.includes("gateway");
+  const groups = [
+    ...(canGateway ? gatewayGroups : []),
+    ...(roles.includes("admin") ? [{ title: "ADMIN", items: [{ to: "/users", label: "Users and access", icon: UsersRound }] }] : []),
+  ];
+  const roleWords = roles.length ? roles.map((r) => (r === "migration" ? "Migration" : r === "gateway" ? "Gateway" : "Admin")).join(" · ") : "No access";
+  const signOut = async () => { try { await apiClient.logout(); } catch { /* signed out anyway */ } location.assign("/"); };
+  const comp = useQuery({ queryKey: ["compliance"], queryFn: apiClient.compliance, retry: false, enabled: canGateway });
   const health = useQuery({ queryKey: ["healthz"], queryFn: async () => (await fetch("/healthz")).ok, retry: false, refetchInterval: 30000 });
   const nonCompliant = comp.data ? comp.data.total - comp.data.compliant : 0;
   const live = health.data === true;
@@ -66,17 +74,17 @@ export function Shell() {
               <strong className="mf-disp" style={{ fontSize: 14 }}>{BRAND.section}</strong>
               <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", padding: "1px 6px", borderRadius: 999, background: "var(--accentWash)", color: "var(--accentText)" }}>NEW</span>
             </div>
-            <span className="mf-nav mf-nav-on" aria-current="true" data-weave-module="gateway">
+            <span className={`mf-nav ${canGateway ? "mf-nav-on" : ""}`} aria-current={canGateway ? "true" : undefined} data-weave-module="gateway">
               <Waypoints size={17} aria-hidden="true" /><span style={{ flex: 1 }}>Gateway</span>
               <span style={{ fontSize: 11, fontWeight: 500, color: "var(--faint)" }}>This console</span>
             </span>
-            {WEAVE_FACTORY_URL && (
+            {WEAVE_FACTORY_URL && roles.includes("migration") && (
               <a className="mf-nav" href={WEAVE_FACTORY_URL} target="_blank" rel="noreferrer" data-weave-module="factory">
                 <Factory size={17} aria-hidden="true" /><span style={{ flex: 1 }}>Factory</span><ExternalLink size={14} aria-hidden="true" />
               </a>
             )}
           </div>
-          {gatewayGroups.map((g) => (
+          {groups.map((g) => (
             <div key={g.title} className="gw-navgroup">
               <span className="mf-mono gw-navtitle">{g.title}</span>
               {g.items.map((it) => (
@@ -96,9 +104,10 @@ export function Shell() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, background: "var(--surface)", border: "1px solid var(--border)" }}>
             <span style={{ width: 30, height: 30, borderRadius: 8, background: "var(--accentWash)", color: "var(--accentText)", display: "grid", placeItems: "center", fontWeight: 700 }}>{(me.data?.user ?? "?").slice(0, 1).toUpperCase()}</span>
             <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, minWidth: 0, flex: 1 }}>
-              <strong style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis" }}>{me.data?.user ?? "Not signed in"}</strong>
-              <span style={{ fontSize: 11.5, color: "var(--faint)" }}>{me.data?.role ?? "—"}</span>
+              <strong style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis" }} title={me.data?.email || me.data?.user}>{me.data?.name || me.data?.user || "Not signed in"}</strong>
+              <span style={{ fontSize: 11.5, color: "var(--faint)" }}>{me.data ? roleWords : "—"}</span>
             </span>
+            <button className="mf-btn mf-gho" aria-label="Sign out" title="Sign out" onClick={signOut} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "grid", placeItems: "center" }}><LogOut size={15} /></button>
             <button className="mf-btn mf-gho" aria-label="About" onClick={() => setAbout(true)} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "grid", placeItems: "center" }}><Info size={15} /></button>
           </div>
         </div>

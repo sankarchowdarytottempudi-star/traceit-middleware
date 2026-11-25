@@ -2,14 +2,14 @@ import { at } from "../lib/base.ts";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Boxes, ExternalLink, Info, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { Boxes, ExternalLink, Info, LogOut, Menu, PanelLeftClose, PanelLeftOpen, UsersRound, X } from "lucide-react";
 import type { NavGroup, NavItem } from "../nav.ts";
 import { studioNav } from "../studio/routes.tsx";
 import { migrateNav } from "../migrate/routes.tsx";
 import { BRAND, WEAVE_GATEWAY_URL, WeaveMark, WeaveLockup, OwnerLogo, PRODUCT_NAME, TAGLINE, COMPANY_LINE } from "../brand.tsx";
 import { useTheme } from "../theme.tsx";
 import { ThemeSwitch } from "./ThemeSwitch.tsx";
-import { api } from "../api.ts";
+import { api, rolesOf } from "../api.ts";
 import { StudioHost } from "../studio/ui.tsx";
 
 const groups: NavGroup[] = [...studioNav, ...migrateNav];
@@ -39,6 +39,10 @@ export function Shell() {
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, retry: false });
   const health = useQuery({ queryKey: ["healthz"], queryFn: async () => (await fetch(at("/healthz"))).ok, retry: false, refetchInterval: 30000 });
   const live = health.data === true;
+  const roles = rolesOf(me.data);
+  const roleWords = roles.length ? roles.map((r) => (r === "migration" ? "Migration" : r === "gateway" ? "Gateway" : "Admin")).join(" · ") : "No access";
+  const usersUrl = WEAVE_GATEWAY_URL ? `${WEAVE_GATEWAY_URL.replace(/\/+$/, "")}/users` : "";
+  const signOut = async () => { try { await fetch(at("/api/auth/logout"), { method: "POST", credentials: "include" }); } catch { /* signed out anyway */ } location.assign(at("/")); };
   const bleed = isBleed(loc.pathname);
 
   useEffect(() => { setOpen(false); }, [loc.pathname]);
@@ -78,7 +82,8 @@ export function Shell() {
           <div className="mf-side-group">
             <span className="mf-mono mf-side-title">WEAVE</span>
             <span className="mf-nav mf-nav-on" aria-current="page" style={{ fontWeight: 600 }} title="Factory"><Boxes size={17} aria-hidden="true" /><span className="mf-side-text" style={{ flex: 1 }}>Factory</span></span>
-            {WEAVE_GATEWAY_URL && <a className="mf-nav" href={WEAVE_GATEWAY_URL} target="_blank" rel="noreferrer" title="Gateway"><ExternalLink size={17} aria-hidden="true" /><span className="mf-side-text" style={{ flex: 1 }}>Gateway</span></a>}
+            {WEAVE_GATEWAY_URL && roles.includes("gateway") && <a className="mf-nav" href={WEAVE_GATEWAY_URL} target="_blank" rel="noreferrer" title="Gateway"><ExternalLink size={17} aria-hidden="true" /><span className="mf-side-text" style={{ flex: 1 }}>Gateway</span></a>}
+            {usersUrl && roles.includes("admin") && <a className="mf-nav" href={usersUrl} target="_blank" rel="noreferrer" title="Users and access (in the Gateway console)"><UsersRound size={17} aria-hidden="true" /><span className="mf-side-text" style={{ flex: 1 }}>Users and access</span></a>}
           </div>
           {groups.map((g) => (
             <div key={g.title} className="mf-side-group">
@@ -97,9 +102,10 @@ export function Shell() {
           <div className="mf-side-user">
             <span className="mf-side-avatar">{(me.data?.user ?? "?").slice(0, 1).toUpperCase()}</span>
             <span className="mf-side-text" style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, minWidth: 0, flex: 1 }}>
-              <strong style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{me.data?.user ?? "Not signed in"}</strong>
-              <span style={{ fontSize: 11.5, color: "var(--faint)" }}>{me.data?.role ?? "—"}</span>
+              <strong style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={me.data?.email || me.data?.user}>{me.data?.name || me.data?.user || "Not signed in"}</strong>
+              <span style={{ fontSize: 11.5, color: "var(--faint)" }}>{me.data ? roleWords : "—"}</span>
             </span>
+            <button className="mf-btn mf-gho mf-side-text" aria-label="Sign out" title="Sign out" onClick={signOut} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "grid", placeItems: "center", flex: "0 0 auto" }}><LogOut size={15} /></button>
             <button className="mf-btn mf-gho mf-side-text" aria-label="About" onClick={() => setAbout(true)} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer", display: "grid", placeItems: "center", flex: "0 0 auto" }}><Info size={15} /></button>
           </div>
         </div>

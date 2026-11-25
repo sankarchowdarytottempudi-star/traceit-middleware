@@ -32,7 +32,10 @@ function qs(p: Record<string, string | number | boolean | undefined | null>): st
 }
 const post = (body?: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body ?? {}) });
 
-export interface Me { user: string; role: string; }
+export type AccessRole = "admin" | "migration" | "gateway";
+export interface Me { user: string; role: string; name?: string; email?: string; provider?: "wso2" | "oidc" | "local"; roles?: AccessRole[]; }
+/** Roles of the signed-in person. An older server without roles meant full access. */
+export function rolesOf(me: Me | undefined): AccessRole[] { return me?.roles ?? ["admin", "migration", "gateway"]; }
 
 // ---- migrations (the migration tool, through the BFF)
 /** Plain-words explanation of a failed or blocked step, written by the migration tool. */

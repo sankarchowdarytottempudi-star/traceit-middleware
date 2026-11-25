@@ -69,6 +69,11 @@ export const exchangeCode = (o: Wso2Opts, id: string, secret: string, code: stri
 export const refreshToken = (o: Wso2Opts, id: string, secret: string, refresh_token: string) =>
   token(o, id, secret, { grant_type: "refresh_token", refresh_token });
 
+/** Resource-owner password grant with the server's service account: API Manager calls made for
+ *  people who are not API Manager users (Microsoft and Weave accounts). */
+export const passwordGrant = (o: Wso2Opts, id: string, secret: string, username: string, password: string, scope: string) =>
+  token(o, id, secret, { grant_type: "password", username, password, scope });
+
 export async function api(opts: Wso2Opts, accessToken: string, method: string, path: string, body?: unknown):
   Promise<{ status: number; json: any }> {
   const r = await request(opts, method, path,

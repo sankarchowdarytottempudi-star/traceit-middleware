@@ -9,7 +9,17 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
   return (await r.json()) as T;
 }
 
-export interface Me { user: string; role: string; }
+export type AccessRole = "admin" | "migration" | "gateway";
+export interface Me { user: string; role: string; name?: string; email?: string; provider?: "wso2" | "oidc" | "local"; roles?: AccessRole[]; canChangePassword?: boolean; }
+/** Roles of the signed-in person. An older server without roles meant full access. */
+export function rolesOf(me: Me | undefined): AccessRole[] { return me?.roles ?? ["admin", "migration", "gateway"]; }
+export interface AccessUser {
+  id: string; email: string; name: string; provider: "local" | "oidc" | "wso2"; subject?: string; roles: AccessRole[]; disabled: boolean;
+  hasPassword: boolean; source?: string; createdAt: string; createdBy?: string; updatedAt: string; lastSignInAt?: string;
+}
+export interface GroupRole { group: string; label?: string; roles: AccessRole[]; }
+export interface AccessList { configured: boolean; users: AccessUser[]; groupRoles: GroupRole[]; providers: string[]; groupsClaim: string | null; auditEnabled: boolean; me: string | null; }
+export interface AuditEntry { time: string; user: string; action: string; target?: string; app?: string; provider?: string; via?: string; status?: number; ip?: string; detail?: string; }
 export interface SubPolicy { policyId: string; name: string; displayName?: string; quotaType: string; limit: number; unit: string; timeUnit: string; stopOnQuotaReach: boolean; }
 export interface AdvPolicy { policyId: string; name: string; limit: number; timeUnit: string; }
 export interface Environment { id: string; name: string; type: string; gatewayType: string; visibility?: string; vhosts: { host: string; httpContext?: string }[]; reachable: boolean; }
@@ -110,6 +120,14 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 
 export const apiClient = {
   me: () => j<Me>("/api/auth/me"),
+  logout: () => j<{ ok: boolean }>("/api/auth/logout", { method: "POST", body: "{}" }),
+  accessUsers: () => j<AccessList>("/api/access/users"),
+  accessCreate: (body: { provider: string; email: string; name?: string; roles: AccessRole[]; password?: string }) => j<{ user: AccessUser }>("/api/access/users", { method: "POST", body: JSON.stringify(body) }),
+  accessUpdate: (id: string, body: { roles?: AccessRole[]; disabled?: boolean; name?: string }) => j<{ user: AccessUser }>(`/api/access/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  accessResetPassword: (id: string, password: string) => j<{ ok: boolean }>(`/api/access/users/${encodeURIComponent(id)}/password`, { method: "POST", body: JSON.stringify({ password }) }),
+  accessRemove: (id: string) => j<{ ok: boolean }>(`/api/access/users/${encodeURIComponent(id)}`, { method: "DELETE", body: "{}" }),
+  accessGroups: (mappings: GroupRole[]) => j<{ groupRoles: GroupRole[] }>("/api/access/group-roles", { method: "PUT", body: JSON.stringify({ mappings }) }),
+  accessAudit: (q?: string) => j<{ enabled: boolean; entries: AuditEntry[] }>(`/api/access/audit${qs({ limit: 300, q })}`),
   rateLimits: (type: string) => j<{ list: (SubPolicy | AdvPolicy)[] }>(`/api/ratelimits/${type}`),
   createPolicy: (type: string, body: unknown) => j(`/api/ratelimits/${type}`, { method: "POST", body: JSON.stringify(body) }),
   deletePolicy: (type: string, id: string) => j(`/api/ratelimits/${type}/${id}`, { method: "DELETE" }),

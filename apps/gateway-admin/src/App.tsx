@@ -1,7 +1,7 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Shell } from "./components/Shell.tsx";
-import { apiClient } from "./api.ts";
+import { apiClient, rolesOf } from "./api.ts";
 import { WeaveLockup, WeaveMark, TAGLINE, COMPANY_LINE, SIGN_IN_LABEL } from "./brand.tsx";
 import { useTheme } from "./theme.tsx";
 import { Overview } from "./screens/Overview.tsx";
@@ -14,6 +14,8 @@ import { Analytics } from "./screens/Analytics.tsx";
 import { ApiAnalytics } from "./screens/ApiAnalytics.tsx";
 import { GatewayAnalytics } from "./screens/GatewayAnalytics.tsx";
 import { Logs } from "./screens/Logs.tsx";
+import { Users } from "./screens/Users.tsx";
+import { NoAccess } from "./screens/NoAccess.tsx";
 
 function SignIn() {
   const { resolved } = useTheme();
@@ -34,19 +36,30 @@ export function App() {
   const me = useQuery({ queryKey: ["me"], queryFn: apiClient.me, retry: false });
   if (me.isLoading) return <div className="mf" style={{ minHeight: "100vh", background: "var(--bg)" }} />;
   if (me.isError) return <SignIn />;
+  const roles = rolesOf(me.data);
+  const gateway = roles.includes("gateway");
+  const admin = roles.includes("admin");
   return (
     <Routes>
       <Route element={<Shell />}>
-        <Route index element={<Overview />} />
-        <Route path="rate-limits" element={<RateLimits />} />
-        <Route path="gateways" element={<Gateways />} />
-        <Route path="apis" element={<Apis />} />
-        <Route path="analytics" element={<Analytics />} />
-        <Route path="analytics/api/:name" element={<ApiAnalytics />} />
-        <Route path="gateway-analytics" element={<GatewayAnalytics />} />
-        <Route path="logs" element={<Logs />} />
-        <Route path="compliance" element={<Compliance />} />
-        <Route path="approvals" element={<Approvals />} />
+        {gateway ? (
+          <>
+            <Route index element={<Overview />} />
+            <Route path="rate-limits" element={<RateLimits />} />
+            <Route path="gateways" element={<Gateways />} />
+            <Route path="apis" element={<Apis />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="analytics/api/:name" element={<ApiAnalytics />} />
+            <Route path="gateway-analytics" element={<GatewayAnalytics />} />
+            <Route path="logs" element={<Logs />} />
+            <Route path="compliance" element={<Compliance />} />
+            <Route path="approvals" element={<Approvals />} />
+          </>
+        ) : (
+          <Route index element={admin ? <Navigate to="/users" replace /> : <NoAccess />} />
+        )}
+        {admin && <Route path="users" element={<Users />} />}
+        <Route path="*" element={<NoAccess />} />
       </Route>
     </Routes>
   );

@@ -8,7 +8,7 @@ import type { Config } from "../config.js";
 import type { ClientCreds } from "../auth.js";
 import { mtRequest } from "../mt.js";
 import { runtimeRequest } from "../studio.js";
-import { K8s, type K8sService } from "./k8s.js";
+import { K8s, estateK8sOptions, type K8sService } from "./k8s.js";
 import { kubeApiOf } from "./power.js";
 import { registerPower, runtimeOf } from "./powerRoutes.js";
 import { GatewayCatalog } from "./gateway.js";
@@ -45,13 +45,15 @@ export function insideUrl(services: K8sService[], name: string): string | undefi
 }
 
 export function registerEstate(app: FastifyInstance, cfg: Config, creds?: ClientCreds): Estate {
-  const k8s = new K8s({ apiUrl: cfg.K8S_API_URL || undefined, tokenFile: cfg.K8S_TOKEN_FILE || undefined, caFile: cfg.K8S_CA_FILE || undefined, namespace: cfg.K8S_NAMESPACE });
+  // the cluster the migrated APIs run on: the deployment target (TARGET_*) when set, else this server's
+  const k8s = new K8s(estateK8sOptions(cfg));
+  if (k8s.cluster === "target") app.log.info({ estateCluster: "target", namespace: k8s.namespace }, "migrated APIs are read from the target cluster");
   const gateway = cfg.APIM_BASE_URL
     ? new GatewayCatalog({ baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem }, creds ? { clientId: creds.clientId, clientSecret: creds.clientSecret, username: cfg.APIM_DCR_USERNAME, password: cfg.APIM_DCR_PASSWORD } : undefined)
     : undefined;
   const mt = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
   const estate = new Estate({
-    servicesDir: [cfg.SERVICES_DIR, cfg.ESTATE_EXTRA_SOURCES].filter(Boolean).join(",") || undefined, configDir: cfg.ESTATE_CONFIG_DIR || undefined, namespace: cfg.K8S_NAMESPACE,
+    servicesDir: [cfg.SERVICES_DIR, cfg.ESTATE_EXTRA_SOURCES].filter(Boolean).join(",") || undefined, configDir: cfg.ESTATE_CONFIG_DIR || undefined, namespace: k8s.namespace,
     k8s, prometheusUrl: cfg.PROMETHEUS_URL || undefined, gateway, gatewayPublicUrl: cfg.GATEWAY_PUBLIC_URL || undefined,
     migrations: async () => {
       const r = await mtRequest(mt, "GET", "/api/migrations");
@@ -204,7 +206,7 @@ export function registerEstate(app: FastifyInstance, cfg: Config, creds?: Client
   });
 
   // The on/off switch on the cards of the Flows page.
-  registerPower(app, { kube: k8s.configured ? kubeApiOf(k8s) : null, namespace: cfg.K8S_NAMESPACE, dataDir: cfg.DATA_DIR, runtime: runtimeOf(runtime) });
+  registerPower(app, { kube: k8s.configured ? kubeApiOf(k8s) : null, namespace: k8s.namespace, dataDir: cfg.DATA_DIR, runtime: runtimeOf(runtime) });
 
   return estate;
 }

@@ -8,6 +8,8 @@ export interface HttpResult { status: number; text: string; truncated: boolean; 
 export interface HttpOpts {
   method?: string; headers?: Record<string, string>; body?: string;
   ca?: string; timeoutMs?: number; maxBytes?: number;
+  /** Client certificate and key (PEM) and certificate checking, for a kubeconfig user (kubeconfig.ts). */
+  cert?: string; key?: string; rejectUnauthorized?: boolean;
 }
 
 export function httpRequest(url: string, o: HttpOpts = {}): Promise<HttpResult> {
@@ -20,6 +22,8 @@ export function httpRequest(url: string, o: HttpOpts = {}): Promise<HttpResult> 
       method: o.method ?? "GET", hostname: u.hostname, port: u.port || (secure ? 443 : 80),
       path: u.pathname + u.search, headers: o.headers,
       ...(secure && o.ca ? { ca: o.ca } : {}),
+      ...(secure && o.cert && o.key ? { cert: o.cert, key: o.key } : {}),
+      ...(secure && o.rejectUnauthorized === false ? { rejectUnauthorized: false } : {}),
     }, (res) => {
       const chunks: Buffer[] = []; let size = 0; let truncated = false;
       res.on("data", (c: Buffer) => {

@@ -4,8 +4,17 @@
 import https from "node:https";
 import { readFileSync } from "node:fs";
 import { URL } from "node:url";
+import { authOf, targetFromEnv, type KubeAccess, type TargetEnv } from "./kubeconfig.js";
 
-export interface K8sOptions { apiUrl?: string; tokenFile?: string; caFile?: string; namespace: string; }
+export interface K8sOptions {
+  apiUrl?: string; tokenFile?: string; caFile?: string; namespace: string;
+  /** Another cluster (kubeconfig.ts): used instead of apiUrl/tokenFile/caFile. */
+  access?: KubeAccess;
+  /** The cluster is configured but cannot be used (e.g. an unreadable kubeconfig): every call fails with this. */
+  error?: string;
+  /** "target" when this reads the cluster the migrated APIs were installed on (not this server's). */
+  cluster?: "local" | "target";
+}
 export interface K8sDeployment {
   name: string; labels: Record<string, string>; selector: Record<string, string>;
   replicas: number; ready: number; updated: number; images: string[]; createdAt?: string; lastDeployedAt?: string;
@@ -16,26 +25,45 @@ export interface LogLine { at?: string; level?: string; text: string; pod?: stri
 
 const CACHE_MS = 10_000;
 
+/** Options for the cluster the migrated APIs run on: the deployment target when one is set, else this server's. */
+export function estateK8sOptions(cfg: { K8S_API_URL?: string; K8S_TOKEN_FILE?: string; K8S_CA_FILE?: string; K8S_NAMESPACE: string } & TargetEnv): K8sOptions {
+  const t = targetFromEnv(cfg);
+  if (!t) return { apiUrl: cfg.K8S_API_URL || undefined, tokenFile: cfg.K8S_TOKEN_FILE || undefined, caFile: cfg.K8S_CA_FILE || undefined, namespace: cfg.K8S_NAMESPACE, cluster: "local" };
+  return { access: t.access, error: t.error, namespace: t.namespace || cfg.K8S_NAMESPACE, cluster: "target" };
+}
+
 export class K8s {
   private cache = new Map<string, { at: number; value: unknown }>();
   constructor(private o: K8sOptions) {}
   get namespace(): string { return this.o.namespace; }
-  get configured(): boolean { return !!(this.o.apiUrl && this.o.tokenFile); }
+  get configured(): boolean { return !!(this.o.error || this.o.access || (this.o.apiUrl && this.o.tokenFile)); }
+  /** Which cluster this reads: this server's own ("local") or the deployment target's. */
+  get cluster(): "local" | "target" { return this.o.cluster ?? "local"; }
 
   private get(path: string, timeoutMs = 8000): Promise<{ status: number; text: string }> { return this.send("GET", path, undefined, undefined, timeoutMs); }
   /** One call to the Kubernetes API; a body is sent as JSON with the given content type. */
   send(method: string, path: string, body?: unknown, contentType = "application/json", timeoutMs = 8000): Promise<{ status: number; text: string }> {
     if (!this.configured) return Promise.reject(new Error("Cluster access is not configured"));
-    const u = new URL(this.o.apiUrl + path);
+    if (this.o.error) return Promise.reject(new Error(this.o.error));
+    const u = new URL((this.o.access?.apiUrl ?? this.o.apiUrl) + path);
     let token = "", ca: string | undefined;
-    try { token = readFileSync(this.o.tokenFile!, "utf8").trim(); } catch { return Promise.reject(new Error("Cluster token file is not readable")); }
-    try { ca = this.o.caFile ? readFileSync(this.o.caFile, "utf8") : undefined; } catch { ca = undefined; }
+    let tls: { ca?: string; cert?: string; key?: string; rejectUnauthorized?: boolean } = {};
+    if (this.o.access) {
+      try { const a = authOf(this.o.access); tls = a.tls; token = (a.headers.Authorization ?? "").replace(/^Bearer /, ""); }
+      catch { return Promise.reject(new Error("Cluster token file is not readable")); }
+      ca = tls.ca;
+    } else {
+      try { token = readFileSync(this.o.tokenFile!, "utf8").trim(); } catch { return Promise.reject(new Error("Cluster token file is not readable")); }
+      try { ca = this.o.caFile ? readFileSync(this.o.caFile, "utf8") : undefined; } catch { ca = undefined; }
+    }
     const data = body === undefined ? undefined : JSON.stringify(body);
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: "application/json, */*" };
+    const headers: Record<string, string> = { Accept: "application/json, */*" };
+    if (token) headers.Authorization = `Bearer ${token}`;
     if (data !== undefined) { headers["Content-Type"] = contentType; headers["Content-Length"] = String(Buffer.byteLength(data)); }
     return new Promise((resolve, reject) => {
       const req = https.request({
         method, hostname: u.hostname, port: u.port || 443, path: u.pathname + u.search, headers, ca, timeout: timeoutMs,
+        ...(tls.cert && tls.key ? { cert: tls.cert, key: tls.key } : {}), ...(tls.rejectUnauthorized === false ? { rejectUnauthorized: false } : {}),
       }, (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));

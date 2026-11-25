@@ -21,6 +21,15 @@ const schema = z.object({
   K8S_TOKEN_FILE: z.string().optional().or(z.literal("")),
   K8S_CA_FILE: z.string().optional().or(z.literal("")),
   K8S_NAMESPACE: z.string().optional().or(z.literal("")),          // services namespace, default "wso2"
+  // The cluster the migrated APIs are installed on when it is not this server's (deployment target):
+  // a kubeconfig file (+ context) or an API address + token file (+ CA file), and the namespace there.
+  // Unset: the cluster above is used. Inventory and service logs then come from the target; the gateway stays here.
+  TARGET_KUBECONFIG: z.string().optional().or(z.literal("")),
+  TARGET_KUBE_CONTEXT: z.string().optional().or(z.literal("")),
+  TARGET_K8S_API_URL: z.string().optional().or(z.literal("")),
+  TARGET_K8S_TOKEN_FILE: z.string().optional().or(z.literal("")),
+  TARGET_K8S_CA_FILE: z.string().optional().or(z.literal("")),
+  TARGET_K8S_NAMESPACE: z.string().optional().or(z.literal("")),
   GATEWAY_NAMESPACE: z.string().optional().or(z.literal("")),      // gateway namespace, default "apim"
   GATEWAY_POD_PREFIX: z.string().optional().or(z.literal("")),     // gateway pod name prefix, default "wso2am"
   PROMETHEUS_URL: z.string().optional().or(z.literal("")),

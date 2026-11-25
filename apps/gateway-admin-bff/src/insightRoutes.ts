@@ -2,7 +2,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
 import { api } from "./wso2.js";
-import { createK8s } from "./k8s.js";
+import { createK8s, servicesCluster } from "./k8s.js";
 import { createProm, isRange } from "./prom.js";
 import { createRuntime } from "./runtime.js";
 import { createAnalytics } from "./analytics.js";
@@ -15,8 +15,11 @@ const STATUSES = ["all", "2xx", "4xx", "5xx", "fault", "throttled"] as const;
 
 export function registerInsightRoutes(app: FastifyInstance, cfg: Config) {
   const w = { baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem };
-  const servicesNs = cfg.K8S_NAMESPACE || "wso2";
-  const k8s = createK8s({ apiUrl: cfg.K8S_API_URL || undefined, tokenFile: cfg.K8S_TOKEN_FILE || undefined, caFile: cfg.K8S_CA_FILE || undefined });
+  // this server's cluster (the gateway) and the cluster the migrated APIs run on (the same one unless TARGET_* is set)
+  const local = createK8s({ apiUrl: cfg.K8S_API_URL || undefined, tokenFile: cfg.K8S_TOKEN_FILE || undefined, caFile: cfg.K8S_CA_FILE || undefined });
+  const services = servicesCluster(cfg, local);
+  const k8s = services.k8s, servicesNs = services.namespace;
+  if (services.cluster === "target") app.log.info({ servicesCluster: "target", namespace: servicesNs }, "migrated APIs are read from the target cluster");
   const prom = createProm(cfg.PROMETHEUS_URL || undefined);
   const runtime = createRuntime(cfg.RUNTIME_URL || undefined, cfg.RUNTIME_INTERNAL_KEY || undefined);
   const gw = createGatewayAnalytics({ logDir: cfg.APIM_LOG_DIR || undefined, dataDir: cfg.DATA_DIR, log: (m) => app.log.info({ gatewayAnalytics: m }) });
@@ -25,7 +28,7 @@ export function registerInsightRoutes(app: FastifyInstance, cfg: Config) {
   const analytics = createAnalytics({ prom, runtime, job: cfg.PROMETHEUS_JOB || "wso2-apis", knownServices: () => inventory.serviceNames() });
   inventory = createInventory({ k8s, servicesNs, servicesDir: cfg.SERVICES_DIR || undefined, runtime, analytics, gw,
     publisher: (token, path) => api(w, token, "GET", `/api/am/publisher/v4${path}`) });
-  const logs = createLogs({ k8s, runtime, servicesNs, gatewayNs: cfg.GATEWAY_NAMESPACE || "apim", gatewayPodPrefix: cfg.GATEWAY_POD_PREFIX || "wso2am" });
+  const logs = createLogs({ k8s, gwK8s: local, runtime, servicesNs, gatewayNs: cfg.GATEWAY_NAMESPACE || "apim", gatewayPodPrefix: cfg.GATEWAY_POD_PREFIX || "wso2am" });
 
   gw.start();
   app.addHook("onClose", async () => { await gw.stop(); });

@@ -138,9 +138,12 @@ export interface LogResult {
 
 export interface LogDeps {
   k8s: K8s | null; runtime: Runtime; servicesNs: string; gatewayNs: string; gatewayPodPrefix: string;
+  /** The gateway's cluster when the services run on another one (deployment target); default: k8s. */
+  gwK8s?: K8s | null;
 }
 
 export function createLogs(d: LogDeps) {
+  const gwK8s = d.gwK8s === undefined ? d.k8s : d.gwK8s;
   const appOf = (p: K8sPod) => p.labels["app.kubernetes.io/name"] ?? p.labels.app ?? "";
   const podsOf = (pods: K8sPod[], name: string) => pods.filter((p) => appOf(p) === name || (!appOf(p) && p.name.startsWith(`${name}-`)));
   const live = (p: K8sPod) => p.phase === "Running" || p.phase === "Pending" || p.phase === "Terminating";
@@ -149,7 +152,7 @@ export function createLogs(d: LogDeps) {
     const list: LogSource[] = []; const errors: string[] = [];
     if (d.k8s) {
       try {
-        const [svcPods, gwPods] = await Promise.all([d.k8s.pods(d.servicesNs), d.k8s.pods(d.gatewayNs).catch(() => [] as K8sPod[])]);
+        const [svcPods, gwPods] = await Promise.all([d.k8s.pods(d.servicesNs), gwK8s ? gwK8s.pods(d.gatewayNs).catch(() => [] as K8sPod[]) : Promise.resolve([] as K8sPod[])]);
         const gw = gwPods.filter((p) => p.name.startsWith(d.gatewayPodPrefix) && live(p));
         if (gw.length) list.push({ id: "gw", label: "Gateway", kind: "gateway", replicas: gw.length });
         for (const s of serviceNames) list.push({ id: `svc:${s.name}`, label: s.name, kind: s.kind, replicas: podsOf(svcPods, s.name).filter(live).length });
@@ -170,7 +173,7 @@ export function createLogs(d: LogDeps) {
     const ids = [...new Set(q.sources)].slice(0, 20);
     const groups: LogEntry[][] = []; const meta: LogResult["sources"] = [];
     const cache = new Map<string, Promise<K8sPod[]>>();
-    const pods = (ns: string) => { let p = cache.get(ns); if (!p) { p = d.k8s!.pods(ns); cache.set(ns, p); } return p; };
+    const pods = (k: K8s, ns: string) => { const key = `${k === d.k8s ? "s" : "g"}:${ns}`; let p = cache.get(key); if (!p) { p = k.pods(ns); cache.set(key, p); } return p; };
 
     let names: Promise<Map<string, string>> | undefined;
     const flowNames = () => (names ??= d.runtime.flows().then((r) => new Map(r.ok ? r.data.map((f): [string, string] => [f.id, f.name || f.slug]) : [])).catch(() => new Map<string, string>()));
@@ -193,17 +196,18 @@ export function createLogs(d: LogDeps) {
           groups.push(g); m.lines = g.length; m.replicas = ["runtime"];
           return;
         }
-        if (!d.k8s) { m.error = "Kubernetes access is not configured"; return; }
-        let ns = d.servicesNs; let mine: K8sPod[];
-        if (id === "gw") { ns = d.gatewayNs; m.label = "Gateway"; mine = (await pods(ns)).filter((p) => p.name.startsWith(d.gatewayPodPrefix)); }
-        else if (id.startsWith("svc:")) { const name = id.slice(4); m.label = name; mine = podsOf(await pods(ns), name); }
+        let ns = d.servicesNs; let mine: K8sPod[]; let k = d.k8s;
+        if (id === "gw") k = gwK8s;
+        if (!k) { m.error = "Kubernetes access is not configured"; return; }
+        if (id === "gw") { ns = d.gatewayNs; m.label = "Gateway"; mine = (await pods(k, ns)).filter((p) => p.name.startsWith(d.gatewayPodPrefix)); }
+        else if (id.startsWith("svc:")) { const name = id.slice(4); m.label = name; mine = podsOf(await pods(k, ns), name); }
         else { m.error = "Unknown source"; return; }
         mine = mine.filter(live);
         if (!mine.length) { m.error = "No running replicas"; return; }
         await Promise.all(mine.map(async (p) => {
           try {
             const container = p.containers.includes("api") ? "api" : p.containers[0];
-            const text = await d.k8s!.podLog(ns, p.name, { container, tailLines: perPod, sinceSeconds: since });
+            const text = await k!.podLog(ns, p.name, { container, tailLines: perPod, sinceSeconds: since });
             const g = parsePodLog(text, id, p.name);
             groups.push(g); m.lines += g.length; m.replicas.push(p.name);
           } catch (e) { m.error = `${p.name}: ${reason(e)}`; }

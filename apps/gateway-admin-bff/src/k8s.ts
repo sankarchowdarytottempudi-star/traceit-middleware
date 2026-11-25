@@ -2,8 +2,15 @@
 // Used for service discovery, health/replicas and pod logs. It never writes to the cluster.
 import { readFileSync } from "node:fs";
 import { httpJson, httpRequest } from "./http.js";
+import { authOf, targetFromEnv, type KubeAccess, type TargetEnv } from "./kubeconfig.js";
 
-export interface K8sConfig { apiUrl: string; tokenFile: string; caFile: string; }
+export interface K8sConfig {
+  apiUrl: string; tokenFile: string; caFile: string;
+  /** Another cluster (kubeconfig.ts): used instead of apiUrl/tokenFile/caFile. */
+  access?: KubeAccess;
+  /** Configured but not usable (e.g. an unreadable kubeconfig): every call fails with this. */
+  error?: string;
+}
 
 export interface K8sDeployment {
   name: string; namespace: string; labels: Record<string, string>;
@@ -68,14 +75,22 @@ export function selects(selector: Record<string, string>, labels: Record<string,
 }
 
 export function createK8s(cfg: Partial<K8sConfig>): K8s | null {
-  if (!cfg.apiUrl || !cfg.tokenFile) return null;
-  const base = cfg.apiUrl.replace(/\/+$/, "");
+  if (cfg.error) {
+    const fail = async (): Promise<never> => { throw new Error(cfg.error); };
+    return { deployments: fail, pods: fail, services: fail, podLog: fail };
+  }
+  if (!cfg.access && (!cfg.apiUrl || !cfg.tokenFile)) return null;
+  const base = (cfg.access?.apiUrl ?? cfg.apiUrl!).replace(/\/+$/, "");
   const auth = () => {
+    if (cfg.access) {
+      const a = authOf(cfg.access);
+      return { headers: { ...a.headers, Accept: "application/json" }, ...a.tls };
+    }
     // Re-read on every call: projected tokens rotate.
     const token = readFileSync(cfg.tokenFile!, "utf8").trim();
     let ca: string | undefined;
     try { ca = cfg.caFile ? readFileSync(cfg.caFile, "utf8") : undefined; } catch { ca = undefined; }
-    return { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }, ca };
+    return { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } as Record<string, string>, ca };
   };
   const list = async (path: string) => (await httpJson<any>(base + path, { ...auth(), timeoutMs: 8000 }))?.items ?? [];
   const ns = (n: string) => encodeURIComponent(n);
@@ -92,9 +107,18 @@ export function createK8s(cfg: Partial<K8sConfig>): K8s | null {
       q.set("limitBytes", String(limit));
       const a = auth();
       const r = await httpRequest(`${base}/api/v1/namespaces/${ns(n)}/pods/${encodeURIComponent(pod)}/log?${q}`,
-        { headers: { ...a.headers, Accept: "*/*" }, ca: a.ca, timeoutMs: 15_000, maxBytes: limit + 65536 });
+        { ...a, headers: { ...a.headers, Accept: "*/*" }, timeoutMs: 15_000, maxBytes: limit + 65536 });
       if (r.status < 200 || r.status >= 300) throw Object.assign(new Error(`HTTP ${r.status}`), { status: r.status });
       return r.text;
     },
   };
+}
+
+/** Where the migrated APIs run: the deployment target (TARGET_*) when one is set, else this server's
+ * cluster. The gateway itself always stays on this server's cluster. */
+export function servicesCluster(cfg: { K8S_API_URL?: string; K8S_TOKEN_FILE?: string; K8S_CA_FILE?: string; K8S_NAMESPACE?: string } & TargetEnv, local: K8s | null):
+  { k8s: K8s | null; namespace: string; cluster: "local" | "target" } {
+  const t = targetFromEnv(cfg);
+  if (!t) return { k8s: local, namespace: cfg.K8S_NAMESPACE || "wso2", cluster: "local" };
+  return { k8s: createK8s({ access: t.access, error: t.error }), namespace: t.namespace || cfg.K8S_NAMESPACE || "wso2", cluster: "target" };
 }

@@ -55,6 +55,13 @@ def _guard(cfg: Config, h: Http, F: str, hd) -> str:
     return ""
 
 
+def _tests_ok(p: Dict[str, Any]) -> bool:
+    """Build, unit tests, end-to-end trial and parity done: then Deployment may be started (the tool
+    itself does not hold Deployment on the coverage gate). Coverage is its own check, M6c."""
+    steps = [x for x in p.get("steps", []) if x.get("key") != "coverage"]
+    return bool(steps) and all(x.get("status") == "done" for x in steps)
+
+
 def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
     """Returns the ids of the migrations it made (their documents go into the branding scan)."""
     F = cfg.factory_url.rstrip("/")
@@ -150,6 +157,13 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         return m
 
     def m2():
+        # earlier acceptance runs left their migration as evidence; they all produce the API
+        # cs-acc-orders, so remove them first (only our own cs-acc-<stamp>-orders migrations)
+        import re as _re
+        lst = h.get(F + "/api/factory/migrations", headers=hd, timeout=30).json() or {}
+        old = [m["id"] for m in lst.get("migrations", []) if _re.fullmatch(r"cs-acc-\d{10}-(orders|refused)", str(m.get("name", "")))]
+        for mid in old:
+            h.request("DELETE", F + f"/api/factory/migrations/{mid}", headers=hd, timeout=30)
         q = urllib.parse.urlencode({"name": name, "workspace": cfg.secret("ACC_WORKSPACE", "cs-acc"), "filename": "cs-acc-orders.zip",
                                     "sourceType": "mule4", "target": "wso2"})
         x = h.request("POST", F + "/api/factory/migrations?" + q, headers=dict(hd, **{"Content-Type": "application/octet-stream"}),
@@ -158,7 +172,7 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         if x.status in (200, 201) and j.get("id"):
             state["id"] = j["id"]
             made.append(j["id"])
-            return PASS, f"migration {j['id']} '{name}', technology {j.get('technology')}"
+            return PASS, f"migration {j['id']} '{name}', technology {j.get('technology')}" + (f" (removed {len(old)} earlier acceptance migrations)" if old else "")
         return FAIL, f"upload -> {x.status} {short(x.text, 160)}"
     r.check("M2", G, titles["M2"], m2)
 
@@ -171,7 +185,56 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         go = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/autorun", headers=hd, data={}, timeout=60)
         if go.status not in (200, 201, 202):
             return FAIL, f"'Run automatically' -> {go.status} {short(go.text, 140)}"
-        m = wait_idle(int(cfg.secret("ACC_MIGRATION_TIMEOUT", "1800")))
+        limit = int(cfg.secret("ACC_MIGRATION_TIMEOUT", "1800"))
+        m = wait_idle(limit)
+        # 'Run automatically' only writes the documents while the API name is unknown; once the
+        # documents named it, run it again for generate -> test -> deploy (as a user would).
+        # The two manual steps are taken as a reviewer would: the mapping review (M4 checks the
+        # mapping itself) and Implementation, which the tool refuses while anything is unfinished.
+        # Then the automatic steps run one by one (Run automatically would start again from the
+        # documents and reset the manual steps).
+        notes: List[str] = []
+
+        def run_phase(ph):
+            x = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/{ph}", headers=hd, data={}, timeout=60)
+            other = ((x.json() or {}).get("otherMigration") or {}).get("name", "")
+            if x.status == 409 and str(other).startswith("cs-acc-"):
+                x = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/{ph}", headers=hd, data={"confirmReplace": True}, timeout=60)
+            notes.append(f"run {ph} -> {x.status}" + ("" if x.status in (200, 201, 202) else f" {short((x.json() or {}).get('error') or x.text, 140)}"))
+            if x.status not in (200, 201, 202):
+                return get_m()
+            end_ = time.time() + limit
+            time.sleep(8)
+            mm = get_m()
+            while time.time() < end_:
+                mm = get_m()
+                if phase(mm, ph).get("status") not in ("pending", "running", None) and not mm.get("busy") and not mm.get("queued"):
+                    break
+                time.sleep(10)
+            return mm
+
+        if m.get("apiName"):
+            if phase(m, "scaffold").get("status") != "done":
+                m = run_phase("scaffold")
+            if phase(m, "scaffold").get("status") == "done" and st:
+                oi = h.get(F + f"/api/factory/migrations/{state['id']}/open-items", headers=hd, timeout=60).json() or {}
+                items = oi.get("items") if isinstance(oi, dict) else oi
+                for it in items or []:
+                    if isinstance(it, dict) and it.get("kind") == "backend":
+                        rs = h.request("POST", F + f"/api/factory/migrations/{state['id']}/resolve", headers=hd, timeout=120,
+                                       data={"id": it["id"], "action": "address", "url": st.url})
+                        notes.append(f"backend {short(it.get('title') or it.get('id'), 40)} -> address {st.url}: {rs.status}")
+            for pk in ("mapping", "implement"):
+                a = h.request("POST", F + f"/api/factory/migrations/{state['id']}/advance", headers=hd, data={"phase": pk}, timeout=120)
+                notes.append(f"mark {pk} done -> {a.status}" + ("" if a.status == 200 else f" ({short((a.json() or {}).get('error') or a.text, 160)})"))
+            m = get_m()
+            if phase(m, "implement").get("status") == "done":
+                m = run_phase("test")
+                # the tool lets Deployment start while only the coverage gate is open (it says so);
+                # the harness only asks for it, and reports coverage on its own line (M6c)
+                if _tests_ok(phase(m, "test")):
+                    m = run_phase("deploy")
+        state["notes"] = notes
         state["m"] = m
         d = h.get(F + f"/api/factory/migrations/{state['id']}/docs", headers=hd, timeout=30).json() or {}
         names = [x if isinstance(x, str) else x.get("name") for x in (d.get("docs") or d.get("documents") or [])]
@@ -197,10 +260,34 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
             m = state.get("m") or get_m()
             p = phase(m, key)
             steps = ", ".join(f"{s.get('key')}={s.get('status')}" for s in p.get("steps", []))
-            return (PASS if p.get("status") == "done" else FAIL), f"{label} phase {p.get('status')}: {steps}"
+            extra = f"; steps taken: {'; '.join(state.get('notes', []))}" if state.get("notes") and p.get("status") != "done" else ""
+            return (PASS if p.get("status") == "done" else FAIL), f"{label} phase {p.get('status')}: {steps}{extra}"
         return f
     r.check("M5", G, titles["M5"], phase_check("scaffold", "scaffold"))
-    r.check("M6", G, titles["M6"], phase_check("test", "test"))
+    def m6():
+        need()
+        m = state.get("m") or get_m()
+        steps = {x.get("key"): x for x in phase(m, "test").get("steps", [])}
+        core = {k: v for k, v in steps.items() if k != "coverage"}
+        ev = "; ".join(f"{k}={v.get('status')} ({short(v.get('detail', ''), 90)})" for k, v in core.items())
+        return (PASS if core and all(v.get("status") == "done" for v in core.values()) else FAIL), ev
+    r.check("M6", G, "Build, unit tests, parity and trial run pass", m6)
+
+    def m6c():
+        need()
+        m = state.get("m") or get_m()
+        cov = next((x for x in phase(m, "test").get("steps", []) if x.get("key") == "coverage"), {})
+        import re as _re
+        num = _re.search(r"([\d.]+)%", cov.get("detail", "") or "")
+        pct = float(num.group(1)) if num else None
+        if pct is None:
+            return FAIL, f"no coverage figure: coverage step {cov.get('status')} {short(cov.get('detail', ''), 160)}"
+        return (PASS if pct >= 80 else FAIL), f"line coverage {pct}% (gate 80%): {short(cov.get('detail', ''), 200)}"
+    r.check("M6c", G, "Coverage gate: unit tests cover at least 80% of the lines", m6c)
+
+    r.add("M6r", G, "Manual steps taken by the harness", MANUAL,
+          "approved by the harness (no human review): " + ("; ".join(state.get("notes", [])) or "none")
+          + ". Steps the tool refused were left refused; a person must review the mapping and the implementation (checklist M12).")
 
     def m7():
         need()

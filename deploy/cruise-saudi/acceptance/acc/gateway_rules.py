@@ -48,7 +48,8 @@ def run(cfg: Config, h: Http, r: Run, ses):
 
     s = cfg.stamp
     name, ctx = f"cs-acc-{s}-api", f"/cs-acc-{s}"
-    pol, appname = f"cs-acc-{s}-limit", f"cs-acc-{s}-app"
+    # API Manager policy names allow letters, digits and underscores only
+    pol, appname = f"cs_acc_{s}_limit", f"cs-acc-{s}-app"
     origin1, origin2 = "https://initial.cs-acc.example", "https://changed.cs-acc.example"
     gw = cfg.apim_gw_url.rstrip("/") + ctx + "/1.0.0/echo"
     st = StandIn(cfg)
@@ -62,8 +63,6 @@ def run(cfg: Config, h: Http, r: Run, ses):
     console = False
     if ghd is not None and Gw and cfg.secret("ACC_GW_DIRECT") != "1":
         console = h.get(Gw + "/api/rules/context", headers=ghd, timeout=20).status == 200
-    if console:
-        cfg.env["_ACC_CONSOLE_USED"] = "1"
     via = "via the Gateway console" if console else "via API Manager REST (console rules API not available)"
 
     def con(method, path, data=None):
@@ -71,6 +70,8 @@ def run(cfg: Config, h: Http, r: Run, ses):
         x = h.request(method, Gw + path, headers=dict(ghd or {}, Origin=f"{u.scheme}://{u.netloc}"), data=data, timeout=60)
         if x.status not in (200, 201, 204):
             raise ApimError(f"console {method} {path} -> {x.status} {short(x.text, 160)}")
+        if method != "GET":
+            cfg.env["_ACC_CONSOLE_USED"] = "1"   # G9 then expects this run in the console audit
         return x.json() if x.body else None
 
     def call(token: Optional[str] = None, apikey: Optional[str] = None, xff: Optional[str] = None, method="GET", origin=None):
@@ -140,7 +141,7 @@ def run(cfg: Config, h: Http, r: Run, ses):
             secured = [x for x in detail.get("securityScheme", []) if x in ("oauth2", "api_key")]
             reached = any(c["path"].endswith("/echo") for c in st.calls)
             ev = (f"API {name} on {env}, lifecycle {detail.get('lifeCycleStatus')}, security {secured}; "
-                  f"with token -> {first.status}, without -> {anon.status}; stand-in reached: {reached}")
+                  f"with token -> {first.status} {short(first.text, 160) if first.status != 200 else ''}, without -> {anon.status}; stand-in reached: {reached}")
             if first.status == 200 and anon.status == 401 and reached and detail.get("lifeCycleStatus") == "PUBLISHED":
                 state["callable"] = True
                 return PASS, ev
@@ -162,7 +163,7 @@ def run(cfg: Config, h: Http, r: Run, ses):
                 pol_ = con("POST", "/api/rules/blocking", {"type": "IP", "value": ip, "enabled": True}) or {}
                 state["deny"] = pol_.get("id")
             else:
-                pol_ = a.call("POST", ADM + "/deny-policies", {"conditionType": "IP", "conditionStatus": True,
+                pol_ = a.call("POST", ADM + "/throttling/deny-policies", {"conditionType": "IP", "conditionStatus": True,
                                                                 "conditionValue": {"fixedIp": ip, "invert": False}})
                 state["deny"] = pol_.get("policyId") or pol_.get("conditionId")
             res = wait_for(lambda: ((lambda x: (x.status == 403, x.status))(call(tok, xff=ip))), 90)
@@ -171,7 +172,7 @@ def run(cfg: Config, h: Http, r: Run, ses):
             if console:
                 con("DELETE", f"/api/rules/blocking/{state['deny']}")
             else:
-                a.call("DELETE", f"{ADM}/deny-policies/{state['deny']}")
+                a.call("DELETE", f"{ADM}/throttling/deny-policy/{state['deny']}")
             state.pop("deny", None)
             wait_for(lambda: ((lambda x: (x.status == 200, x.status))(call(tok, xff=ip))), 90)
             after = call(tok, xff=ip).status
@@ -266,8 +267,8 @@ def run(cfg: Config, h: Http, r: Run, ses):
                 left += [x["name"] for x in a.list(PUB + "/apis?query=name:" + urllib.parse.quote(f"cs-acc-{s}")) if x["name"].startswith("cs-acc-")]
                 left += [x["name"] for x in a.list(DEV + "/applications") if x["name"].startswith(f"cs-acc-{s}")]
                 subs = (a.call("GET", ADM + "/throttling/policies/subscription") or {}).get("list", [])
-                left += [x["policyName"] for x in subs if x["policyName"].startswith(f"cs-acc-{s}")]
-                deny = (a.call("GET", ADM + "/deny-policies") or {}).get("list", [])
+                left += [x["policyName"] for x in subs if x["policyName"].startswith(f"cs_acc_{s}")]
+                deny = (a.call("GET", ADM + "/throttling/deny-policies") or {}).get("list", [])
                 left += [f"deny {x.get('conditionValue')}" for x in deny if str(x.get("conditionValue", "")).find(BLOCK_IP_PREFIX) >= 0]
             finally:
                 a.close()
@@ -287,7 +288,7 @@ def _cleanup(a: Apim, state: Dict[str, Any], pol: str, appname: str, name: str):
         except Exception as e:
             problems.append(f"{label}: {short(str(e), 100)}")
     if state.get("deny"):
-        step("deny policy", lambda: a.call("DELETE", f"{ADM}/deny-policies/{state['deny']}"))
+        step("deny policy", lambda: a.call("DELETE", f"{ADM}/throttling/deny-policy/{state['deny']}"))
     if state.get("app"):
         step("application", lambda: a.call("DELETE", f"{DEV}/applications/{state['app']['applicationId']}"))
     if state.get("api"):

@@ -106,8 +106,14 @@ def run(cfg: Config, h: Http, r: Run):
     r.check("K3", G, "Restore brings everything back", restore)
 
     G = "upgrade"
-    r.check("U1", G, "Upgrade and rollback commands are installed and documented",
-            lambda: _both(present("ACC_UPGRADE_CMD", "upgrade.sh")(), present("ACC_ROLLBACK_CMD", "rollback.sh")()))
+    def upgrade_rollback():
+        up = present("ACC_UPGRADE_CMD", "upgrade.sh")()
+        rb = present("ACC_ROLLBACK_CMD", "rollback.sh")()
+        st_, ev = _both(up, rb)
+        if rb[0] == WAITING and "rollback" in up[1].lower():
+            ev += " (upgrade.sh rolls back by itself when an upgrade fails; a rollback after a successful upgrade has no command)"
+        return st_, ev
+    r.check("U1", G, "Upgrade and rollback commands are installed and documented", upgrade_rollback)
     r.add("U2", G, "Upgrade N-1 -> N keeps data; rollback N -> N-1 works; both within the agreed window", MANUAL,
           "on the isolated install: note version (I7), back up, upgrade, rerun this harness, roll back, rerun (checklist 7)")
 

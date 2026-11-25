@@ -168,7 +168,7 @@ def run(cfg: Config, h: Http, r: Run, ses):
     def secrets_files():
         paths = []
         for g in cfg.secrets_paths:
-            paths += [p for p in glob.glob(g, recursive=True) if os.path.isfile(p)]
+            paths += [p for p in glob.glob(g, recursive=True) if os.path.isfile(p) and not p.endswith(".pub")]  # public keys are public
         if not paths:
             return WAITING, f"no secrets files found at {cfg.secrets_paths or '(none given: --secrets-glob)'}"
         bad = []

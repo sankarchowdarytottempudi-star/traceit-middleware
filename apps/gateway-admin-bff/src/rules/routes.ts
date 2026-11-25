@@ -31,6 +31,9 @@ export function registerRuleRoutes(app: FastifyInstance, cfg: Config, opts: { au
 
   // Which token can see the APIs: the person's own, or (fallback) the service credentials.
   const seen = new Map<string, { via: "user" | "service"; until: number }>();
+  const detailCache = new Map<string, { at: number; data: any[] }>();
+  // Any successful write makes cached API details stale.
+  app.addHook("onResponse", async (req, reply) => { if (req.method !== "GET" && req.url.startsWith("/api/") && reply.statusCode < 400) detailCache.clear(); });
   async function who(req: FastifyRequest): Promise<Who> {
     const t = await app.tokenForRequest(req);
     if (!t) throw Object.assign(new Error("Not signed in"), { statusCode: 401 });
@@ -325,8 +328,7 @@ export function registerRuleRoutes(app: FastifyInstance, cfg: Config, opts: { au
     return { ok: true, name, kind };
   });
 
-  // Which APIs and applications use each policy (detail of every API; cached briefly).
-  const detailCache = new Map<string, { at: number; data: any[] }>();
+  // Which APIs and applications use each policy (detail of every API; cached briefly, cleared on every write).
   async function allDetails(x: Who, fresh = false): Promise<any[]> {
     const k = x.via;
     const hit = detailCache.get(k);
@@ -682,7 +684,9 @@ export function registerRuleRoutes(app: FastifyInstance, cfg: Config, opts: { au
     const a = await x.c.application(id);
     if (String((req.body as any)?.confirm ?? "") !== a.name) bad(`Removing these keys stops every caller that uses them. Type ${a.name} to confirm.`, "confirm");
     const base = { user: x.user, action: "remove keys", target: `${a.name} keys`, before: "keys issued", after: "keys removed" };
-    try { await x.c.removeKeys(id, km); await audit.write({ ...base, outcome: "ok" }); }
+    // API Manager's key clean-up alone leaves the old consumer secret working (seen on 4.5), so the secret
+    // is replaced first: that invalidates it at once; then the key mapping is removed.
+    try { await x.c.regenerateSecret(id, km); await x.c.removeKeys(id, km); await audit.write({ ...base, outcome: "ok", detail: "secret replaced, then keys removed" }); }
     catch (e) { await audit.write({ ...base, outcome: "failed", detail: (e as Error).message }); throw e; }
     return { ok: true };
   });

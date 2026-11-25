@@ -31,7 +31,13 @@ const lines: string[] = [
   "| Regenerate secret | The old consumer secret was refused (`invalid_client`) right after. |",
   "| Caching, backend TPS, timeout/suspension, header add/remove, XML threat protection, schema validation, HTTPS only, API key header name | Accepted by API Manager, stored in the API definition and deployed in a new revision. Their runtime effect was not observable against the dead test backend. |",
   "",
-  "Known API Manager 4.5 behaviour: after **Remove keys** (key clean-up) on an application, keys generated again on the same application produced tokens the gateway refused (`900901`). Rotate with **Regenerate secret**, or create a new application.",
+  "Known API Manager 4.5 behaviour found in testing:",
+  "",
+  "- Key clean-up alone left the old consumer secret working, so the console's **Remove keys** first replaces the secret (the old one stops at once) and then removes the keys. Keys generated again on the same application afterwards produced tokens the gateway refused (`900901`): rotate with **Regenerate secret**, or create a new application.",
+  "- A throttling policy referenced by any stored revision of an API cannot be deleted, even when the live definition no longer uses it. The console's clean-up reports API Manager's refusal instead of hiding it.",
+  "- A deprecated API cannot be published again (only retired).",
+  "- Throttling decisions are asynchronous: a few calls past a limit pass before 429 starts.",
+  "- Policy names may not contain dashes, dots or spaces.",
   "",
 ];
 FAMILIES.forEach((f, i) => {

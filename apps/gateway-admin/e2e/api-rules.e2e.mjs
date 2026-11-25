@@ -113,11 +113,11 @@ try {
 
     step("3. A new plan, created inline, offered to consumers");
     await page.getByRole("button", { name: "New plan" }).click();
-    await newLimit("subscription", plan, 5);
-    check(await page.getByLabel(new RegExp(`^${plan}: 5 requests per minute per consumer`)).isChecked(), "the new plan is created and ticked");
+    await newLimit("subscription", plan, 1000); // generous: the per-consumer plan must not throttle the later checks
+    check(await page.getByLabel(new RegExp(`^${plan}: 1,000 requests per minute per consumer`)).isChecked(), "the new plan is created and ticked");
     let text = await review();
     check(text.includes(`This changes the live gateway for ${opt.api} in Production`), "confirmation names the API and the environment");
-    check(new RegExp(`Plans consumers can pick: [^→]+ → [^.]*${plan}\\. Each plan is a limit per consumer application`).test(text) && text.includes(`${plan} (5 requests per minute per consumer application)`), "confirmation lists the plan change in plain words", text.slice(0, 300));
+    check(new RegExp(`Plans consumers can pick: [^→]+ → [^.]*${plan}\\. Each plan is a limit per consumer application`).test(text) && text.includes(`${plan} (1,000 requests per minute per consumer application)`), "confirmation lists the plan change in plain words", text.slice(0, 300));
     await shot("confirm-plan");
     await apply();
     const done = await page.getByTestId("change-done").innerText();
@@ -244,18 +244,23 @@ try {
     check(/Live now\./.test(await page.getByTestId("change-done").innerText()), "rolled back and deployed");
 
     step("11b. Rate limiting: built-in group and safe clean-up of an unused policy");
+    const spare = `cs_gw_test_unused_${st}`;
+    const mk = await context.request.post(`${opt.base}/api/rules/policies`, { data: { kind: "advanced", name: spare, requests: 7, timeUnit: "min" } });
+    check(mk.status() === 201, "a never-assigned test limit exists for the clean-up check");
     await go("/rate-limits");
     await page.getByRole("tab", { name: /API & operation limits/ }).click();
     await page.getByTestId("builtin-group").waitFor();
     check(await page.getByTestId("builtin-group").getByText(/Built-in \(\d+\)/).isVisible(), "built-in policies are grouped and collapsed");
-    const pick = page.getByLabel(`Select ${lim} for clean-up`);
-    await pick.waitFor();
-    await pick.check();
-    await page.getByRole("button", { name: /Clean up selected \(1\)/ }).click();
+    for (const n of [spare, lim]) { const pick = page.getByLabel(`Select ${n} for clean-up`); await pick.waitFor(); await pick.check(); }
+    await page.getByRole("button", { name: /Clean up selected \(2\)/ }).click();
     const cp = await page.getByTestId("cleanup-plan").innerText();
-    check(cp.includes(`${lim}: delete (not used anywhere)`), "clean-up re-checks use before deleting", cp.slice(0, 200));
-    await page.getByRole("button", { name: "Delete 1 unused" }).click();
-    check((await page.getByTestId("cleanup-result").innerText()).includes(`${lim} deleted`), "unused test policy deleted and reported");
+    check(cp.includes(`${spare}: delete (not used anywhere)`), "clean-up re-checks use before deleting", cp.slice(0, 200));
+    await page.getByRole("button", { name: /Delete \d unused/ }).click();
+    await page.getByTestId("cleanup-result").waitFor();
+    const cr = await page.getByTestId("cleanup-result").innerText();
+    check(cr.includes(`${spare} deleted`), "a never-used test policy is deleted and reported", cr.slice(0, 300));
+    // the limit was rolled back off the API but a stored revision still references it: API Manager refuses, and we say so
+    check(cr.includes(`${lim} deleted`) || /already assigned/.test(cr), "a policy still referenced by a stored revision is refused by API Manager and reported honestly", cr.slice(0, 300));
     await shot("ratelimits-cleanup");
 
     step("12. Blocking rules (global) on a documentation address");
@@ -288,7 +293,7 @@ try {
 
     step("13b. Policies tab: JSON threat protection, proven with a real call");
     await go(`/apis/${apiId}?tab=policies`);
-    for (const f of ["Authentication", "Threat protection", "Traffic management", "AI / LLM gateway"]) check(await page.locator(`[data-family="${f}"]`).isVisible(), `family "${f}" listed with where it is handled`);
+    for (const f of ["Authentication", "Threat protection", "Traffic management", "AI / LLM gateway"]) check(await page.locator(`[data-family="${f}"]`).waitFor().then(() => true, () => false), `family "${f}" listed with where it is handled`);
     await page.getByLabel(/JSON threat protection: refuse/).check();
     await page.getByLabel("Max depth").fill("5");
     text = await review();
@@ -327,7 +332,7 @@ try {
     await page.getByRole("button", { name: "Apply to the live gateways" }).click();
     const sr = await page.getByTestId("set-results").innerText();
     check(new RegExp(`${opt.api} · done, Revision \\d+`).test(sr), "per-API result: done with a new revision", sr.slice(0, 160));
-    await page.getByRole("button", { name: "Close" }).click();
+    await page.getByTestId("set-results").getByRole("button", { name: "Close" }).click();
     await setRow.getByRole("button", { name: "Delete set" }).click();
     await setRow.waitFor({ state: "detached" });
 

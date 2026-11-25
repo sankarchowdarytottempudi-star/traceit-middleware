@@ -87,7 +87,11 @@ def load_env_file(path: str) -> Dict[str, str]:
             continue
         k, v = line.split("=", 1)
         k = k.replace("export ", "").strip()
-        v = v.strip().strip('"').strip("'")
+        v = v.strip()
+        if v[:1] in ('"', "'") and v[0] in v[1:]:
+            v = v[1:v.index(v[0], 1)]          # quoted: keep everything inside the quotes
+        else:
+            v = re.split(r"\s+#", v, 1)[0].strip()  # unquoted: drop an inline comment
         out[k] = v
     return out
 

@@ -96,6 +96,19 @@ def config(a) -> Config:
     return cfg
 
 
+def _up(cfg, h, wait: int = 300) -> bool:
+    """True when the Factory answers /healthz; waits up to `wait` seconds for it to come back."""
+    import time
+    end = time.time() + wait
+    while True:
+        if h.get(cfg.factory_url + "/healthz", timeout=10).status == 200:
+            return True
+        if time.time() > end:
+            return False
+        print("  (the Factory does not answer /healthz - waiting)", flush=True)
+        time.sleep(20)
+
+
 def main(argv=None) -> int:
     a = parse(argv if argv is not None else sys.argv[1:])
     cfg = config(a)
@@ -118,6 +131,10 @@ def main(argv=None) -> int:
         if gid == "upgrade" and cfg.want("backup"):
             continue  # written together with the backup group
         print(f"\n== {title}" + (" / Upgrade & rollback" if gid == "backup" else ""), flush=True)
+        if gid != "install" and not _up(cfg, h):
+            r.notes.append(f"the Factory stopped answering before '{title}' (another job restarting the install?) - results after this point are not valid")
+            r.add(f"{gid[:1].upper()}!", gid, f"{title}: not run", FAIL, "the install under test went down during the run; run again when it is stable")
+            break
         try:
             if gid == "install":
                 install.run(cfg, h, r)

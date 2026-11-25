@@ -44,7 +44,8 @@ fi
 
 step "Previous images present"
 for i in "$P_GATEWAY" "$P_FACTORY" "$P_RUNTIME"; do docker image inspect "$i" >/dev/null 2>&1 || die "docker image $i is no longer on this server"; done
-k3s ctr -n k8s.io images ls -q 2>/dev/null | grep -qx "docker.io/$P_MT" || die "k3s image docker.io/$P_MT is no longer on this server"
+k8s_imgs="$(k3s ctr -n k8s.io images ls -q 2>/dev/null || true)"   # no "| grep -q" under pipefail (SIGPIPE)
+grep -qx "docker.io/$P_MT" <<<"$k8s_imgs" || die "k3s image docker.io/$P_MT is no longer on this server"
 ok "$P_GATEWAY $P_FACTORY $P_RUNTIME $P_MT"
 cp "$STATE/images.current" "$STATE/images.rollback-from"
 

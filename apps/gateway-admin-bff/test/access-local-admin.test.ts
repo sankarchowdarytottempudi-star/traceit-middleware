@@ -169,7 +169,7 @@ describe("API Manager sign-in (TraceIT default) still works", () => {
   const jwt = (sub: string) => `x.${Buffer.from(JSON.stringify({ sub })).toString("base64url")}.y`;
   async function wso2SignIn(app: Awaited<ReturnType<typeof makeGateway>>, sub: string) {
     const jar = new Jar();
-    const start = jar.take(await app.inject({ url: "/api/auth/login" }));
+    const start = jar.take(await app.inject({ url: "/api/auth/login?provider=wso2" }));
     expect(start.statusCode).toBe(302);
     const loc = new URL(String(start.headers.location));
     expect(loc.origin + loc.pathname).toBe(`${APIM}/oauth2/authorize`);

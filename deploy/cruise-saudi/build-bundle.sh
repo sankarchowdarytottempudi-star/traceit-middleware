@@ -99,8 +99,8 @@ if [ "$SKIP_BUILD" = 0 ]; then
   log "build $FA (edition cruise-saudi)"
   docker build -q -f deploy/Dockerfile.factory -t "$FA" --build-arg VITE_WEAVE_EDITION=cruise-saudi \
     --build-arg VITE_WEAVE_GATEWAY_URL=/ . >/dev/null
-  log "build $RT"
-  docker build -q -f deploy/Dockerfile.runtime -t "$RT" . >/dev/null
+  log "build $RT (edition cruise-saudi)"
+  docker build -q -f deploy/Dockerfile.runtime -t "$RT" --build-arg VITE_WEAVE_EDITION=cruise-saudi . >/dev/null
   log "build $MT from $MT_SRC"
   [ -f "$MT_SRC/deploy/Dockerfile" ] || die "no Migration-tool source at $MT_SRC"
   docker build -q -f "$MT_SRC/deploy/Dockerfile" -t "$MT" "$MT_SRC" >/dev/null

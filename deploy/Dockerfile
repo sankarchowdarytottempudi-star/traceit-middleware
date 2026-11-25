@@ -15,10 +15,18 @@ ARG VITE_WEAVE_EDITION="traceit"
 ENV VITE_WEAVE_EDITION=$VITE_WEAVE_EDITION
 RUN pnpm --filter gateway-admin build && pnpm --filter gateway-admin-bff build
 RUN pnpm --filter gateway-admin-bff deploy --prod /prod-bff
+# no test files in the image (the build compiles src/ only; dependencies' own tests are dropped too)
+RUN find /prod-bff/node_modules -type f -name '*.test.*' -delete
+# cruise-saudi: no TraceIT/Tottempudi name in any shipped file (fails the build otherwise); traceit: no-op
+RUN node deploy/edition-dist.mjs "$VITE_WEAVE_EDITION" apps/gateway-admin-bff --node-modules /prod-bff/node_modules --scan apps/gateway-admin/dist
 
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# the sign-in page names the edition's product (cruise-saudi: "Cruise Saudi Weave");
+# WEAVE_EDITION can still be set when the container is started
+ARG VITE_WEAVE_EDITION="traceit"
+ENV WEAVE_EDITION=$VITE_WEAVE_EDITION
 # BFF (prod deps + dist)
 COPY --from=build /prod-bff/node_modules ./apps/gateway-admin-bff/node_modules
 COPY --from=build /app/apps/gateway-admin-bff/dist ./apps/gateway-admin-bff/dist

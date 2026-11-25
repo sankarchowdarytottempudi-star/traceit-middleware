@@ -17,4 +17,9 @@ export const COMPANY_LINE = IS_CRUISE_SAUDI
   : "TraceIT Weave is a product of Tottempudi Software Solutions Pvt Ltd";
 /** The sign-in button: the Cruise Saudi edition never names the identity product behind it. */
 export const SIGN_IN_LABEL = IS_CRUISE_SAUDI ? "Sign in" : "Sign in with WSO2";
+/** Browser tab title of a screen. TraceIT: "<area> · <module>" (e.g. "Migrations · Weave Factory");
+ *  Cruise Saudi: "<area> · Cruise Saudi Weave", so the tab always names the customer's product. */
+export function pageTitle(area: string, module: string): string {
+  return IS_CRUISE_SAUDI ? `${area} · ${PRODUCT_NAME}` : `${area} · ${module}`;
+}
 export type BrandTheme = "light" | "dark";

@@ -3,7 +3,7 @@ import { fixJson, jsonErrorAt } from "./mapping.ts";
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, Copy, Info, LoaderCircle, X, type LucideIcon } from "lucide-react";
-import { MODULES } from "../brand.tsx";
+import { MODULES, pageTitle } from "../brand.tsx";
 import { txt } from "../lib/text.ts";
 
 // ---------------------------------------------------------------- helpers
@@ -30,7 +30,7 @@ export function useBreakpoint(): "phone" | "tablet" | "desktop" {
   return phone ? "phone" : tablet ? "tablet" : "desktop";
 }
 export function useDocumentTitle(area: string) {
-  useEffect(() => { document.title = `${area} · ${MODULES.factory}`; }, [area]);
+  useEffect(() => { document.title = pageTitle(area, MODULES.factory); }, [area]);
 }
 export function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);

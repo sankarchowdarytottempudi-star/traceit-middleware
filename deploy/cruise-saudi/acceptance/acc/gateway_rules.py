@@ -141,7 +141,7 @@ def run(cfg: Config, h: Http, r: Run, ses):
             secured = [x for x in detail.get("securityScheme", []) if x in ("oauth2", "api_key")]
             reached = any(c["path"].endswith("/echo") for c in st.calls)
             ev = (f"API {name} on {env}, lifecycle {detail.get('lifeCycleStatus')}, security {secured}; "
-                  f"with token -> {first.status}, without -> {anon.status}; stand-in reached: {reached}")
+                  f"with token -> {first.status} {short(first.text, 160) if first.status != 200 else ''}, without -> {anon.status}; stand-in reached: {reached}")
             if first.status == 200 and anon.status == 401 and reached and detail.get("lifeCycleStatus") == "PUBLISHED":
                 state["callable"] = True
                 return PASS, ev

@@ -150,6 +150,13 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         return m
 
     def m2():
+        # earlier acceptance runs left their migration as evidence; they all produce the API
+        # cs-acc-orders, so remove them first (only our own cs-acc-<stamp>-orders migrations)
+        import re as _re
+        lst = h.get(F + "/api/factory/migrations", headers=hd, timeout=30).json() or {}
+        old = [m["id"] for m in lst.get("migrations", []) if _re.fullmatch(r"cs-acc-\d{10}-(orders|refused)", str(m.get("name", "")))]
+        for mid in old:
+            h.request("DELETE", F + f"/api/factory/migrations/{mid}", headers=hd, timeout=30)
         q = urllib.parse.urlencode({"name": name, "workspace": cfg.secret("ACC_WORKSPACE", "cs-acc"), "filename": "cs-acc-orders.zip",
                                     "sourceType": "mule4", "target": "wso2"})
         x = h.request("POST", F + "/api/factory/migrations?" + q, headers=dict(hd, **{"Content-Type": "application/octet-stream"}),
@@ -158,7 +165,7 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         if x.status in (200, 201) and j.get("id"):
             state["id"] = j["id"]
             made.append(j["id"])
-            return PASS, f"migration {j['id']} '{name}', technology {j.get('technology')}"
+            return PASS, f"migration {j['id']} '{name}', technology {j.get('technology')}" + (f" (removed {len(old)} earlier acceptance migrations)" if old else "")
         return FAIL, f"upload -> {x.status} {short(x.text, 160)}"
     r.check("M2", G, titles["M2"], m2)
 
@@ -175,13 +182,31 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         m = wait_idle(limit)
         # 'Run automatically' only writes the documents while the API name is unknown; once the
         # documents named it, run it again for generate -> test -> deploy (as a user would).
-        for _ in range(2):
-            if phase(m, "scaffold").get("status") not in (None, "pending") or not m.get("apiName"):
+        # The two manual steps are taken as a reviewer would: the mapping review (M4 checks the
+        # mapping itself) and Implementation, which the tool refuses while anything is unfinished.
+        notes = []
+        for _ in range(4):
+            if not m.get("apiName") or phase(m, "deploy").get("status") == "done":
                 break
-            if phase(m, "mapping").get("status") not in ("done",):
-                h.request("POST", F + f"/api/factory/migrations/{state['id']}/advance", headers=hd, data={}, timeout=60)
-            h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/autorun", headers=hd, data={}, timeout=60)
+            moved = False
+            for pk in ("mapping", "implement"):
+                if phase(m, pk).get("status") in ("action_required", "pending") and (pk == "mapping" or phase(m, "scaffold").get("status") == "done"):
+                    a = h.request("POST", F + f"/api/factory/migrations/{state['id']}/advance", headers=hd, data={"phase": pk}, timeout=120)
+                    notes.append(f"mark {pk} done -> {a.status}" + ("" if a.status == 200 else f" ({short((a.json() or {}).get('error') or a.text, 160)})"))
+                    moved = moved or a.status == 200
+            go2 = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/autorun", headers=hd, data={}, timeout=60)
+            other = ((go2.json() or {}).get("otherMigration") or {}).get("name", "")
+            if go2.status == 409 and str(other).startswith("cs-acc-"):
+                # the API name is held by an older acceptance migration: replace it, as the screen offers
+                go2 = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/autorun", headers=hd, data={"confirmReplace": True}, timeout=60)
+            if go2.status not in (200, 201, 202):
+                notes.append(f"run automatically -> {go2.status} {short((go2.json() or {}).get('error') or go2.text, 160)}")
+            before = json.dumps([p.get("status") for p in m.get("phases", [])])
             m = wait_idle(limit)
+            if json.dumps([p.get("status") for p in m.get("phases", [])]) == before and not moved:
+                notes.append(f"run automatically -> {go2.status}, no further progress")
+                break
+        state["notes"] = notes
         state["m"] = m
         d = h.get(F + f"/api/factory/migrations/{state['id']}/docs", headers=hd, timeout=30).json() or {}
         names = [x if isinstance(x, str) else x.get("name") for x in (d.get("docs") or d.get("documents") or [])]
@@ -207,7 +232,8 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
             m = state.get("m") or get_m()
             p = phase(m, key)
             steps = ", ".join(f"{s.get('key')}={s.get('status')}" for s in p.get("steps", []))
-            return (PASS if p.get("status") == "done" else FAIL), f"{label} phase {p.get('status')}: {steps}"
+            extra = f"; steps taken: {'; '.join(state.get('notes', []))}" if state.get("notes") and p.get("status") != "done" else ""
+            return (PASS if p.get("status") == "done" else FAIL), f"{label} phase {p.get('status')}: {steps}{extra}"
         return f
     r.check("M5", G, titles["M5"], phase_check("scaffold", "scaffold"))
     r.check("M6", G, titles["M6"], phase_check("test", "test"))

@@ -2,9 +2,11 @@
 
 The user-management API is delivered by the `cs/users` branch. Its paths are configurable so the
 harness follows that branch without code changes:
-  ACC_LOGIN_PATH   local sign-in, JSON {username, password}  (default /api/auth/local)
-  ACC_USERS_PATH   user list/create (GET/POST), /<id> delete  (default /api/admin/users)
-  ACC_AUDIT_PATH   audit lines                                 (default /api/factory/audit)
+  ACC_LOGIN_PATH   local sign-in, JSON {email, password}       (default /api/auth/local)
+  ACC_USERS_PATH   user list/create (GET/POST), /<id> delete  (default /api/access/users)
+  ACC_AUDIT_PATH   audit lines                                 (default /api/access/audit)
+The "admin" account of the secrets file should hold all three roles (admin, migration, gateway),
+like the first admin the installer creates: the other groups use it for migrations and the console.
 Credentials (from --secrets or the environment, never printed):
   ACC_ADMIN_USER / ACC_ADMIN_PASSWORD, ACC_MIGRATION_USER / ACC_MIGRATION_PASSWORD,
   ACC_GATEWAY_USER / ACC_GATEWAY_PASSWORD
@@ -32,6 +34,13 @@ class Sessions:
         self.login_path = cfg.secret("ACC_LOGIN_PATH", "/api/auth/local")
         self.last_error = ""
 
+    def login_raw(self, base: str, user: str, pw: str):
+        """POST the local sign-in as the browser does (JSON, same-origin Origin header)."""
+        u = urllib.parse.urlsplit(base)
+        return self.h.request("POST", base.rstrip("/") + self.login_path, timeout=20,
+                              headers={"Origin": f"{u.scheme}://{u.netloc}", "Content-Type": "application/json"},
+                              data={"email": user, "username": user, "password": pw})
+
     def creds(self, role: str):
         R = role.upper()
         return self.cfg.secret(f"ACC_{R}_USER"), self.cfg.secret(f"ACC_{R}_PASSWORD")
@@ -53,7 +62,7 @@ class Sessions:
             self.last_error = f"no credentials for role {role} (ACC_{role.upper()}_USER/_PASSWORD)"
             return None
         base = self.cfg.factory_url if app == "factory" else self.cfg.gateway_url
-        x = self.h.request("POST", base.rstrip("/") + self.login_path, data={"username": user, "password": pw}, timeout=20)
+        x = self.login_raw(base, user, pw)
         if x.status in (200, 204) and x.set_cookies:
             return _cookie_header(x.set_cookies)
         self.last_error = f"POST {self.login_path} on {app} -> {x.status} {short(x.text, 100)}"
@@ -62,8 +71,8 @@ class Sessions:
 
 def run(cfg: Config, h: Http, r: Run, ses: Sessions):
     F, Gw = cfg.factory_url.rstrip("/"), (cfg.gateway_url or "").rstrip("/")
-    users_path = cfg.secret("ACC_USERS_PATH", "/api/admin/users")
-    audit_path = cfg.secret("ACC_AUDIT_PATH", "/api/factory/audit")
+    users_path = cfg.secret("ACC_USERS_PATH", "/api/access/users")
+    audit_path = cfg.secret("ACC_AUDIT_PATH", "/api/access/audit")
 
     def unauth(base, path):
         def f():
@@ -110,7 +119,7 @@ def run(cfg: Config, h: Http, r: Run, ses: Sessions):
         if cfg.dev_auth:
             return SKIP, "dev-auth test instance"
         user, _ = ses.creds("admin")
-        x = h.request("POST", F + ses.login_path, data={"username": user or "admin", "password": "cs-acc-wrong-" + cfg.stamp}, timeout=15)
+        x = ses.login_raw(F, user or "admin@example.invalid", "cs-acc-wrong-" + cfg.stamp)
         if x.status == 404:
             return WAITING, f"no local sign-in at {ses.login_path} yet (cs/users)"
         if x.status in (400, 401, 403) and not x.set_cookies:
@@ -158,14 +167,15 @@ def run(cfg: Config, h: Http, r: Run, ses: Sessions):
         lst = h.get(F + users_path, headers=hd, timeout=15)
         if lst.status == 404:
             return WAITING, f"no user management at {users_path} yet (cs/users)"
-        name = f"cs-acc-user-{cfg.stamp}"
+        name = f"cs-acc-user-{cfg.stamp}@example.com"
         mk = h.request("POST", F + users_path, headers=hd, timeout=15,
-                       data={"username": name, "email": f"{name}@example.invalid", "displayName": "Acceptance test user",
-                             "roles": ["migration"], "password": "Cs-Acc-" + cfg.stamp + "-x9!"})
+                       data={"provider": "local", "email": name, "name": "Acceptance test user",
+                             "roles": ["migration"], "password": "Cs-Acc-" + cfg.stamp + "-x9!long"})
         if mk.status not in (200, 201):
             return FAIL, f"create user -> {mk.status} {short(mk.text, 120)}"
         created["name"] = name
-        uid = (mk.json() or {}).get("id") or name
+        mj = mk.json() or {}
+        uid = (mj.get("user") or {}).get("id") or mj.get("id") or name
         again = h.get(F + users_path, headers=hd, timeout=15)
         listed = name in again.text
         rm = h.request("DELETE", F + users_path + "/" + urllib.parse.quote(str(uid)), headers=hd, timeout=15)

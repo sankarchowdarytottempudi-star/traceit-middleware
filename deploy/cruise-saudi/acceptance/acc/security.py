@@ -44,7 +44,7 @@ def run(cfg: Config, h: Http, r: Run, ses):
     def factory_default():
         if cfg.dev_auth:
             return SKIP, "dev-auth test instance"
-        x = h.request("POST", F + ses.login_path, data={"username": "admin", "password": "admin"}, timeout=15)
+        x = ses.login_raw(F, "admin", "admin")
         if x.status == 404:
             return WAITING, f"no local sign-in at {ses.login_path} yet (cs/users)"
         return (PASS if x.status in (400, 401, 403) and not x.set_cookies else FAIL), f"admin/admin -> {x.status}"
@@ -152,7 +152,7 @@ def run(cfg: Config, h: Http, r: Run, ses):
         user, pw = ses.creds("admin")
         if not user:
             return WAITING, "no admin credentials to sign in"
-        x = h.request("POST", F + ses.login_path, data={"username": user, "password": pw}, timeout=15)
+        x = ses.login_raw(F, user, pw)
         if not x.set_cookies:
             return WAITING, f"sign-in -> {x.status}, no cookie"
         bad = []

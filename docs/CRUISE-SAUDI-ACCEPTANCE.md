@@ -57,7 +57,7 @@ The exit code is the number of FAIL items.
 An env file, `chmod 600`, never committed. The harness never prints a value from it.
 
 ```bash
-ACC_ADMIN_USER=...            # local admin (break-glass) account of the consoles
+ACC_ADMIN_USER=...            # local (break-glass) account e-mail with all three roles: admin, migration, gateway
 ACC_ADMIN_PASSWORD=...
 ACC_MIGRATION_USER=...        # an account with the Migration role only
 ACC_MIGRATION_PASSWORD=...
@@ -68,7 +68,8 @@ ACC_APIM_PASSWORD=...         #   the isolated install: read from namespace cs-a
 # optional
 ACC_TARGET_KUBECONFIG=/root/.kube/target   # read-only view of the remote target cluster (M7)
 ACC_LOGIN_PATH=/api/auth/local             # local sign-in route of the consoles
-ACC_USERS_PATH=/api/admin/users            # user management route
+ACC_USERS_PATH=/api/access/users           # user management route
+ACC_AUDIT_PATH=/api/access/audit           # audit route
 ACC_BACKEND_BIND=10.42.0.1                 # where the stand-in backend listens (must be reachable from the pods)
 ```
 

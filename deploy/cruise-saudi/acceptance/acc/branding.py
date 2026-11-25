@@ -31,13 +31,16 @@ GATEWAY_ROUTES = ["", "apis", "rate-limits", "gateways", "analytics", "gateway-a
                   "policies", "consumers", "applications", "blocking", "audit", "no-such-page-cs-acc"]
 
 
-def _fmt(hits: List[Dict[str, str]], n: int = 6) -> str:
-    by: Dict[str, int] = {}
-    for x in hits:
-        by[x["where"]] = by.get(x["where"], 0) + 1
+def _fmt(hits: List[Dict[str, str]], n: int = 6, counts: Optional[Dict[str, int]] = None) -> str:
+    by: Dict[str, int] = dict(counts or {})
+    if not by:
+        for x in hits:
+            by[x["where"]] = by.get(x["where"], 0) + 1
+    # visible text first: that is what users read; HTML/asset hits follow
+    hits = sorted(hits, key=lambda x: (0 if "visible text" in x["where"] else 1 if "title" in x["where"] else 2))
     top = "; ".join(f"{k}: {v}" for k, v in sorted(by.items(), key=lambda kv: -kv[1])[:n])
     ex = " | ".join(f"[{x['match']}] {x.get('url', '')[-60:]} ...{x['context']}..." for x in hits[:3])
-    return f"{len(hits)} hits ({top}). e.g. {ex}"
+    return f"{sum(by.values())} hits ({top}). e.g. {ex}"
 
 
 def _texty(ct: str) -> bool:
@@ -82,8 +85,10 @@ def run(cfg: Config, h: Http, r: Run, ses, extra_migrations: Optional[List[str]]
             ok = [p for p in pages if not p.get("error")]
             signed_in = "" if ses.headers(app, "admin") is not None else " (signed-out pages only: no session for this app)"
             base = f"{len(ok)}/{len(pages)} pages, {sum(p.get('tabs', 0) for p in pages)} tabs{signed_in}"
+            counts = {k: v for k, v in (crawl.get("counts") or {}).items() if k.startswith(app + ":") and "response" not in k}
             if hits:
-                return FAIL, f"{base}; {_fmt(hits)}"
+                vis = sum(v for k, v in counts.items() if "visible text" in k or "title" in k)
+                return FAIL, f"{base}; {vis} in visible text/titles; {_fmt(hits, counts=counts)}"
             return PASS, f"{base}; no {FORBIDDEN_TEXT}"
         r.check(cid, G, title, f)
 
@@ -197,9 +202,13 @@ def run(cfg: Config, h: Http, r: Run, ses, extra_migrations: Optional[List[str]]
             return SKIP, "docker not available"
         found, checked = [], []
         script = ("for d in /app /srv /usr/share/nginx/html /opt/weave; do [ -d $d ] && "
-                  "grep -rIilE 'traceit|tottempudi' $d --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null; done | head -40")
+                  "grep -rIilE 'traceit|tottempudi' $d --exclude-dir=node_modules --exclude-dir=.git 2>/dev/null; done | head -40; "
+                  "echo CS_ACC_SCAN_DONE")
         for img in imgs:
-            rc, out = sh(shlex.split(cfg.secret("ACC_HEAVY_PREFIX", "")) + ["docker", "run", "--rm", "--network", "none", "--entrypoint", "sh", img, "-c", script], 300)
+            # long timeout: the command may first wait for the shared heavy-build lock
+            rc, out = sh(shlex.split(cfg.secret("ACC_HEAVY_PREFIX", "")) + ["docker", "run", "--rm", "--network", "none", "--entrypoint", "sh", img, "-c", script], 5400)
+            if "CS_ACC_SCAN_DONE" not in out:
+                return FAIL, f"scan of {img} did not finish (exit {rc}): {short(out, 160)}"
             checked.append(img)
             files = [l for l in out.splitlines() if l.startswith("/")]
             if files:

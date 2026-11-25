@@ -23,10 +23,16 @@ const pages = [];
 const downloads = new Set();
 const blocked = [];
 
+const counts = {};          // every hit is counted ...
+const perKey = new Map();   // ... but only 3 samples per (where, url) are kept
 function scan(text, where, url) {
   if (!text) return;
   for (const m of text.matchAll(FORBIDDEN)) {
-    if (hits.length > 600) return;
+    counts[where] = (counts[where] || 0) + 1;
+    const key = `${where} ${url}`;
+    const n = perKey.get(key) || 0;
+    if (n >= 3 || hits.length >= 2000) continue;
+    perKey.set(key, n + 1);
     const a = Math.max(0, m.index - 40), b = Math.min(text.length, m.index + m[0].length + 40);
     hits.push({ where, url, match: m[0], context: text.slice(a, b).replace(/\s+/g, " ") });
   }
@@ -126,5 +132,5 @@ for (const app of cfg.apps) {
   await ctx.close();
 }
 await browser.close();
-writeFileSync(cfg.out, JSON.stringify({ hits, pages, downloads: [...downloads], responsesScanned: seenResp.size, blocked }, null, 1));
-console.log(`crawl: ${pages.length} pages, ${seenResp.size} responses scanned, ${hits.length} hits, ${blocked.length} non-GET requests blocked`);
+writeFileSync(cfg.out, JSON.stringify({ hits, counts, pages, downloads: [...downloads], responsesScanned: seenResp.size, blocked }, null, 1));
+console.log(`crawl: ${pages.length} pages, ${seenResp.size} responses scanned, ${Object.values(counts).reduce((x, y) => x + y, 0)} hits, ${blocked.length} non-GET requests blocked`);

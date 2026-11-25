@@ -64,5 +64,6 @@ export function readAuthSettings(env: NodeJS.ProcessEnv, publicBaseUrl: string):
 /** Name on the sign-in page: WEAVE_PRODUCT_NAME, else from the edition (WEAVE_EDITION / VITE_WEAVE_EDITION). */
 export function productName(env: NodeJS.ProcessEnv): string {
   if (env.WEAVE_PRODUCT_NAME) return env.WEAVE_PRODUCT_NAME;
-  return (env.WEAVE_EDITION || env.VITE_WEAVE_EDITION) === "cruise-saudi" ? "Cruise Saudi Weave" : "TraceIT Weave";
+  const edition = (env.WEAVE_EDITION || env.VITE_WEAVE_EDITION || "").trim().toLowerCase();
+  return edition === "cruise-saudi" ? "Cruise Saudi Weave" : "TraceIT Weave";
 }

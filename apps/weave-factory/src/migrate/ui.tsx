@@ -2,7 +2,7 @@
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Link, type LinkProps } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ClipboardPaste, FileText, GitBranch, Info, Loader2, Search, UploadCloud, X, XCircle } from "lucide-react";
-import { MODULES } from "../brand.tsx";
+import { MODULES, pageTitle } from "../brand.tsx";
 import { txt } from "../lib/text.ts";
 import { MULE_TO_WSO2_ONLY, OFFERS_REQUIREMENTS } from "../lib/edition.ts";
 import { LAYER_LABEL, PARTIAL_SOURCE_WORD, healthLabel, healthTone, layerKey, partialOf, type Tone } from "../lib/migrate.ts";
@@ -10,7 +10,7 @@ import { LAYER_LABEL, PARTIAL_SOURCE_WORD, healthLabel, healthTone, layerKey, pa
 const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
 
 export function useTitle(title: string) {
-  useEffect(() => { document.title = `${title} · ${MODULES.factory}`; }, [title]);
+  useEffect(() => { document.title = pageTitle(title, MODULES.factory); }, [title]);
 }
 
 export function Head({ area, areaTo, title, subtitle, actions, back, mono }: { area: string; areaTo?: string; title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; back?: { to: string; label: string }; mono?: boolean }) {

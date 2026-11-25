@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from "react";
-import { MODULES } from "../brand.tsx";
+import { MODULES, pageTitle } from "../brand.tsx";
 export function PageHeader({ area, title, subtitle, actions }: { area: string; title: string; subtitle?: ReactNode; actions?: ReactNode }) {
-  useEffect(() => { document.title = `${area} · ${MODULES.gateway}`; }, [area]);
+  useEffect(() => { document.title = pageTitle(area, MODULES.gateway); }, [area]);
   return (
     <header className="mf-in" style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 720, minWidth: 0 }}>

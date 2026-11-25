@@ -21,6 +21,8 @@ spec:
       # root inside the pod so it can read the root-owned 0400 key and write the hostPath data dir;
       # the pod already holds host SSH access, so the trust boundary is the admin token.
       securityContext: { runAsUser: 0 }
+      hostAliases:
+        - { ip: "@@APIM_CLUSTER_IP@@", hostnames: ["@@APIM_DOMAIN@@"] }
       containers:
         - name: app
           image: @@IMG_MT@@
@@ -35,12 +37,22 @@ spec:
             - { name: MT_DATA_DIR, value: "/data" }
             - { name: MT_VERSIONS_HOME, value: "@@DATA@@/versions" }        # also pinned on the host by the SSH forced command
             - { name: SSL_CERT_FILE, value: "/etc/weave/ca/ca-bundle.pem" }   # OS bundle + internal CA + API Manager
+            # publish each deployed API on API Manager, secured (Mule 4 -> WSO2 edition)
+            - { name: MT_EDITION, value: "cruise-saudi" }
+            - { name: MT_PUBLISH_ON_DEPLOY, value: "1" }
+            - { name: APIM_BASE_URL, value: "https://@@APIM_DOMAIN@@:9443" }        # = wso2am ClusterIP (hostAliases below)
+            - { name: APIM_CA_CERT_PATH, value: "/etc/weave/ca/ca-bundle.pem" }    # holds API Manager's own certificate
+            - { name: APIM_GATEWAY_URL, value: "@@GATEWAY_PUBLIC_URL@@" }
+            - name: APIM_DCR_USERNAME
+              valueFrom: { secretKeyRef: { name: mt-apim, key: username } }
+            - { name: APIM_DCR_PASSWORD_FILE, value: "/secrets-apim/password" }
             - name: MT_ADMIN_TOKEN
               valueFrom: { secretKeyRef: { name: mt-admin, key: token } }
           volumeMounts:
             - { name: data, mountPath: /data }
             - { name: ssh, mountPath: /secrets, readOnly: true }
             - { name: ca, mountPath: /etc/weave/ca, readOnly: true }
+            - { name: apim, mountPath: /secrets-apim, readOnly: true }
           readinessProbe:
             httpGet: { path: /api/health, port: http }
             periodSeconds: 10
@@ -60,6 +72,8 @@ spec:
           secret: { secretName: mt-ssh, defaultMode: 0400 }
         - name: ca
           configMap: { name: weave-ca-trust }
+        - name: apim
+          secret: { secretName: mt-apim, defaultMode: 0400, items: [ { key: password, path: password } ] }
 ---
 apiVersion: v1
 kind: Service

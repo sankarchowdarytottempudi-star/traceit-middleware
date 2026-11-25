@@ -44,12 +44,6 @@ spec:
     spec:
       enableServiceLinks: false
       terminationGracePeriodSeconds: 120
-      # the public API Manager name must resolve inside the pod too (the internal DNS name may not
-      # resolve from the pod network): to this pod itself when the public port is 9443 (test profile),
-      # else to this server, whose proxy serves it on 443. The key manager's own calls (JWKS, token,
-      # revoke) do not depend on it: they use https://localhost:9443 (templates/apim-deployment.toml).
-      hostAliases:
-        - { ip: "@@APIM_ALIAS_IP@@", hostnames: ["@@APIM_DOMAIN@@"] }
       initContainers:
         - name: prepare
           image: @@APIM_IMAGE@@

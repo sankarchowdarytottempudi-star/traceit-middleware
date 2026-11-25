@@ -79,6 +79,9 @@
 	}
 	# API Manager portals (Publisher, DevPortal, Admin, Carbon) on port 9443 of the APIM pod
 	reverse_proxy https://127.0.0.1:@@APIM_MGMT_NODEPORT@@ {
+		# keep the public name: Caddy sends the upstream address as Host to an HTTPS upstream, and API
+		# Manager builds its sign-in redirects from it (https://127.0.0.1:<port>/oauth2/authorize otherwise)
+		header_up Host {hostport}
 		transport http {
 			tls_server_name localhost
 			tls_trust_pool file @@ETC@@/apim-ca.pem

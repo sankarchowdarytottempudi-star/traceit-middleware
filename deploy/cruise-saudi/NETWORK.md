@@ -60,9 +60,9 @@ by the server, the Weave services and the migration tool).
 * Never exposed: 6443 (k3s API), 8787-8790 (Weave internals, 127.0.0.1 only), 8099 (local model).
 
 The migration tool connects from the pod network (10.42.0.0/16) to this server's own port 22: allow
-that on any host firewall. API Manager may also call its own public name from the pod (10.42.0.0/16 ->
-this server's 443); its key manager uses `https://localhost:9443` inside the pod, so token validation
-does not depend on the pod resolving `apim.aroya.com`.
+that on any host firewall. API Manager's key manager validates tokens against its own JWKS at
+`https://localhost:9443` inside the pod, so gateway calls do not depend on the pod resolving
+`apim.aroya.com` (the internal DNS name usually does not resolve from the pod network).
 
 ### Security headers (reverse proxy)
 

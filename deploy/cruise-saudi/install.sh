@@ -412,6 +412,10 @@ kubectl -n "$NS_APIM" create secret generic apim-db --from-literal=superuser-pas
   --from-literal=apim-password="$APIM_DB_PASSWORD" --from-literal=keystore-password="$APIM_KEYSTORE_PASSWORD" \
   --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
 kubectl -n "$NS_WEAVE" create secret generic mt-admin --from-literal=token="$MT_ADMIN_TOKEN" --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
+# the migration tool publishes each deployed API on API Manager (MT_PUBLISH_ON_DEPLOY) with the API Manager
+# administrator account: Secret mt-apim, password mounted as a file (APIM_DCR_PASSWORD_FILE), never in env/logs
+kubectl -n "$NS_WEAVE" create secret generic mt-apim --from-literal=username="$APIM_ADMIN_USER" --from-literal=password="$APIM_ADMIN_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
 mkdir -p "$ETC/mt-ssh"; chmod 700 "$ETC/mt-ssh"
 [ -f "$ETC/mt-ssh/id_ed25519" ] || run ssh-keygen -q -t ed25519 -N "" -f "$ETC/mt-ssh/id_ed25519" -C "weave-migration-tool:${PREFIX%-}"
 # The migration tool runs its helpers (versions.py, hostgit.py, bal/docker/kubectl ...) on this host
@@ -485,7 +489,6 @@ APIM_STARTUP_FAILURES=$(( APIM_STARTUP_MINUTES * 6 - 3 ))
 kubectl -n "$NS_APIM" create secret generic apim-conf --from-file=deployment.toml="$STATE/deployment.toml.tmp" --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
 APIM_CONF_HASH=$( (cat "$STATE/deployment.toml.tmp" "$CS_DIR/templates/apim-log4j2.properties") | sha256sum | cut -c1-16)
 rm -f "$STATE/deployment.toml.tmp"
-APIM_ALIAS_IP="$HOST_IP"; [ "$HTTPS_PORT" = 9443 ] && APIM_ALIAS_IP=127.0.0.1
 render "$CS_DIR/manifests/apim.yaml" "$STATE/apim.yaml"
 if ! kubectl -n "$NS_APIM" get deploy wso2am >/dev/null 2>&1 || ! kubectl -n "$NS_APIM" get deploy wso2am -o yaml | grep -q "$APIM_CONF_HASH"; then
   AVAIL_GB=$(awk '/MemAvailable/ {print int($2/1048576)}' /proc/meminfo)
@@ -564,11 +567,15 @@ ok "Kubernetes services in $NS_APIM/$NS_WEAVE: ClusterIP only; API Manager :$API
 step "Migration tool (control plane)"
 mkdir -p "$DATA/migration-tool"
 MT_SSH_TARGET="root@$HOST_IP"
+# in-cluster address of API Manager for the tool's publishing step: the public APIM name (covered by API
+# Manager's certificate) pinned to the wso2am ClusterIP inside the tool pod (hostAliases); no DNS needed
+APIM_CLUSTER_IP=$(kubectl -n "$NS_APIM" get svc wso2am -o jsonpath='{.spec.clusterIP}')
+[ -n "$APIM_CLUSTER_IP" ] || die "no ClusterIP for service $NS_APIM/wso2am"
 render "$CS_DIR/manifests/migration-tool.yaml" "$STATE/migration-tool.yaml"
 kubectl apply -f "$STATE/migration-tool.yaml" >>"$LOG_FILE" || die "applying migration tool manifests failed"
 kubectl -n "$NS_WEAVE" rollout status deploy/migration-tool --timeout=240s >>"$LOG_FILE" 2>&1 || die "migration tool did not become ready (kubectl -n $NS_WEAVE logs deploy/migration-tool)"
 c=$(wait_http "http://127.0.0.1:$MT_NODEPORT/api/health" 200 20) || die "migration tool /api/health answered $c"
-ok "migration tool ready on NodePort $MT_NODEPORT (drives this host as $MT_SSH_TARGET, workspace $PLATFORM_DIR)"
+ok "migration tool ready on 127.0.0.1:$MT_NODEPORT (drives this host as $MT_SSH_TARGET, workspace $PLATFORM_DIR)"
 # what the migration tool's helpers see when they run on this host (through the forced command)
 MTPOD=$(kubectl -n "$NS_WEAVE" get pod -l app.kubernetes.io/name=migration-tool -o jsonpath='{.items[0].metadata.name}')
 seen=$(kubectl -n "$NS_WEAVE" exec "$MTPOD" -- ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i /secrets/id_ed25519 "$MT_SSH_TARGET" \
@@ -578,6 +585,19 @@ echo probe >"$STATE/mt-scp-probe"
 kubectl -n "$NS_WEAVE" exec "$MTPOD" -- sh -c "echo probe > /tmp/p && scp -q -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i /secrets/id_ed25519 /tmp/p $MT_SSH_TARGET:$STATE/mt-scp-probe.copy" >>"$LOG_FILE" 2>&1 \
   && cmp -s "$STATE/mt-scp-probe" "$STATE/mt-scp-probe.copy" || die "migration tool cannot copy files to this host over SSH (scp)"
 rm -f "$STATE/mt-scp-probe" "$STATE/mt-scp-probe.copy"
+# the tool's API Manager account works from the pod (publishing step): TLS verified with APIM_CA_CERT_PATH,
+# sign-in proven by registering and deleting a throw-away client; the password never leaves the pod
+mtapim=$(kubectl -n "$NS_WEAVE" exec "$MTPOD" -- python3 -c '
+import base64, json, os, ssl, urllib.request
+b = os.environ["APIM_BASE_URL"]; u = os.environ["APIM_DCR_USERNAME"]; p = open(os.environ["APIM_DCR_PASSWORD_FILE"]).read().strip()
+c = ssl.create_default_context(cafile=os.environ["APIM_CA_CERT_PATH"]); h = {"Authorization": "Basic " + base64.b64encode((u + ":" + p).encode()).decode(), "Content-Type": "application/json"}
+v = urllib.request.urlopen(b + "/services/Version", context=c, timeout=20).status
+r = urllib.request.urlopen(urllib.request.Request(b + "/client-registration/v0.17/register", json.dumps({"clientName": "weave-mt-install-check", "owner": u, "grantType": "client_credentials", "saasApp": True}).encode(), h), context=c, timeout=30)
+cid = json.load(r)["clientId"]
+urllib.request.urlopen(urllib.request.Request(b + "/client-registration/v0.17/register/" + cid, headers=h, method="DELETE"), context=c, timeout=30)
+print("ok", v, r.status)' 2>>"$LOG_FILE" | tail -1)
+[[ "$mtapim" == "ok 200 20"* ]] || die "migration tool pod cannot sign in to API Manager at https://$APIM_DOMAIN:9443 (-> $APIM_CLUSTER_IP; see $LOG_FILE)"
+ok "migration tool publishes to API Manager: https://$APIM_DOMAIN:9443 (ClusterIP $APIM_CLUSTER_IP), certificate verified, account '$APIM_ADMIN_USER' signs in"
 ok "migration tool SSH to the host works (commands + scp); version store $DATA/versions, git transports: ${seen#*|}"
 
 # =================================================================================== weave
@@ -837,7 +857,7 @@ chk "API Manager Publisher  $APIM_URL/publisher/" "$APIM_URL/publisher/" "200|30
 chk "API Manager DevPortal  $APIM_URL/devportal/" "$APIM_URL/devportal/" "200|302"
 chk "Gateway health         127.0.0.1:$APIM_MGMT_NODEPORT gateway startup check" "https://localhost:$APIM_MGMT_NODEPORT/api/am/gateway/v2/server-startup-healthcheck" 200 --cacert "$ETC/apim-ca.pem"
 [ "$ENABLE_GW_PATH" = yes ] && chk "API gateway via proxy  $WEAVE_URL/gw/ (no API = 404)" "$WEAVE_URL/gw/no-such-api/1.0" "404|401|403"
-chk "API gateway NodePort   :$GATEWAY_HTTPS_NODEPORT (no API = 404)" "https://localhost:$GATEWAY_HTTPS_NODEPORT/no-such-api/1.0" "404|401|403" --cacert "$ETC/apim-ca.pem"
+chk "API gateway port      :$GATEWAY_HTTPS_NODEPORT (no API = 404)" "https://localhost:$GATEWAY_HTTPS_NODEPORT/no-such-api/1.0" "404|401|403" --cacert "$ETC/apim-ca.pem"
 chk "Migration tool health  :$MT_NODEPORT/api/health" "http://127.0.0.1:$MT_NODEPORT/api/health" 200
 # exposure: no NodePort/LoadBalancer services; management and migration tool not reachable from outside
 np="$(kubectl get svc -n "$NS_APIM" -o jsonpath='{range .items[*]}{.metadata.name}={.spec.type} {end}' 2>/dev/null; kubectl get svc -n "$NS_WEAVE" -o jsonpath='{range .items[*]}{.metadata.name}={.spec.type} {end}' 2>/dev/null)"
@@ -898,7 +918,7 @@ cat <<EOF
    Weave (Gateway console)  $WEAVE_URL/
    Weave Factory            $WEAVE_URL/factory/
    API Manager portals      $APIM_URL/publisher/   $APIM_URL/devportal/   $APIM_URL/admin/
-   API gateway              $GATEWAY_PUBLIC_URL   (NodePort $GATEWAY_HTTPS_NODEPORT for the load balancer)
+   API gateway              $GATEWAY_PUBLIC_URL   ($([ -n "$LB_SOURCE_CIDRS" ] && echo "port $GATEWAY_HTTPS_NODEPORT for the load balancer $LB_SOURCE_CIDRS" || echo "gateway port on 127.0.0.1 only"))
 
  Weave sign-in, first admin (Weave account):  $WEAVE_ADMIN_EMAIL
  API Manager portals: user '$APIM_ADMIN_USER', password: sudo grep ^APIM_ADMIN_PASSWORD= $SECRETS | cut -d= -f2

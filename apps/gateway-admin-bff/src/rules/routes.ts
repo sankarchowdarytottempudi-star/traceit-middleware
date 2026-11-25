@@ -3,16 +3,19 @@
 // previewed in plain words, applied as API update -> new revision -> deploy, and written to the audit.
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "../config.js";
 import { apimClient, ApimError, type ApimClient } from "./apim.js";
+import { api } from "../wso2.js";
 import { createAudit, type Audit } from "./audit.js";
+import { probeTls, SERVER_CHANGES } from "./settings.js";
 import {
   ADDRESS_POLICY, addressPolicySpec, addressPolicySynapse, deploymentWords, planAccess, planTraffic, policyInfo, policyWords,
-  readAddresses, readCors, readSecurity, readTraffic, revisionToPrune, MAX_REVISIONS, SECURITY_WORDS, type PolicyBook, type Plan,
+  readAddresses, readCors, readSecurity, readTraffic, readPolicies, planPolicies, type CommonIds, revisionToPrune, MAX_REVISIONS, SECURITY_WORDS, type PolicyBook, type Plan,
 } from "./model.js";
 import {
-  bad, blockBody, blockWords, checkAccess, checkApp, checkId, checkTraffic, KEY_TYPES, newPolicyBody, SubscribeInput, type Security,
+  BUILT_IN, isBuiltIn, checkPolicies, bad, blockBody, blockWords, checkAccess, checkApp, checkId, checkTraffic, KEY_TYPES, newPolicyBody, SubscribeInput, type Security,
 } from "./validate.js";
 
 type Who = { user: string; c: ApimClient; via: "user" | "service" };
@@ -133,6 +136,8 @@ export function registerRuleRoutes(app: FastifyInstance, cfg: Config, opts: { au
       stage, stageWord: STAGE_WORD, via: x.via, api: apiSummary(api),
       traffic: readTraffic(api),
       policies: b,
+      gatewayPolicies: readPolicies(api),
+      lifecycle: { state: api.lifeCycleStatus, version: api.version, isDefaultVersion: !!api.isDefaultVersion },
       access: { security: readSecurity(api), securityWords: SECURITY_WORDS[readSecurity(api)], cors: readCors(api), ipAllow: addr.allow, ipDeny: addr.deny, clientIpHeader: ipHeader },
       deployments: deps.map((d: any) => ({ name: d.name, vhost: d.vhost, revisionUuid: d.revisionUuid, deployedTime: d.deployedTime ?? null, status: d.status })),
       environments: envs.map((e: any) => ({ name: e.name, displayName: e.displayName ?? e.name, vhost: e.vhosts?.[0]?.host ?? "" })),
@@ -171,6 +176,46 @@ export function registerRuleRoutes(app: FastifyInstance, cfg: Config, opts: { au
       plan.body = fresh.body;
     } : undefined;
     return previewOrApply(req, x, api, plan, "access", input.environments, extra);
+  });
+
+  // Gateway policies of one API (Policies tab).
+  app.post("/api/rules/apis/:id/policies", async (req) => {
+    const id = checkId((req.params as any).id, "API id");
+    const x = await who(req);
+    const api = await x.c.api(id);
+    const v = checkPolicies(req.body);
+    const common = await x.c.list("/api/am/publisher/v4/operation-policies?limit=200").catch(() => []);
+    const idOf = (n: string, ver: string) => common.find((p: any) => p.name === n && p.version === ver)?.id;
+    const ids = { addHeader: idOf("addHeader", "v2"), removeHeader: idOf("removeHeader", "v1"), jsonValidator: idOf("jsonValidator", "v1"), xmlValidator: idOf("xmlValidator", "v1") };
+    if ((v.addHeaders.length && !ids.addHeader) || (v.removeHeaders.length && !ids.removeHeader) || (v.jsonThreat && !ids.jsonValidator) || (v.xmlThreat && !ids.xmlValidator))
+      bad("This API Manager does not offer the needed built-in policy (addHeader v2, removeHeader v1, jsonValidator v1 or xmlValidator v1).");
+    return previewOrApply(req, x, api, planPolicies(api, v, ids), "gateway policies", undefined);
+  });
+
+  // Lifecycle: publish / deprecate / retire / block (typed confirmation for anything that stops callers).
+  const LC: Record<string, { from: string[]; words: string }> = {
+    Publish: { from: ["CREATED", "PROTOTYPED", "BLOCKED"], words: "published: visible and callable" },
+    Deprecate: { from: ["PUBLISHED"], words: "deprecated: existing subscribers keep working, no new subscriptions" },
+    Block: { from: ["PUBLISHED", "DEPRECATED"], words: "blocked: every call is refused until it is published again" },
+    Retire: { from: ["DEPRECATED"], words: "retired: removed from the gateway and the developer portal" },
+  };
+  app.post("/api/rules/apis/:id/lifecycle", async (req) => {
+    const id = checkId((req.params as any).id, "API id");
+    const action = String((req.body as any)?.action ?? "");
+    if (!LC[action]) bad("Action must be Publish, Deprecate, Block or Retire.", "action");
+    const preview = String((req.query as any)?.preview ?? "") === "1";
+    const x = await who(req);
+    const api = await x.c.api(id);
+    if (!LC[action].from.includes(api.lifeCycleStatus)) bad(`${api.name} is ${String(api.lifeCycleStatus).toLowerCase()}; it cannot be ${action.toLowerCase()}d from there.`, "action");
+    const stops = action === "Block" || action === "Retire";
+    const plan = { api: apiSummary(api), changes: [`State: ${String(api.lifeCycleStatus).toLowerCase()} → ${LC[action].words}.`], noChange: false, environments: [], applied: false,
+      sentence: stops ? `This stops every caller of ${api.name} on the live gateway in ${STAGE_WORD}.` : `This changes how ${api.name} is offered to consumers in ${STAGE_WORD}.` };
+    if (preview) return plan;
+    if (stops && String((req.body as any)?.confirm ?? "") !== api.name) bad(`Type ${api.name} to confirm.`, "confirm");
+    const base = { user: x.user, action: `lifecycle ${action.toLowerCase()}`, apiId: id, apiName: api.name, before: api.lifeCycleStatus, after: LC[action].words };
+    try { await x.c.lifecycle(id, action); await audit.write({ ...base, outcome: "ok" }); }
+    catch (e) { await audit.write({ ...base, outcome: "failed", detail: (e as Error).message }); throw e; }
+    return { ...plan, applied: true };
   });
 
   app.get("/api/rules/apis/:id/consumers", async (req) => {
@@ -282,16 +327,16 @@ export function registerRuleRoutes(app: FastifyInstance, cfg: Config, opts: { au
 
   // Which APIs and applications use each policy (detail of every API; cached briefly).
   const detailCache = new Map<string, { at: number; data: any[] }>();
-  async function allDetails(x: Who): Promise<any[]> {
+  async function allDetails(x: Who, fresh = false): Promise<any[]> {
     const k = x.via;
     const hit = detailCache.get(k);
-    if (hit && now() - hit.at < 30_000) return hit.data;
+    if (!fresh && hit && now() - hit.at < 30_000) return hit.data;
     const list = await x.c.apis();
     const data: any[] = [];
     for (let i = 0; i < list.length; i += 6) {
       const part = await Promise.all(list.slice(i, i + 6).map(async (a: any) => {
-        const [d, deps] = await Promise.all([x.c.api(a.id).catch(() => null), x.c.deployments(a.id).catch(() => [])]);
-        return d ? { ...d, _deployments: deps } : null;
+        const [d, deps, subs] = await Promise.all([x.c.api(a.id).catch(() => null), x.c.deployments(a.id).catch(() => []), x.c.subscriptions(a.id).catch(() => [])]);
+        return d ? { ...d, _deployments: deps, _subscriptions: subs } : null;
       }));
       data.push(...part.filter(Boolean));
     }
@@ -299,21 +344,201 @@ export function registerRuleRoutes(app: FastifyInstance, cfg: Config, opts: { au
     return data;
   }
 
-  app.get("/api/rules/policies/usage", async (req) => {
-    const x = await who(req);
-    const [details, apps] = await Promise.all([allDetails(x), x.c.allApplications().catch(() => x.c.applications().catch(() => []))]);
-    const use: Record<string, { apis: { id: string; name: string; how: string }[]; applications: string[] }> = {};
-    const add = (name: string | null | undefined, entry: { id: string; name: string; how: string }) => {
-      if (!name) return;
-      (use[name] ??= { apis: [], applications: [] }).apis.push(entry);
-    };
+  async function usageOf(x: Who, fresh = false) {
+    const [details, apps] = await Promise.all([allDetails(x, fresh), x.c.allApplications().catch(() => x.c.applications().catch(() => []))]);
+    const use: Record<string, { apis: { id: string; name: string; how: string }[]; applications: string[]; subscriptions: number }> = {};
+    const slot = (name: string) => (use[name] ??= { apis: [], applications: [], subscriptions: 0 });
+    const add = (name: string | null | undefined, entry: { id: string; name: string; how: string }) => { if (name) slot(name).apis.push(entry); };
     for (const a of details) {
       for (const t of a.policies ?? []) add(t, { id: a.id, name: a.name, how: "plan consumers can pick" });
       if (a.apiThrottlingPolicy) add(a.apiThrottlingPolicy, { id: a.id, name: a.name, how: "limit for the whole API" });
       if (!a.apiThrottlingPolicy) for (const o of a.operations ?? []) if (o.throttlingPolicy && o.throttlingPolicy !== "Unlimited") add(o.throttlingPolicy, { id: a.id, name: a.name, how: `limit on ${o.verb} ${o.target}` });
+      for (const sb of a._subscriptions ?? []) if (sb.throttlingPolicy) slot(sb.throttlingPolicy).subscriptions++;
     }
-    for (const ap of apps) { const p = ap.throttlingPolicy ?? ap.throttlingTier; if (p) (use[p] ??= { apis: [], applications: [] }).applications.push(ap.name); }
-    return { usage: use, apis: details.map((a) => ({ id: a.id, name: a.name })) };
+    for (const ap of apps) { const p = ap.throttlingPolicy ?? ap.throttlingTier; if (p) slot(p).applications.push(ap.name); }
+    return { use, details };
+  }
+  const inUse = (u: { apis: unknown[]; applications: unknown[]; subscriptions: number } | undefined) => !!u && (u.apis.length > 0 || u.applications.length > 0 || u.subscriptions > 0);
+
+  app.get("/api/rules/policies/usage", async (req) => {
+    const x = await who(req);
+    const { use, details } = await usageOf(x);
+    return { usage: use, apis: details.map((a) => ({ id: a.id, name: a.name })), builtIn: BUILT_IN };
+  });
+
+  // Safe clean-up: only policies that are not built in and not used by any API, subscription or application.
+  app.post("/api/rules/policies/cleanup", async (req) => {
+    const body = (req.body ?? {}) as { kind?: string; names?: unknown };
+    const kind = String(body.kind ?? "");
+    if (!["subscription", "advanced", "application"].includes(kind)) bad("Kind must be subscription, advanced or application.", "kind");
+    const names = Array.isArray(body.names) ? [...new Set(body.names.map(String))] : [];
+    if (!names.length || names.length > 100) bad("Choose between 1 and 100 policies to remove.", "names");
+    const preview = String((req.query as any)?.preview ?? "") === "1";
+    const x = await who(req);
+    const [{ use }, list] = await Promise.all([usageOf(x, true), x.c.policies(kind as any)]);
+    const plan = names.map((n) => {
+      const p = list.find((y: any) => y.policyName === n);
+      if (!p) return { name: n, action: "skip", reason: "does not exist" };
+      if (isBuiltIn(kind, n)) return { name: n, action: "skip", reason: "built into API Manager" };
+      const u = use[n];
+      if (inUse(u)) return { name: n, action: "skip", reason: `in use (${u!.apis.length} API uses, ${u!.subscriptions} subscriptions, ${u!.applications.length} applications)` };
+      return { name: n, action: "delete", reason: "not used anywhere", id: p.policyId as string };
+    });
+    if (preview) return { kind, plan };
+    const results: any[] = [];
+    for (const it of plan) {
+      if (it.action !== "delete") { results.push({ ...it, outcome: "skipped" }); continue; }
+      const base = { user: x.user, action: `clean up ${kind} limit`, target: it.name, before: "unused", after: "deleted" };
+      try { await x.c.deletePolicy(kind, (it as any).id); await audit.write({ ...base, outcome: "ok" }); results.push({ name: it.name, outcome: "deleted" }); }
+      catch (e) { await audit.write({ ...base, outcome: "failed", detail: (e as Error).message }); results.push({ name: it.name, outcome: "failed", reason: (e as Error).message }); }
+    }
+    detailCache.clear();
+    return { kind, results };
+  });
+
+  // ---------------- policy library: named policy sets applied to many APIs ----------------
+  const libFile = join(cfg.DATA_DIR || ".data", "policy-library.json");
+  type PolicySet = { name: string; description: string; security?: Security | null; tiers?: string[] | null; apiPolicy?: string | null; gateway?: Record<string, unknown> | null; createdBy: string; createdAt: string };
+  const readLib = (): PolicySet[] => { try { return JSON.parse(readFileSync(libFile, "utf8")); } catch { return []; } };
+  const writeLib = (l: PolicySet[]) => { mkdirSync(cfg.DATA_DIR || ".data", { recursive: true }); writeFileSync(libFile, JSON.stringify(l, null, 1), { mode: 0o600 }); };
+  app.get("/api/rules/library", async (req) => { await who(req); return { list: readLib() }; });
+  app.post("/api/rules/library", async (req, reply) => {
+    const x = await who(req);
+    const b = (req.body ?? {}) as any;
+    const name = String(b.name ?? "").trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9 _.()-]{1,59}$/.test(name)) bad("Name the set with letters, digits, space, dash, dot or brackets (2 to 60).", "name");
+    const lib = readLib();
+    if (lib.some((p) => p.name.toLowerCase() === name.toLowerCase())) bad(`A set called ${name} already exists.`, "name");
+    if (b.security != null && !["oauth2", "apikey", "both", "basic"].includes(b.security)) bad("A set cannot make APIs open; choose OAuth2, API key, both or basic.", "security");
+    const bk = await book(x.c);
+    if (b.apiPolicy && !bk.advanced.some((p) => p.name === b.apiPolicy)) bad(`Limit "${b.apiPolicy}" does not exist.`, "apiPolicy");
+    if (Array.isArray(b.tiers)) for (const t of b.tiers) if (!bk.subscription.some((p) => p.name === t)) bad(`Plan "${t}" does not exist.`, "tiers");
+    if (b.gateway) checkPolicies({ apiKeyHeader: "ApiKey", caching: { enabled: false, seconds: 300 }, ...b.gateway }); // shape check
+    const set: PolicySet = { name, description: String(b.description ?? "").slice(0, 300), security: b.security ?? null, tiers: Array.isArray(b.tiers) && b.tiers.length ? b.tiers : null,
+      apiPolicy: b.apiPolicy ?? null, gateway: b.gateway ?? null, createdBy: x.user, createdAt: new Date(now()).toISOString() };
+    writeLib([...lib, set]);
+    await audit.write({ user: x.user, action: "create policy set", target: name, after: JSON.stringify({ security: set.security, tiers: set.tiers, apiPolicy: set.apiPolicy, gateway: set.gateway }), outcome: "ok" });
+    reply.code(201);
+    return set;
+  });
+  app.delete("/api/rules/library/:name", async (req) => {
+    const x = await who(req);
+    const name = decodeURIComponent(String((req.params as any).name));
+    const lib = readLib();
+    if (!lib.some((p) => p.name === name)) throw Object.assign(new Error("That set does not exist."), { statusCode: 404 });
+    writeLib(lib.filter((p) => p.name !== name));
+    await audit.write({ user: x.user, action: "delete policy set", target: name, after: "deleted", outcome: "ok" });
+    return { ok: true };
+  });
+  /** One combined plan for an API: security, plans/limit and gateway policies from the set. */
+  function planSet(api: any, set: PolicySet, bk: PolicyBook, ids: CommonIds): Plan {
+    const changes: string[] = [];
+    let body = api;
+    if (set.security) {
+      const p = planAccess(body, { security: set.security, cors: readCors(body), ipAllow: readAddresses(body).allow, ipDeny: readAddresses(body).deny }, null, ipHeader);
+      body = p.body; changes.push(...p.changes);
+    }
+    if (set.tiers || set.apiPolicy !== undefined && set.apiPolicy !== null) {
+      const cur = readTraffic(body);
+      const p = planTraffic(body, { tiers: set.tiers ?? cur.tiers, apiPolicy: set.apiPolicy ?? cur.apiPolicy,
+        operations: set.apiPolicy ? cur.operations.map((o) => ({ ...o, policy: "Unlimited" })) : cur.operations }, bk);
+      body = p.body; changes.push(...p.changes);
+    }
+    if (set.gateway) {
+      const v = checkPolicies({ ...readPolicies(body), ...set.gateway });
+      const p = planPolicies(body, v, ids);
+      body = p.body; changes.push(...p.changes);
+    }
+    return { body, changes };
+  }
+  app.post("/api/rules/library/:name/apply", async (req) => {
+    const x = await who(req);
+    const name = decodeURIComponent(String((req.params as any).name));
+    const set = readLib().find((p) => p.name === name);
+    if (!set) throw Object.assign(new Error("That set does not exist."), { statusCode: 404 });
+    const ids0 = (req.body as any)?.apiIds;
+    if (!Array.isArray(ids0) || !ids0.length || ids0.length > 50) bad("Choose between 1 and 50 APIs.", "apiIds");
+    const apiIds = ids0.map((i: unknown) => checkId(i, "API id"));
+    const preview = String((req.query as any)?.preview ?? "") === "1";
+    const bk = await book(x.c);
+    const common = await x.c.list("/api/am/publisher/v4/operation-policies?limit=200").catch(() => []);
+    const idOf = (n: string, ver: string) => common.find((p: any) => p.name === n && p.version === ver)?.id;
+    const ids: CommonIds = { addHeader: idOf("addHeader", "v2"), removeHeader: idOf("removeHeader", "v1"), jsonValidator: idOf("jsonValidator", "v1"), xmlValidator: idOf("xmlValidator", "v1") };
+    const results: any[] = [];
+    for (const id of apiIds) {
+      try {
+        const api = await x.c.api(id);
+        const plan = planSet(api, set, bk, ids);
+        const r = await previewOrApply({ query: { preview: preview ? "1" : "" } } as any, x, api, plan, `policy set "${set.name}"`, undefined);
+        results.push({ apiId: id, apiName: api.name, ok: true, ...r });
+      } catch (e) { results.push({ apiId: id, ok: false, error: (e as Error).message }); }
+    }
+    return { set: set.name, preview, results };
+  });
+
+  // ---------------- gateway-wide settings (read-only) ----------------
+  app.get("/api/rules/settings", async (req) => {
+    const x = await who(req);
+    const gwUrl = new URL(process.env.GATEWAY_PROBE_URL || "https://127.0.0.1:30243");
+    const amUrl = new URL(cfg.APIM_BASE_URL);
+    const [gateway, manager, certs] = await Promise.all([
+      probeTls(gwUrl.hostname, Number(gwUrl.port || 443), now()).catch(() => null),
+      probeTls(amUrl.hostname, Number(amUrl.port || 443), now()).catch(() => null),
+      x.c.list("/api/am/publisher/v4/endpoint-certificates?limit=100").catch(() => null),
+    ]);
+    const backend = certs ? await Promise.all(certs.map(async (c: any) => {
+      const d = await x.c.call("GET", `/api/am/publisher/v4/endpoint-certificates/${encodeURIComponent(c.alias)}`).catch(() => null);
+      const to = d?.validity?.to ? Number(d.validity.to) || Date.parse(d.validity.to) : NaN;
+      return { alias: c.alias, endpoint: c.endpoint, subject: d?.subject ?? "", validTo: Number.isFinite(to) ? new Date(to).toISOString() : null,
+        daysLeft: Number.isFinite(to) ? Math.floor((to - now()) / 86400000) : null };
+    })) : null;
+    return { gateway, manager, backend, serverChanges: SERVER_CHANGES };
+  });
+
+  // ---------------- coverage matrix: APIs x policy families ----------------
+  app.get("/api/rules/coverage", async (req) => {
+    const x = await who(req);
+    const details = await allDetails(x, true);
+    let services = new Set<string>();
+    try { if (cfg.SERVICES_DIR) services = new Set(readdirSync(cfg.SERVICES_DIR)); } catch { /* not mounted */ }
+    const t = await app.tokenForRequest(req);
+    let govById = new Map<string, string>();
+    try {
+      let g = await api(w, t!, "GET", "/api/am/governance/v1/artifact-compliance/api?limit=500");
+      if (g.status === 401 || g.status === 403) g = await api(w, await app.serviceToken(), "GET", "/api/am/governance/v1/artifact-compliance/api?limit=500");
+      if (g.status === 200) govById = new Map((g.json?.list ?? []).map((a: any) => [a.id, a.status]));
+    } catch { /* governance unavailable */ }
+    const analyticsOn = app.gwAnalytics?.status().state === "active";
+    type Cell = "covered" | "gap" | "elsewhere";
+    const rows = details.map((a) => {
+      const ops: any[] = a.operations ?? [];
+      const req0: any[] = ops[0]?.operationPolicies?.request ?? [];
+      const names = new Set(ops.flatMap((o) => (o.operationPolicies?.request ?? []).map((p: any) => p.policyName)));
+      const tiersLimited = (a.policies ?? []).some((p: string) => p !== "Unlimited");
+      const opLimited = ops.some((o) => o.throttlingPolicy && o.throttlingPolicy !== "Unlimited");
+      const cfgEp = a.endpointConfig?.production_endpoints?.config ?? {};
+      const sec = readSecurity(a);
+      const gs = govById.get(a.id);
+      const cells: Cell[] = [
+        sec === "none" ? "gap" : "covered",
+        ops.some((o) => (o.scopes ?? []).length) ? "covered" : "elsewhere",
+        Array.isArray(a.transport) && !a.transport.includes("http") ? "covered" : "gap",
+        names.has(ADDRESS_POLICY.name) || names.has("jsonValidator") || names.has("xmlValidator") || a.enableSchemaValidation ? "covered" : "gap",
+        a.apiThrottlingPolicy || opLimited || tiersLimited || a.maxTps ? "covered" : "gap",
+        req0.some((p) => p.policyName !== ADDRESS_POLICY.name && !["jsonValidator", "xmlValidator"].includes(p.policyName)) ? "covered" : "elsewhere",
+        cfgEp.actionDuration || a.responseCachingEnabled ? "covered" : "gap",
+        "elsewhere",
+        gs === "COMPLIANT" ? "covered" : gs ? "gap" : "elsewhere",
+        analyticsOn ? "covered" : "gap",
+        a.subtypeConfiguration?.subtype === "AIAPI" ? "covered" : "elsewhere",
+      ];
+      const kind = String(a.name).startsWith("weave-") ? "flow" : services.has(a.name) ? "migrated" : "direct";
+      return { id: a.id, name: a.name, version: a.version, kind, live: (a._deployments ?? []).length > 0, security: sec,
+        open: sec === "none", noLimit: cells[4] === "gap", noThreat: cells[3] === "gap", cells };
+    });
+    return { families: ["Authentication", "Authorization", "Transport & message security", "Threat protection", "Traffic management", "Mediation & transformation",
+      "Reliability & messaging", "Data protection & compliance", "Governance & lifecycle", "Observability & operations", "AI / LLM gateway"], rows,
+      notes: { elsewhere: "Handled in the service, outside the gateway, or not applicable to this API" } };
   });
 
   // ---------------- overview signals ----------------

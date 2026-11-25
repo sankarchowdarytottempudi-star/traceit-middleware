@@ -17,6 +17,9 @@ import { Logs } from "./screens/Logs.tsx";
 import { ApiRules } from "./screens/ApiRules.tsx";
 import { Blocking } from "./screens/Blocking.tsx";
 import { Applications } from "./screens/Applications.tsx";
+import { Coverage } from "./screens/Coverage.tsx";
+import { PolicyLibrary } from "./screens/PolicyLibrary.tsx";
+import { GatewaySettings } from "./screens/GatewaySettings.tsx";
 
 function SignIn() {
   const { resolved } = useTheme();
@@ -47,6 +50,9 @@ export function App() {
         <Route path="apis/:id" element={<ApiRules />} />
         <Route path="blocking" element={<Blocking />} />
         <Route path="applications" element={<Applications />} />
+        <Route path="coverage" element={<Coverage />} />
+        <Route path="policy-library" element={<PolicyLibrary />} />
+        <Route path="settings" element={<GatewaySettings />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="analytics/api/:name" element={<ApiAnalytics />} />
         <Route path="gateway-analytics" element={<GatewayAnalytics />} />

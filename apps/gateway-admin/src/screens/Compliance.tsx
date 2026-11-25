@@ -4,6 +4,8 @@ import { apiClient, type ApiCompliance } from "../api.ts";
 import { rankApis, severityTotals } from "../lib/format.ts";
 import { Card, Ring, Drawer, Skeleton, ErrorState, SegTabs } from "../components/ui.tsx";
 import { PageHeader } from "./PageHeader.tsx";
+import { Link } from "react-router-dom";
+import { Banner, Section } from "../components/gw.tsx";
 
 export function Compliance() {
   const [sort, setSort] = useState<"findings" | "name">("findings");
@@ -17,9 +19,20 @@ export function Compliance() {
 
   return (
     <>
-      <PageHeader area="Compliance" title="Governance compliance" subtitle="APIs checked against the active governance policy." />
-      {q.isLoading ? <Skeleton h={180} /> : q.isError ? <ErrorState message="Could not load compliance" onRetry={() => q.refetch()} /> : (
+      <PageHeader area="Compliance" title="Governance compliance" subtitle="API Manager checks every API against the attached governance policies (rulesets such as the WSO2 REST API design guidelines and OWASP Top 10) when the API is created or updated." />
+      {q.isLoading ? <Skeleton h={180} /> : q.isError ? <ErrorState message="Could not load compliance" onRetry={() => q.refetch()} /> : c && c.available === false ? (
+        <Banner tone="warn"><strong>Governance results are not available.</strong> {c.reason} Governance ships with API Manager 4.5 and is on by default; if it was switched off, enable it in the API Manager server configuration (deployment.toml, governance section) and restart API Manager, then attach a policy under Admin portal → Governance → Policies.</Banner>
+      ) : (
       <>
+        <Section title={`Policies attached (${c?.policies?.length ?? 0})`} note="A policy groups rulesets and says which APIs it applies to (GLOBAL = every API). Findings refresh when an API is created or updated; saving any change on an API's page re-checks it.">
+          {(c?.policies ?? []).length === 0 ? <p className="gw-note" style={{ margin: 0 }}>No governance policy is attached, so nothing is checked. Attach one in the Admin portal under Governance → Policies (label GLOBAL for every API).</p> : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }} aria-label="Governance policies">
+              {(c?.policies ?? []).map((p) => (
+                <div key={p.id} style={{ fontSize: 13.5, lineHeight: 1.5 }}><strong>{p.name}</strong> <span className="gw-muted">· applies to {p.labels.map((l) => (l === "GLOBAL" ? "every API" : `label ${l}`)).join(", ") || "no API"} · checks on {p.states.map((x) => x.replace("API_", "").toLowerCase()).join(", ")} · {p.blocking ? "blocks failing changes" : "reports only (does not block)"}</span>
+                  <div className="gw-muted" style={{ fontSize: 12.5 }}>Rulesets: {p.rulesets.join(", ")}</div></div>))}
+            </div>)}
+          {(c?.rulesets ?? []).length > 0 && <p className="gw-note" style={{ margin: "10px 0 0" }}>Rulesets available on this API Manager: {(c?.rulesets ?? []).map((r, i) => <span key={r.id}>{i ? ", " : ""}{r.documentationLink ? <a className="gw-link" href={r.documentationLink} target="_blank" rel="noreferrer">{r.name}</a> : r.name}</span>)}.</p>}
+        </Section>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 18 }}>
           <Card style={{ flex: "1 1 220px", alignItems: "center", display: "flex", flexDirection: "column", gap: 12 }}>
             <h2 style={{ margin: 0, fontSize: 16, alignSelf: "flex-start" }}>Policy adherence</h2>
@@ -69,6 +82,7 @@ export function Compliance() {
             <span style={{ padding: "4px 10px", borderRadius: 8, background: "var(--warnSoft)", color: "var(--warn)", fontWeight: 700 }}>{sel.warnings} warnings</span>
           </div>
           <p style={{ color: "var(--muted)", fontSize: 13 }}>{sel.errors > 0 ? `Fix the ${sel.errors} errors first; they block compliance.` : "No blocking errors."} Policy: {sel.policy}.</p>
+          <Link className="gw-btn gw-btn-sm" to={`/apis/${sel.apiId}`}>Open the API's rules page</Link>
           <a className="mf-btn mf-gho" href={`/publisher/apis/${sel.apiId}/overview`} style={{ alignSelf: "flex-start", height: 36, display: "inline-flex", alignItems: "center", padding: "0 14px", borderRadius: 9, border: "1px solid var(--border)", background: "var(--surface)", textDecoration: "none", color: "var(--text)", fontSize: 13 }}>Open in Publisher ↗</a>
           <h3 style={{ margin: "6px 0 0", fontSize: 14 }}>Rule violations</h3>
           {detail.isLoading ? <Skeleton h={80} /> : (detail.data?.violations ?? []).length === 0 ? <p style={{ color: "var(--faint)" }}>No violations reported.</p> :
@@ -77,6 +91,8 @@ export function Compliance() {
                 <div style={{ display: "flex", justifyContent: "space-between" }}><strong style={{ fontSize: 13 }}>{v.ruleName}</strong><span style={{ fontSize: 11, fontWeight: 700, color: v.severity === "ERROR" ? "var(--bad)" : v.severity === "WARN" ? "var(--warn)" : "var(--muted)" }}>{v.severity}</span></div>
                 <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "var(--muted)" }}>{v.message}</p>
                 {v.path && <code className="mf-mono" style={{ fontSize: 11, color: "var(--faint)" }}>{v.path}</code>}
+                {v.ruleset && <div style={{ fontSize: 11.5, color: "var(--faint)" }}>Ruleset: {v.ruleset}</div>}
+                {v.fix && <details style={{ marginTop: 6 }}><summary style={{ fontSize: 12.5, cursor: "pointer", color: "var(--accentText)" }}>How to fix</summary><pre style={{ whiteSpace: "pre-wrap", fontSize: 12, margin: "6px 0 0", fontFamily: "var(--mono, ui-monospace, monospace)" }}>{v.fix}</pre></details>}
               </div>
             ))}
         </div>}

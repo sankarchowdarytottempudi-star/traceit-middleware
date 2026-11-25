@@ -39,17 +39,18 @@ export function readSecurity(api: any): Security {
   if (ops.length && ops.every((o) => OPEN.test(String(o.authType ?? "")))) return "none";
   const s: string[] = api?.securityScheme ?? [];
   const oauth = s.includes("oauth2"), key = s.includes("api_key");
+  if (s.includes("basic_auth") && !oauth && !key) return "basic";
   if (oauth && key) return "both";
   if (key) return "apikey";
   return "oauth2";
 }
 export const SECURITY_WORDS: Record<Security, string> = {
-  oauth2: "OAuth2 token required", apikey: "API key required", both: "OAuth2 token or API key", none: "Open: no sign-in, anyone can call",
+  oauth2: "OAuth2 token required", apikey: "API key required", both: "OAuth2 token or API key", basic: "User name and password (basic authentication against the key manager's users)", none: "Open: no sign-in, anyone can call",
 };
 /** securityScheme + per-operation auth for a choice. Keeps unrelated schemes (mutual TLS, basic auth) as they were. */
 export function securityPatch(api: any, sec: Security): { securityScheme: string[]; operations: any[] } {
-  const keep = (api?.securityScheme ?? []).filter((s: string) => !["oauth2", "api_key", "oauth_basic_auth_api_key_mandatory"].includes(s));
-  const schemes = sec === "apikey" ? ["api_key"] : sec === "both" ? ["oauth2", "api_key"] : ["oauth2"];
+  const keep = (api?.securityScheme ?? []).filter((s: string) => !["oauth2", "api_key", "basic_auth", "oauth_basic_auth_api_key_mandatory"].includes(s));
+  const schemes = sec === "apikey" ? ["api_key"] : sec === "both" ? ["oauth2", "api_key"] : sec === "basic" ? ["basic_auth"] : ["oauth2"];
   const securityScheme = [...new Set([...schemes, ...keep, "oauth_basic_auth_api_key_mandatory"])];
   const operations = (api?.operations ?? []).map((o: any) => ({
     ...o,
@@ -206,4 +207,86 @@ export function revisionToPrune(revisions: any[]): any | null {
 /** Short summary of where an API is live, e.g. "Default (localhost)". */
 export function deploymentWords(deps: { name: string; vhost?: string }[]): string {
   return deps.length ? deps.map((d) => `${d.name}${d.vhost ? ` (${d.vhost})` : ""}`).join(", ") : "not deployed to any gateway";
+}
+
+// ---------- gateway policies (Policies tab): caching, backend TPS, endpoint timeout/suspension,
+// JSON/XML threat protection, request header add/remove, API key header name ----------
+export interface PoliciesView {
+  apiKeyHeader: string;
+  caching: { enabled: boolean; seconds: number };
+  maxTps: { production: number | null; sandbox: number | null };
+  endpoint: { timeoutMs: number | null; suspendMs: number | null };
+  jsonThreat: null | { maxJsonDepth: number; maxPropertyCount: number; maxStringLength: number; maxArrayElementCount: number; maxKeyLength: number };
+  xmlThreat: boolean;
+  addHeaders: { name: string; value: string }[];
+  removeHeaders: string[];
+  httpsOnly: boolean;
+  schemaValidation: boolean;
+}
+const COMMON = { addHeader: "v2", removeHeader: "v1", jsonValidator: "v1", xmlValidator: "v1" } as const;
+export type CommonIds = Partial<Record<keyof typeof COMMON, string>>;
+const num0 = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; };
+
+export function readPolicies(api: any): PoliciesView {
+  const req: any[] = api?.operations?.[0]?.operationPolicies?.request ?? [];
+  const cfg = api?.endpointConfig?.production_endpoints?.config ?? {};
+  const jv = req.find((p) => p.policyName === "jsonValidator");
+  return {
+    apiKeyHeader: api?.apiKeyHeader || "ApiKey",
+    caching: { enabled: !!api?.responseCachingEnabled, seconds: Number(api?.cacheTimeout ?? 300) || 300 },
+    maxTps: { production: num0(api?.maxTps?.production), sandbox: num0(api?.maxTps?.sandbox) },
+    endpoint: { timeoutMs: num0(cfg.actionDuration), suspendMs: num0(cfg.suspendDuration) },
+    jsonThreat: jv ? { maxJsonDepth: Number(jv.parameters?.maxJsonDepth ?? 100), maxPropertyCount: Number(jv.parameters?.maxPropertyCount ?? 100),
+      maxStringLength: Number(jv.parameters?.maxStringLength ?? 100), maxArrayElementCount: Number(jv.parameters?.maxArrayElementCount ?? 100), maxKeyLength: Number(jv.parameters?.maxKeyLength ?? 100) } : null,
+    xmlThreat: req.some((p) => p.policyName === "xmlValidator"),
+    addHeaders: req.filter((p) => p.policyName === "addHeader").map((p) => ({ name: String(p.parameters?.headerName ?? ""), value: String(p.parameters?.headerValue ?? "") })),
+    removeHeaders: req.filter((p) => p.policyName === "removeHeader").map((p) => String(p.parameters?.headerName ?? "")),
+    httpsOnly: Array.isArray(api?.transport) && api.transport.length > 0 && !api.transport.includes("http"),
+    schemaValidation: !!api?.enableSchemaValidation,
+  };
+}
+
+const MANAGED = new Set(["addHeader", "removeHeader", "jsonValidator", "xmlValidator"]);
+export function planPolicies(api: any, v: PoliciesView, ids: CommonIds): Plan {
+  const cur = readPolicies(api);
+  const changes: string[] = [];
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  if (cur.apiKeyHeader !== v.apiKeyHeader) changes.push(`API key header name: ${cur.apiKeyHeader} → ${v.apiKeyHeader}. Callers must send the key in the new header.`);
+  if (!same(cur.caching, v.caching)) changes.push(`Response caching: ${cur.caching.enabled ? `on, ${cur.caching.seconds} s` : "off"} → ${v.caching.enabled ? `on, ${v.caching.seconds} s (same answer served to every caller of the same request)` : "off"}.`);
+  if (!same(cur.maxTps, v.maxTps)) changes.push(`Backend protection (max requests per second sent to the backend): ${cur.maxTps.production ?? "no limit"} → ${v.maxTps.production ?? "no limit"} production, ${cur.maxTps.sandbox ?? "no limit"} → ${v.maxTps.sandbox ?? "no limit"} sandbox.`);
+  if (!same(cur.endpoint, v.endpoint)) changes.push(`Backend timeout: ${cur.endpoint.timeoutMs ? `${cur.endpoint.timeoutMs / 1000} s` : "gateway default"} → ${v.endpoint.timeoutMs ? `${v.endpoint.timeoutMs / 1000} s` : "gateway default"}; pause the backend after failures: ${cur.endpoint.suspendMs ? `${cur.endpoint.suspendMs / 1000} s` : "default"} → ${v.endpoint.suspendMs ? `${v.endpoint.suspendMs / 1000} s` : "default"}.`);
+  if (!same(cur.jsonThreat, v.jsonThreat)) changes.push(v.jsonThreat ? `JSON threat protection: ${cur.jsonThreat ? "changed" : "off → on"} (depth ≤ ${v.jsonThreat.maxJsonDepth}, properties ≤ ${v.jsonThreat.maxPropertyCount}, strings ≤ ${v.jsonThreat.maxStringLength} chars, arrays ≤ ${v.jsonThreat.maxArrayElementCount}, keys ≤ ${v.jsonThreat.maxKeyLength} chars). Larger bodies are refused with 400.` : "JSON threat protection: on → off.");
+  if (cur.xmlThreat !== v.xmlThreat) changes.push(`XML threat protection: ${cur.xmlThreat ? "on" : "off"} → ${v.xmlThreat ? "on" : "off"}.`);
+  if (!same(cur.addHeaders, v.addHeaders)) changes.push(`Headers added to every request sent to the backend: ${cur.addHeaders.map((h) => h.name).join(", ") || "none"} → ${v.addHeaders.map((h) => h.name).join(", ") || "none"}.`);
+  if (cur.httpsOnly !== v.httpsOnly) changes.push(`Plain HTTP: ${cur.httpsOnly ? "refused" : "accepted"} → ${v.httpsOnly ? "refused (HTTPS only)" : "accepted"}.`);
+  if (cur.schemaValidation !== v.schemaValidation) changes.push(`OpenAPI schema validation: ${cur.schemaValidation ? "on" : "off"} → ${v.schemaValidation ? "on: requests and responses that do not match the API definition are refused" : "off"}.`);
+  if (!same(cur.removeHeaders, v.removeHeaders)) changes.push(`Headers removed before the backend: ${cur.removeHeaders.join(", ") || "none"} → ${v.removeHeaders.join(", ") || "none"}.`);
+  const ref = (name: keyof typeof COMMON, parameters: Record<string, unknown>) => ({ policyName: name, policyVersion: COMMON[name], policyType: "common", ...(ids[name] ? { policyId: ids[name] } : {}), parameters });
+  const managed: any[] = [
+    ...(v.jsonThreat ? [ref("jsonValidator", { ...Object.fromEntries(Object.entries(v.jsonThreat).map(([k, x]) => [k, String(x)])), requestMessageBufferSize: "1024", jsonSchemaValidator: "org.wso2.carbon.apimgt.gateway.mediators.JsonSchemaValidator" })] : []),
+    ...(v.xmlThreat ? [ref("xmlValidator", {})] : []),
+    ...v.removeHeaders.map((h) => ref("removeHeader", { headerName: h })),
+    ...v.addHeaders.map((h) => ref("addHeader", { headerName: h.name, headerValue: h.value })),
+  ];
+  const operations = (api.operations ?? []).map((o: any) => {
+    const op = o.operationPolicies ?? { request: [], response: [], fault: [] };
+    const req: any[] = op.request ?? [];
+    // address rules stay first, console-managed policies next, anything else after
+    const first = req.filter((p) => p.policyName === ADDRESS_POLICY.name);
+    const rest = req.filter((p) => p.policyName !== ADDRESS_POLICY.name && !MANAGED.has(p.policyName));
+    return { ...o, operationPolicies: { request: [...first, ...managed, ...rest], response: op.response ?? [], fault: op.fault ?? [] } };
+  });
+  const ep = api.endpointConfig ?? {};
+  const withCfg = (e: any) => {
+    if (!e || typeof e !== "object" || Array.isArray(e)) return e;
+    const cfg = { ...(e.config ?? {}) };
+    if (v.endpoint.timeoutMs) { cfg.actionDuration = String(v.endpoint.timeoutMs); cfg.actionSelect = "fault"; } else { delete cfg.actionDuration; delete cfg.actionSelect; }
+    if (v.endpoint.suspendMs) { cfg.suspendDuration = String(v.endpoint.suspendMs); cfg.suspendMaxDuration = String(v.endpoint.suspendMs * 4); cfg.factor = "2"; } else { delete cfg.suspendDuration; delete cfg.suspendMaxDuration; delete cfg.factor; }
+    return Object.keys(cfg).length ? { ...e, config: cfg } : (({ config: _c, ...r }) => r)(e);
+  };
+  const endpointConfig = same(cur.endpoint, v.endpoint) ? ep : { ...ep, production_endpoints: withCfg(ep.production_endpoints), sandbox_endpoints: withCfg(ep.sandbox_endpoints) };
+  const body = { ...api, apiKeyHeader: v.apiKeyHeader, responseCachingEnabled: v.caching.enabled, cacheTimeout: v.caching.seconds,
+    maxTps: v.maxTps.production || v.maxTps.sandbox ? { ...(api.maxTps ?? {}), production: v.maxTps.production ?? undefined, sandbox: v.maxTps.sandbox ?? undefined } : null,
+    endpointConfig, operations, transport: v.httpsOnly ? ["https"] : ["http", "https"], enableSchemaValidation: v.schemaValidation };
+  return { body, changes };
 }

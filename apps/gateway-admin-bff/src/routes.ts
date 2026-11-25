@@ -96,30 +96,56 @@ export function registerRoutes(app: FastifyInstance, cfg: Config, audit?: Audit)
     return { list: R.reshapeKeyManagers(json?.list ?? []) };
   });
 
-  app.get("/api/compliance", async (req) => {
+  // Governance (API Manager 4.5 governance REST API: policies, rulesets, artifact compliance).
+  // Falls back to the service credentials when the signed-in token lacks the governance scopes.
+  async function gov(req: FastifyRequest, path: string): Promise<{ status: number; json: any }> {
     const t = await need(req);
-    const { json } = await api(w, t, "GET", `${GOV}/compliance/api-compliance/summary`).catch(() => ({ json: null }));
-    const apis = (json?.complianceSummary?.apis ?? json?.apis ?? []).map((a: any) => ({
-      apiId: a.apiId ?? a.id, name: a.name, version: a.version ?? "v1",
-      errors: a.errors ?? a.severityBasedRuleViolationSummary?.error ?? 0,
-      warnings: a.warnings ?? a.severityBasedRuleViolationSummary?.warn ?? 0,
-      info: a.info ?? a.severityBasedRuleViolationSummary?.info ?? 0,
-      policy: a.policy ?? "WSO2 API Management Best Practices",
-    }));
-    const total = apis.length;
-    const compliant = apis.filter((a: any) => a.errors === 0 && a.warnings === 0).length;
+    let r = await api(w, t, "GET", `${GOV}${path}`).catch(() => ({ status: 0, json: null }));
+    if ((r.status === 401 || r.status === 403) && app.serviceToken) {
+      const st = await app.serviceToken().catch(() => "");
+      if (st && st !== t) r = await api(w, st, "GET", `${GOV}${path}`).catch(() => ({ status: 0, json: null }));
+    }
+    return r;
+  }
+  const sev = (a: any, k: string) => Number((a?.severityBasedRuleViolationSummary ?? []).find((x: any) => String(x.severity).toUpperCase() === k)?.violatedRulesCount ?? 0);
+
+  app.get("/api/compliance", async (req) => {
+    const [list, summary, policies, rulesets] = await Promise.all([gov(req, "/artifact-compliance/api?limit=500"), gov(req, "/artifact-compliance/api/summary"),
+      gov(req, "/policies?limit=100"), gov(req, "/rulesets?limit=100")]);
+    if (list.status !== 200) {
+      return { available: false, reason: list.status === 404 ? "The governance API is not enabled on this API Manager." : list.status === 401 || list.status === 403 ? "The console's account is not allowed to read governance results (scopes apim:gov_result_read, apim:gov_policy_read, apim:gov_rule_read)." : `API Manager answered ${list.status || "nothing"} for the governance results.`,
+        governed: 0, compliant: 0, total: 0, errors: 0, warnings: 0, info: 0, apis: [], policies: [], rulesets: [], policyAdherencePct: 0, apiCompliancePct: 0 };
+    }
+    const rs = (rulesets.json?.list ?? []).map((r: any) => ({ id: r.id, name: r.name, ruleType: r.ruleType, provider: r.provider, documentationLink: r.documentationLink ?? null }));
+    const pol = (policies.json?.list ?? []).map((p: any) => ({ id: p.id, name: p.name, labels: p.labels ?? [], states: p.governableStates ?? [],
+      rulesets: (p.rulesets ?? []).map((id: string) => rs.find((r: any) => r.id === id)?.name ?? id),
+      blocking: (p.actions ?? []).some((a: any) => a.type === "BLOCK") }));
+    const apis = (list.json?.list ?? []).map((a: any) => ({ apiId: a.id, name: a.info?.name ?? a.id, version: a.info?.version ?? "", status: a.status,
+      errors: sev(a, "ERROR"), warnings: sev(a, "WARN"), info: sev(a, "INFO"), policy: pol.map((p: any) => p.name).join(", ") || "No policy" }));
+    const sm = summary.json ?? {};
+    const total = Number(sm.total ?? apis.length);
+    const governed = total - Number(sm.notApplicable ?? 0);
+    const compliant = Number(sm.compliant ?? apis.filter((a: any) => a.status === "COMPLIANT").length);
     const sum = (k: string) => apis.reduce((n: number, a: any) => n + (a[k] ?? 0), 0);
-    return R.rankCompliance({ governed: total, compliant, total, errors: sum("errors"), warnings: sum("warnings"), info: sum("info"), apis });
+    return { ...R.rankCompliance({ governed, compliant, total: governed, errors: sum("errors"), warnings: sum("warnings"), info: sum("info"), apis }),
+      available: true, pending: Number(sm.pending ?? 0), policies: pol, rulesets: rs };
   });
 
   app.get("/api/compliance/:apiId", async (req) => {
     const { apiId } = req.params as { apiId: string };
-    const t = await need(req);
-    const { json } = await api(w, t, "GET", `${GOV}/compliance/apis/${apiId}`).catch(() => ({ json: null }));
-    const violations = (json?.ruleViolations ?? json?.violations ?? []).map((v: any) => ({
-      ruleName: v.ruleName ?? v.name, severity: (v.severity ?? "WARN").toUpperCase(), message: v.message ?? v.ruleMessage ?? "", path: v.path,
-    }));
-    return { apiId, violations };
+    if (!/^[0-9a-fA-F-]{8,64}$/.test(apiId)) throw new BadInput("That API id is not valid.");
+    const d = await gov(req, `/artifact-compliance/api/${apiId}`);
+    if (d.status !== 200) return { apiId, violations: [], policies: [] };
+    const failed: { id: string; name: string; policy: string }[] = [];
+    for (const p of d.json?.governedPolicies ?? []) for (const r of p.rulesetValidationResults ?? []) if (r.status === "FAILED") failed.push({ id: r.id, name: r.name, policy: p.name });
+    const results = await Promise.all(failed.map((f) => gov(req, `/artifact-compliance/api/${apiId}/ruleset-validation-results/${f.id}`).then((x) => ({ f, x }))));
+    const violations = results.flatMap(({ f, x }) => (x.json?.violatedRules ?? []).map((v: any) => ({
+      ruleName: v.name, severity: String(v.severity ?? "WARN").toUpperCase(), message: v.message ?? "", path: v.violatedPath?.path ?? undefined,
+      fix: typeof v.description === "string" ? v.description.slice(0, 1500) : "", ruleset: f.name, policy: f.policy })));
+    const order: Record<string, number> = { ERROR: 0, WARN: 1, INFO: 2 };
+    violations.sort((a: any, b: any) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3));
+    return { apiId, status: d.json?.status, violations,
+      policies: (d.json?.governedPolicies ?? []).map((p: any) => ({ name: p.name, status: p.status, rulesets: (p.rulesetValidationResults ?? []).map((r: any) => ({ name: r.name, status: r.status })) })) };
   });
 
   app.get("/api/workflows", async (req) => {

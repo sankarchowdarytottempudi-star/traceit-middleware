@@ -13,7 +13,9 @@ const SCOPE = "openid apim:admin apim:api_view apim:api_manage apim:tier_view ap
   "apim:environment_read apim:keymanagers_manage apim:workflow_approve apim:api_governance_view apim:api_governance_manage " +
   // gateway rules: publish revisions, consumer applications/keys/subscriptions, blocking rules, API-specific policies
   "apim:api_create apim:api_publish apim:subscribe apim:app_manage apim:sub_manage apim:subscription_view apim:subscription_block " +
-  "apim:bl_view apim:bl_manage apim:common_operation_policy_view apim:api_key";
+  "apim:bl_view apim:bl_manage apim:common_operation_policy_view apim:api_key " +
+  // governance results, policies and rulesets (API Manager 4.5)
+  "apim:gov_policy_read apim:gov_rule_read apim:gov_result_read apim:gov_policy_manage";
 
 export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCreds, store: SessionStore) {
   const redirectUri = `${cfg.PUBLIC_BASE_URL}/api/auth/callback`;

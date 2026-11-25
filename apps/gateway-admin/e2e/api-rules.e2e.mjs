@@ -94,17 +94,20 @@ try {
   check(!!mine, `${opt.api} is on the gateway`, JSON.stringify(apis).slice(0, 200));
   apiId = mine?.id ?? "";
   if (!apiId) throw new Error("stop: no test API");
+  const det = await (await context.request.get(`${opt.base}/api/rules/apis/${apiId}`)).json();
+  check(det.api?.lifeCycleStatus === "PUBLISHED", "the test API is published (new subscriptions possible)", det.api?.lifeCycleStatus);
 
   if (!narrow) {
     step("1. Overview shows operator signals");
     await go("/");
-    await page.getByLabel("Signals").waitFor();
-    for (const t of ["Live APIs", "Throttled now", "Refused now", "Without sign-in", "Blocking rules"]) check(await page.getByText(t, { exact: true }).first().isVisible(), `tile "${t}"`);
+    await page.getByTestId("overview-cards").waitFor();
+    await page.getByLabel("Right now").waitFor();
+    for (const t of ["APIs on the gateway", "Open APIs", "Throttled now", "Refused now", "Blocking rules"]) check(await page.getByText(t, { exact: true }).first().isVisible(), `signal "${t}"`);
     await shot("overview");
 
     step("2. From the APIs list to the API's own page");
     await openApi();
-    check((await page.getByRole("tab").allInnerTexts()).join("|") === "Traffic limits|Access|Consumers|Live status|Change history", "five tabs on the API page");
+    check((await page.getByRole("tab").allInnerTexts()).join("|") === "Traffic limits|Access|Policies|Consumers|Live status|Change history", "six tabs on the API page");
     check(await page.getByText("Production", { exact: true }).isVisible(), "the page says it is a production gateway");
     await shot("api-traffic");
 
@@ -114,7 +117,7 @@ try {
     check(await page.getByLabel(new RegExp(`^${plan}: 5 requests per minute per consumer`)).isChecked(), "the new plan is created and ticked");
     let text = await review();
     check(text.includes(`This changes the live gateway for ${opt.api} in Production`), "confirmation names the API and the environment");
-    check(text.includes(`Plans consumers can pick: Unlimited → Unlimited, ${plan}`), "confirmation lists the plan change in plain words", text.slice(0, 300));
+    check(new RegExp(`Plans consumers can pick: [^→]+ → [^.]*${plan}\\. Each plan is a limit per consumer application`).test(text) && text.includes(`${plan} (5 requests per minute per consumer application)`), "confirmation lists the plan change in plain words", text.slice(0, 300));
     await shot("confirm-plan");
     await apply();
     const done = await page.getByTestId("change-done").innerText();
@@ -169,11 +172,11 @@ try {
     await page.getByLabel(/Set CORS for this API/).check();
     await page.getByLabel("Allowed origins").fill("app.example.com/path");
     await page.getByRole("button", { name: "Review change" }).click();
-    check(await page.getByText(/is not a web origin/).isVisible(), "a bad origin is refused with a plain reason");
+    check(await page.getByText(/is not a web origin/).waitFor().then(() => true, () => false), "a bad origin is refused with a plain reason");
     await page.getByLabel("Allowed origins").fill("*");
     await page.getByLabel(/Allow credentials/).check();
     await page.getByRole("button", { name: "Review change" }).click();
-    check(await page.getByText(/Browsers refuse credentials with origin \*/).isVisible(), "credentials with * are refused");
+    check(await page.getByText(/Browsers refuse credentials with origin \*/).waitFor().then(() => true, () => false), "credentials with * are refused");
     await page.getByLabel(/None \(open\)/).check();
     check(await page.getByText("This is a production gateway.", { exact: false }).isVisible(), "turning sign-in off warns hard on production");
     check(await page.getByRole("button", { name: "Review change" }).isDisabled(), "and cannot be reviewed until the API name is typed");
@@ -184,7 +187,8 @@ try {
     await page.getByLabel(/One limit for the whole API/).check();
     await page.getByRole("button", { name: "New limit" }).click();
     await newLimit("advanced", lim, 3);
-    check((await page.getByLabel("Limit for the whole API").inputValue()) === lim, "the new limit is selected");
+    await page.getByLabel("Limit for the whole API", { exact: true }).locator(`option[value="${lim}"]`).waitFor({ state: "attached" });
+    check((await page.getByLabel("Limit for the whole API", { exact: true }).inputValue()) === lim, "the new limit is selected");
     text = await review();
     check(text.includes(`Limit for the whole API: no limit → ${lim} (3 requests per minute, shared by every caller of this API).`), "plain words: 3 requests per minute, shared by every caller");
     await apply();
@@ -199,7 +203,7 @@ try {
     await used.getByText(opt.api).waitFor();
     check(await used.getByText("limit for the whole API").isVisible(), `"Used by" shows ${opt.api} (limit for the whole API)`);
     await page.getByRole("row", { name: new RegExp(lim) }).getByRole("button", { name: "Assign to an API" }).click();
-    check(await page.getByRole("link", { name: new RegExp(opt.api) }).isVisible(), "Assign lists the APIs to assign it to");
+    check(await page.getByRole("dialog").getByRole("link", { name: new RegExp(opt.api) }).isVisible(), "Assign lists the APIs to assign it to");
     await shot("ratelimits-usedby");
     await page.keyboard.press("Escape");
 
@@ -239,6 +243,21 @@ try {
     await apply("Roll back the live gateway");
     check(/Live now\./.test(await page.getByTestId("change-done").innerText()), "rolled back and deployed");
 
+    step("11b. Rate limiting: built-in group and safe clean-up of an unused policy");
+    await go("/rate-limits");
+    await page.getByRole("tab", { name: /API & operation limits/ }).click();
+    await page.getByTestId("builtin-group").waitFor();
+    check(await page.getByTestId("builtin-group").getByText(/Built-in \(\d+\)/).isVisible(), "built-in policies are grouped and collapsed");
+    const pick = page.getByLabel(`Select ${lim} for clean-up`);
+    await pick.waitFor();
+    await pick.check();
+    await page.getByRole("button", { name: /Clean up selected \(1\)/ }).click();
+    const cp = await page.getByTestId("cleanup-plan").innerText();
+    check(cp.includes(`${lim}: delete (not used anywhere)`), "clean-up re-checks use before deleting", cp.slice(0, 200));
+    await page.getByRole("button", { name: "Delete 1 unused" }).click();
+    check((await page.getByTestId("cleanup-result").innerText()).includes(`${lim} deleted`), "unused test policy deleted and reported");
+    await shot("ratelimits-cleanup");
+
     step("12. Blocking rules (global) on a documentation address");
     await go("/blocking");
     await page.getByLabel("Value to block").fill("203.0.113.77");
@@ -264,8 +283,60 @@ try {
 
     step("13. Overview lists the recent changes with who made them");
     await go("/");
-    await page.getByLabel("Recent changes").waitFor();
-    check((await page.getByLabel("Recent changes").innerText()).includes("dev-tester"), "recent changes name the person");
+    await page.getByLabel("Recent changes list").waitFor();
+    check((await page.getByLabel("Recent changes list").innerText()).includes("dev-tester"), "recent changes name the person");
+
+    step("13b. Policies tab: JSON threat protection, proven with a real call");
+    await go(`/apis/${apiId}?tab=policies`);
+    for (const f of ["Authentication", "Threat protection", "Traffic management", "AI / LLM gateway"]) check(await page.locator(`[data-family="${f}"]`).isVisible(), `family "${f}" listed with where it is handled`);
+    await page.getByLabel(/JSON threat protection: refuse/).check();
+    await page.getByLabel("Max depth").fill("5");
+    text = await review();
+    check(/JSON threat protection: off → on \(depth ≤ 5/.test(text), "confirmation states the JSON limits");
+    await apply();
+    const deepBody = JSON.stringify({ a: { b: { c: { d: { e: { f: { g: 1 } } } } } } });
+    const tp = await (async () => { const t0 = Date.now(); let last; while (Date.now() - t0 < 45000) { last = await raw(`${opt.gateway}/${opt.api}/v1/orders`, { method: "POST", headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" }, body: deepBody }); if (last.status === 400) break; await new Promise((res) => setTimeout(res, 2000)); } return last; })();
+    check(tp?.status === 400 && /Threat Protection-JSON/.test(tp.text), "the live gateway refuses a 7-level JSON body with 400", `status ${tp?.status}`);
+    await shot("policies");
+
+    step("13c. Policy coverage matrix");
+    await go("/coverage");
+    const crow = page.locator(`tr[data-api="${opt.api}"]`);
+    await crow.waitFor();
+    check(await crow.getByLabel(`${opt.api} Threat protection covered`).isVisible(), "threat protection shows as covered for the test API");
+    await page.getByRole("tab", { name: /Open APIs/ }).click();
+    check(true, "filters for gaps are offered");
+    await shot("coverage");
+
+    step("13d. Policy library: a named set applied with a per-API preview");
+    const setName = `cs-gw-test-set-${st}`;
+    await go("/policy-library");
+    await page.getByRole("button", { name: "New policy set" }).click();
+    await page.getByLabel("Set name").fill(setName);
+    await page.getByLabel("Set sign-in").selectOption("");
+    await page.getByLabel("Set timeout").fill("20000");
+    await page.getByRole("button", { name: "Save set" }).click();
+    const setRow = page.locator(`[data-set="${setName}"]`);
+    await setRow.waitFor();
+    await setRow.getByRole("button", { name: "Apply to APIs" }).click();
+    await page.getByLabel("APIs to apply to").getByLabel(opt.api, { exact: true }).check();
+    await page.getByRole("button", { name: /Preview for 1 API/ }).click();
+    const sp = await page.getByTestId("set-preview").innerText();
+    check(sp.includes(opt.api) && /Backend timeout: .* → 20 s/.test(sp), "per-API preview lists exactly what changes", sp.slice(0, 200));
+    await shot("library-preview");
+    await page.getByRole("button", { name: "Apply to the live gateways" }).click();
+    const sr = await page.getByTestId("set-results").innerText();
+    check(new RegExp(`${opt.api} · done, Revision \\d+`).test(sr), "per-API result: done with a new revision", sr.slice(0, 160));
+    await page.getByRole("button", { name: "Close" }).click();
+    await setRow.getByRole("button", { name: "Delete set" }).click();
+    await setRow.waitFor({ state: "detached" });
+
+    step("13e. Gateway settings");
+    await go("/settings");
+    await page.getByLabel("Gateway (API traffic) TLS versions").waitFor();
+    check((await page.getByLabel("Gateway (API traffic) TLS versions").innerText()).includes("TLS 1.2: accepted"), "TLS versions are probed live");
+    check(await page.locator('[data-setting="masking"]').getByText("needs a server change").isVisible(), "log masking is marked as a server change with the exact edit");
+    await shot("settings");
 
     step("14. Remove the keys and the application (typed confirmation)");
     await go("/applications");
@@ -286,7 +357,8 @@ try {
     step("Narrow screen: every screen fits 390 px");
     for (const [path, name, wait] of [["/", "overview", "Signals"], ["/apis", "apis", "APIs on the gateway"], [`/apis/${apiId}`, "api-traffic", "Plans consumers can pick"],
       [`/apis/${apiId}?tab=access`, "api-access", "Sign-in"], [`/apis/${apiId}?tab=consumers`, "api-consumers", "Applications subscribed"], [`/apis/${apiId}?tab=live`, "api-live", null],
-      [`/apis/${apiId}?tab=history`, "api-history", "Revisions"], ["/rate-limits", "ratelimits", null], ["/blocking", "blocking", "Blocking rules"], ["/applications", "applications", "Applications"]]) {
+      [`/apis/${apiId}?tab=history`, "api-history", "Revisions"], ["/rate-limits", "ratelimits", null], ["/blocking", "blocking", "Blocking rules"], ["/applications", "applications", "Applications"],
+      [`/apis/${apiId}?tab=policies`, "api-policies", null], ["/coverage", "coverage", null], ["/policy-library", "library", null], ["/settings", "settings", null]]) {
       await go(path);
       if (wait) await page.getByLabel(wait).first().waitFor().catch(() => {});
       await page.waitForTimeout(800);
@@ -296,7 +368,7 @@ try {
     }
     await go(`/apis/${apiId}?tab=traffic`);
     await page.getByLabel(/One limit for the whole API/).check();
-    await page.getByRole("button", { name: "Review change" }).click().catch(() => {});
+    await page.getByLabel("Limit for the whole API", { exact: true }).selectOption("");
     check(await page.getByRole("button", { name: "Review change" }).isDisabled(), "Review stays disabled until a limit is chosen");
     await page.getByRole("button", { name: "Open menu" }).click();
     check(await page.getByRole("link", { name: "Blocking rules" }).isVisible() && await page.getByRole("link", { name: "Applications & keys" }).isVisible(), "the menu has Blocking rules and Applications & keys");

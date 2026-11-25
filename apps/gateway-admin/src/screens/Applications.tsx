@@ -99,7 +99,7 @@ function AppPanel({ id, onDeleted }: { id: string; onDeleted: () => void }) {
       {confirm && (
         <div className="gw-card" style={{ padding: 14, borderColor: "var(--bad)", display: "flex", flexDirection: "column", gap: 10 }} role="alert">
           <strong>{confirm.kind === "delete" ? `Delete ${a.name}?` : `Remove the ${confirm.keyType.toLowerCase()} keys of ${a.name}?`}</strong>
-          <span style={{ fontSize: 13 }}>{confirm.kind === "delete" ? "Every caller using its keys is cut off at once and its subscriptions are removed." : "Every caller using these keys is cut off. New keys can be generated afterwards."}</span>
+          <span style={{ fontSize: 13 }}>{confirm.kind === "delete" ? "Every caller using its keys is cut off at once and its subscriptions are removed." : "Every caller using these keys is cut off. Note: on API Manager 4.5, keys generated again on the same application afterwards were refused by the gateway in our tests; to rotate a secret use Regenerate secret, or create a new application."}</span>
           <label className="gw-field" style={{ display: "flex" }}><span>Type <strong className="gw-mono" style={{ color: "var(--text)" }}>{a.name}</strong> to confirm</span><input className="gw-input" value={typed} onChange={(e) => setTyped(e.target.value)} aria-label="Type the application name" /></label>
           <ErrorLine error={revoke.error || del.error} />
           <div style={{ display: "flex", gap: 8 }}>

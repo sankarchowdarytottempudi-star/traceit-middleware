@@ -9,11 +9,12 @@ import { ErrorState, SegTabs } from "../components/ui.tsx";
 import { Banner, Chip, Loading, Section, Tile, useParam, DataTable, type Col } from "../components/gw.tsx";
 import { ConfirmChange, ErrorLine, ListInput, NewLimit, Radio, policyLabel, splitList } from "../components/rules.tsx";
 import { PageHeader } from "./PageHeader.tsx";
+import { PoliciesTab } from "./ApiPolicies.tsx";
 import { ago, fmtDateTime, fmtInt, txt } from "../lib/text.ts";
 
-type Tab = "traffic" | "access" | "consumers" | "live" | "history";
+type Tab = "traffic" | "access" | "policies" | "consumers" | "live" | "history";
 const TABS: { id: Tab; label: string }[] = [
-  { id: "traffic", label: "Traffic limits" }, { id: "access", label: "Access" }, { id: "consumers", label: "Consumers" },
+  { id: "traffic", label: "Traffic limits" }, { id: "access", label: "Access" }, { id: "policies", label: "Policies" }, { id: "consumers", label: "Consumers" },
   { id: "live", label: "Live status" }, { id: "history", label: "Change history" },
 ];
 
@@ -72,9 +73,9 @@ function TrafficTab({ data, done }: { data: TApiRules; done: (p: ChangePlan) => 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {suggest && <Banner tone="info">Assigning <strong className="gw-mono">{suggest}</strong>. It is selected below; review the change and save to make it live.</Banner>}
-      <Section title="Plans consumers can pick" note="A plan is a limit per consumer application. When an application subscribes to this API it picks one of these plans, and its calls are counted against that plan.">
+      <Section title="Plans consumers can pick" note="A plan is a limit per consumer application. When an application subscribes to this API it picks one of these plans, and its calls are counted against that plan. Plans for event and AI APIs are not listed.">
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }} role="group" aria-label="Plans consumers can pick">
-          {sub.map((p) => (
+          {sub.filter((p) => !p.quotaType || p.quotaType === "REQUESTCOUNTLIMIT" || p.quotaType === "BANDWIDTHLIMIT" || tiers.includes(p.name)).map((p) => (
             <label key={p.name} className="gw-check"><input type="checkbox" checked={tiers.includes(p.name)} onChange={(e) => setTiers(e.target.checked ? [...tiers, p.name] : tiers.filter((x) => x !== p.name))} />
               <span>{policyLabel(p, p.name, "plan")}</span></label>
           ))}
@@ -128,6 +129,7 @@ const SEC: { id: Security; title: string; hint: string }[] = [
   { id: "oauth2", title: "OAuth2 token", hint: "Callers send a bearer token issued for a subscribed application." },
   { id: "apikey", title: "API key", hint: "Callers send an API key of a subscribed application in the ApiKey header." },
   { id: "both", title: "OAuth2 token or API key", hint: "Either is accepted." },
+  { id: "basic", title: "User name and password (basic)", hint: "Checked against the key manager's users. Use only over HTTPS." },
   { id: "none", title: "None (open)", hint: "No sign-in. Anyone who can reach the gateway can call every operation." },
 ];
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"];
@@ -334,6 +336,7 @@ export function ApiRules() {
           <div key={key}>
             {tab === "traffic" && <TrafficTab data={d} done={done} />}
             {tab === "access" && <AccessTab data={d} done={done} />}
+            {tab === "policies" && <PoliciesTab data={d} done={done} />}
             {tab === "consumers" && <ConsumersTab data={d} />}
             {tab === "live" && <LiveTab data={d} />}
             {tab === "history" && <HistoryTab data={d} done={done} />}

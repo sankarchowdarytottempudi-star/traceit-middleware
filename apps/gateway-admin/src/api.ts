@@ -14,9 +14,11 @@ export interface SubPolicy { policyId: string; name: string; displayName?: strin
 export interface AdvPolicy { policyId: string; name: string; limit: number; timeUnit: string; }
 export interface Environment { id: string; name: string; type: string; gatewayType: string; visibility?: string; vhosts: { host: string; httpContext?: string }[]; reachable: boolean; }
 export interface KeyManager { id: string; name: string; type: string; enabled: boolean; }
-export interface ApiCompliance { apiId: string; name: string; version: string; errors: number; warnings: number; info: number; policy: string; }
-export interface ComplianceSummary { governed: number; compliant: number; total: number; errors: number; warnings: number; info: number; policyAdherencePct: number; apiCompliancePct: number; apis: ApiCompliance[]; }
-export interface RuleViolation { ruleName: string; severity: "ERROR" | "WARN" | "INFO"; message: string; path?: string; }
+export interface ApiCompliance { apiId: string; name: string; version: string; errors: number; warnings: number; info: number; policy: string; status?: string; }
+export interface GovPolicy { id: string; name: string; labels: string[]; states: string[]; rulesets: string[]; blocking: boolean; }
+export interface GovRuleset { id: string; name: string; ruleType: string; provider: string; documentationLink: string | null; }
+export interface ComplianceSummary { governed: number; compliant: number; total: number; errors: number; warnings: number; info: number; policyAdherencePct: number; apiCompliancePct: number; apis: ApiCompliance[]; available?: boolean; reason?: string; pending?: number; policies?: GovPolicy[]; rulesets?: GovRuleset[]; }
+export interface RuleViolation { ruleName: string; severity: "ERROR" | "WARN" | "INFO"; message: string; path?: string; fix?: string; ruleset?: string; policy?: string; }
 export interface WorkflowGroup { type: string; label: string; pending: number; requests: { referenceId: string; type: string; requester: string; description: string; createdTime: string }[]; }
 export interface MigratedApi { id: string; name: string; context: string; version: string; lifeCycleStatus: string; securityScheme: string[]; throttlingPolicy?: string; operations: { verb: string; target: string; authType: string }[]; backend?: string; }
 
@@ -113,11 +115,24 @@ export interface PolicyInfo { name: string; limit: number; timeUnit: string; uni
 export interface RulesApi { id: string; name: string; context: string; version: string; lifeCycleStatus: string; provider?: string; lastUpdatedTime?: string | null; type?: string; }
 export interface EnvRef { name: string; displayName: string; vhost: string; }
 export interface Cors { enabled: boolean; origins: string[]; headers: string[]; methods: string[]; credentials: boolean; }
-export type Security = "oauth2" | "apikey" | "both" | "none";
+export type Security = "oauth2" | "apikey" | "both" | "basic" | "none";
+export interface GatewayPolicies {
+  apiKeyHeader: string; caching: { enabled: boolean; seconds: number }; maxTps: { production: number | null; sandbox: number | null };
+  endpoint: { timeoutMs: number | null; suspendMs: number | null };
+  jsonThreat: null | { maxJsonDepth: number; maxPropertyCount: number; maxStringLength: number; maxArrayElementCount: number; maxKeyLength: number };
+  xmlThreat: boolean; addHeaders: { name: string; value: string }[]; removeHeaders: string[]; httpsOnly: boolean; schemaValidation: boolean;
+}
+export interface CoverageRow { id: string; name: string; version: string; kind: "migrated" | "flow" | "direct"; live: boolean; security: string; open: boolean; noLimit: boolean; noThreat: boolean; cells: ("covered" | "gap" | "elsewhere")[]; }
+export interface PolicySet { name: string; description: string; security?: Security | null; tiers?: string[] | null; apiPolicy?: string | null; gateway?: Partial<GatewayPolicies> | null; createdBy: string; createdAt: string; }
+export interface TlsProbe { host: string; versions: { version: string; accepted: boolean; cipher?: string }[]; certificate: { subject: string; issuer: string; validTo: string; daysLeft: number } | null; }
+export interface GatewaySettings { gateway: TlsProbe | null; manager: TlsProbe | null; backend: { alias: string; endpoint: string; subject: string; validTo: string | null; daysLeft: number | null }[] | null;
+  serverChanges: { id: string; title: string; change: string; file: string; restart: boolean }[]; }
 export interface ApiRules {
   stage: "production" | "uat"; stageWord: string; via: "user" | "service"; api: RulesApi;
   traffic: { tiers: string[]; apiPolicy: string | null; operations: { verb: string; target: string; policy: string | null }[] };
   policies: { subscription: PolicyInfo[]; advanced: PolicyInfo[]; application?: PolicyInfo[] };
+  gatewayPolicies: GatewayPolicies;
+  lifecycle: { state: string; version: string; isDefaultVersion: boolean };
   access: { security: Security; securityWords: string; cors: Cors; ipAllow: string[]; ipDeny: string[]; clientIpHeader: string };
   deployments: { name: string; vhost: string; revisionUuid: string; deployedTime: number | null; status?: string }[];
   environments: EnvRef[];
@@ -143,7 +158,7 @@ export interface AppRow { id: string; name: string; plan: string; description: s
 export interface AppKey { keyMappingId: string; keyType: string; keyManager: string; consumerKey: string | null; state: string | null; grantTypes: string[]; }
 export interface AppDetail { id: string; name: string; plan: string; description: string; owner: string; keys: AppKey[];
   subscriptions: { subscriptionId: string; apiId: string; apiName: string; apiVersion: string; plan: string; status: string }[]; }
-export interface Usage { usage: Record<string, { apis: { id: string; name: string; how: string }[]; applications: string[] }>; apis: { id: string; name: string }[]; }
+export interface Usage { usage: Record<string, { apis: { id: string; name: string; how: string }[]; applications: string[]; subscriptions: number }>; apis: { id: string; name: string }[]; builtIn?: Record<string, string[]>; }
 export interface Signals {
   stage: string; stageWord: string; via: string; total: number; published: number;
   environments: Record<string, { live: number; apis: string[] }>; notDeployed: { id: string; name: string }[];
@@ -167,7 +182,16 @@ export const rulesClient = {
   rollback: (id: string, revisionId: string, preview: boolean) => j<ChangePlan & { revision: { id: string; displayName: string } }>(`/api/rules/apis/${id}/rollback${preview ? "?preview=1" : ""}`, post({ revisionId })),
   createPolicy: (body: { kind: "subscription" | "advanced" | "application"; name: string; requests: number; timeUnit: string }) => j<{ ok: boolean; name: string }>("/api/rules/policies", post(body)),
   usage: () => j<Usage>("/api/rules/policies/usage"),
+  cleanup: (kind: string, names: string[], preview: boolean) => j<{ kind: string; plan: { name: string; action: string; reason: string }[]; results?: { name: string; outcome: string; reason?: string }[] }>(`/api/rules/policies/cleanup${preview ? "?preview=1" : ""}`, post({ kind, names })),
   overview: () => j<Signals>("/api/rules/overview"),
+  policies: (id: string, body: GatewayPolicies, preview: boolean) => j<ChangePlan>(`/api/rules/apis/${id}/policies${preview ? "?preview=1" : ""}`, post(body)),
+  lifecycle: (id: string, action: string, preview: boolean, confirm?: string) => j<ChangePlan>(`/api/rules/apis/${id}/lifecycle${preview ? "?preview=1" : ""}`, post({ action, confirm })),
+  coverage: () => j<{ families: string[]; rows: CoverageRow[] }>("/api/rules/coverage"),
+  library: () => j<{ list: PolicySet[] }>("/api/rules/library"),
+  createSet: (body: Omit<PolicySet, "createdBy" | "createdAt">) => j<PolicySet>("/api/rules/library", post(body)),
+  deleteSet: (name: string) => j(`/api/rules/library/${encodeURIComponent(name)}`, { method: "DELETE", body: "{}" }),
+  applySet: (name: string, apiIds: string[], preview: boolean) => j<{ set: string; preview: boolean; results: (Partial<ChangePlan> & { apiId: string; apiName?: string; ok: boolean; error?: string })[] }>(`/api/rules/library/${encodeURIComponent(name)}/apply${preview ? "?preview=1" : ""}`, post({ apiIds })),
+  settings: () => j<GatewaySettings>("/api/rules/settings"),
   blocking: () => j<{ list: BlockRule[] }>("/api/rules/blocking"),
   addBlock: (body: { type: string; value: string; endIp?: string; invert?: boolean; enabled: boolean }) => j<{ id: string; words: string }>("/api/rules/blocking", post(body)),
   setBlock: (id: string, enabled: boolean) => j(`/api/rules/blocking/${id}`, { method: "PATCH", body: JSON.stringify({ enabled }) }),

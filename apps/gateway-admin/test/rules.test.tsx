@@ -16,6 +16,9 @@ const rules: TApiRules = {
   traffic: { tiers: ["Unlimited"], apiPolicy: null, operations: [{ verb: "GET", target: "/orders", policy: "Unlimited" }] },
   policies: { subscription: [{ name: "Unlimited", limit: 2147483647, timeUnit: "min", unitTime: 1 }, { name: "Gold", limit: 5000, timeUnit: "min", unitTime: 1, quotaType: "REQUESTCOUNTLIMIT" }],
     advanced: [{ name: "cs-gw-test-3", limit: 3, timeUnit: "min", unitTime: 1, quotaType: "REQUESTCOUNTLIMIT" }] },
+  gatewayPolicies: { apiKeyHeader: "ApiKey", caching: { enabled: false, seconds: 300 }, maxTps: { production: null, sandbox: null }, endpoint: { timeoutMs: null, suspendMs: null },
+    jsonThreat: null, xmlThreat: false, addHeaders: [], removeHeaders: [], httpsOnly: false, schemaValidation: false },
+  lifecycle: { state: "PUBLISHED", version: "v1", isDefaultVersion: false },
   access: { security: "oauth2", securityWords: "OAuth2 token required", cors: { enabled: false, origins: [], headers: [], methods: [], credentials: false }, ipAllow: [], ipDeny: [], clientIpHeader: "" },
   deployments: [{ name: "Default", vhost: "localhost", revisionUuid: "r1", deployedTime: 1 }],
   environments: [{ name: "Default", displayName: "Default", vhost: "localhost" }],
@@ -123,5 +126,27 @@ describe("Blocking rules", () => {
     fireEvent.click(screen.getByRole("button", { name: "Block now" }));
     await waitFor(() => expect(calls).toContain("POST /api/rules/blocking"));
     expect(await screen.findByText("Added: Address 198.51.100.7.")).toBeInTheDocument();
+  });
+});
+
+describe("API page: policies", () => {
+  it("lists every policy family with where it is handled and previews a JSON limit", async () => {
+    const bodies: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === `/api/rules/apis/${ID}`) return ok(rules);
+      if (url === `/api/rules/apis/${ID}/policies?preview=1`) { bodies.push(String(init?.body)); return ok({ ...plan, changes: ["JSON threat protection: off → on (depth ≤ 10, …)."] }); }
+      return ok({}, 404);
+    });
+    wrap(<ApiRules />, `/apis/${ID}?tab=policies`, "/apis/:id");
+    await screen.findByText("1. Authentication");
+    expect(screen.getByText("11. AI / LLM gateway")).toBeInTheDocument();
+    expect(screen.getAllByText("Configure here").length).toBeGreaterThan(10);
+    expect(screen.getAllByText("Outside the gateway").length).toBeGreaterThan(2);
+    fireEvent.click(screen.getByLabelText(/JSON threat protection: refuse/));
+    fireEvent.click(screen.getByRole("button", { name: "Review change" }));
+    await screen.findByTestId("confirm-change");
+    expect(JSON.parse(bodies[0]).jsonThreat).toMatchObject({ maxJsonDepth: 10 });
+    expect(screen.getByRole("button", { name: "Deprecate" })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { apiClient, type GatewayApi, type InventoryItem } from "../api.ts";
+import { apiClient, rulesClient, type GatewayApi, type InventoryItem } from "../api.ts";
+import { Banner, Chip, Section, Tile } from "../components/gw.tsx";
+import { ago, fmtInt, txt } from "../lib/text.ts";
 import { Card, StatCard, Ring, Skeleton } from "../components/ui.tsx";
 import { PageHeader } from "./PageHeader.tsx";
 
@@ -35,8 +37,8 @@ export function Overview() {
 
   const attention: Attention[] = [
     ...unhealthy.map((i) => ({ key: `h:${i.id}`, name: i.name, what: `service ${i.health?.state} (${i.health?.ready ?? 0}/${i.health?.desired ?? 0} ready)`, tone: "bad" as const, to: "/apis" })),
-    ...openApis.map(({ g }) => ({ key: `o:${g.id}`, name: `${g.name} ${g.version}`, what: "open: no sign-in or key required", tone: "bad" as const, to: "/apis" })),
-    ...noLimit.map(({ g }) => ({ key: `l:${g.id}`, name: `${g.name} ${g.version}`, what: "no rate limit", tone: "warn" as const, to: "/apis" })),
+    ...openApis.map(({ g }) => ({ key: `o:${g.id}`, name: `${g.name} ${g.version}`, what: "open: no sign-in or key required", tone: "bad" as const, to: `/apis/${g.id}?tab=access` })),
+    ...noLimit.map(({ g }) => ({ key: `l:${g.id}`, name: `${g.name} ${g.version}`, what: "no rate limit", tone: "warn" as const, to: `/apis/${g.id}?tab=traffic` })),
   ];
 
   const title = inv.isLoading ? "Loading overview"
@@ -94,6 +96,51 @@ export function Overview() {
             <span style={{ fontSize: 13, color: "var(--muted)" }}>{c.compliant} of {c.total} checked APIs pass · {c.errors} errors · {c.warnings} warnings</span>
           </>)}
         </Card>
+      </div>
+      <OperatorSignals />
+    </>
+  );
+}
+
+/** Right-now signals from the rules endpoints: live per environment, throttled/refused in the last 15 minutes, blocking rules, recent changes. */
+function OperatorSignals() {
+  const q = useQuery({ queryKey: ["signals"], queryFn: rulesClient.overview, refetchInterval: 30000 });
+  const d = q.data;
+  if (q.isLoading) return <Skeleton h={120} />;
+  if (q.isError || !d) return <Banner tone="warn">The live gateway signals could not be read: {(q.error as Error)?.message ?? "unknown error"}</Banner>;
+  const envs = Object.entries(d.environments);
+  const liveTotal = envs.reduce((s, [, e]) => s + e.live, 0);
+  const t = d.traffic;
+  return (
+    <>
+      <div className="gw-tiles" aria-label="Right now">
+        <Tile label="Live deployments" value={fmtInt(liveTotal)} hint={envs.length ? envs.map(([name, e]) => `${e.live} on ${name}`).join(" · ") : "Nothing deployed"} />
+        <Tile label="Throttled now" value={t ? fmtInt(t.throttled) : "—"} hint={t ? "HTTP 429 in the last 15 minutes" : "Not measured (gateway analytics inactive)"} />
+        <Tile label="Refused now" value={t ? fmtInt(t.refused) : "—"} hint={t ? "HTTP 401/403 in the last 15 minutes" : "Not measured"} />
+        <Tile label="Blocking rules" value={d.blocking ? fmtInt(d.blocking.active) : "—"} hint={d.blocking ? `enforced, of ${d.blocking.total}` : "Could not be read"} />
+      </div>
+      <div className="gw-grid2">
+        <Section title="Live per environment" note={`${d.published} of ${d.total} APIs are published in API Manager (migrated services, Studio flows and APIs made directly in API Manager).`}>
+          {envs.length ? envs.map(([name, e]) => (
+            <div key={name} style={{ marginBottom: 10 }}>
+              <strong style={{ fontSize: 13.5 }}>{name}</strong> <span className="gw-muted">· {e.live} API{e.live === 1 ? "" : "s"}</span>
+              <div className="gw-muted" style={{ fontSize: 12.5, lineHeight: 1.6, overflowWrap: "anywhere" }}>{e.apis.join(", ")}</div>
+            </div>)) : <p className="gw-note" style={{ margin: 0 }}>No API is deployed to a gateway.</p>}
+          {d.notDeployed.length > 0 && <p className="gw-note" style={{ margin: "6px 0 0" }}>Published but not deployed (callers get 404): {d.notDeployed.map((a, i) => <span key={a.id}>{i ? ", " : ""}<Link className="gw-link" to={`/apis/${a.id}?tab=history`}>{a.name}</Link></span>)}</p>}
+          {t && t.topThrottled.length > 0 && <p className="gw-note" style={{ margin: "6px 0 0" }}>Throttling most (15 min): {t.topThrottled.map((x) => `${x.name} ${fmtInt(x.throttled)}`).join(", ")}</p>}
+        </Section>
+        <Section title="Recent changes" note="Changes made from this console, newest first. Changes made directly in API Manager show without a name.">
+          {d.recent.length ? (
+            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column" }} aria-label="Recent changes list">
+              {d.recent.map((r, i) => (
+                <li key={i} style={{ padding: "8px 0", borderTop: i ? "1px solid var(--border)" : "none", fontSize: 13, lineHeight: 1.5 }}>
+                  <strong>{r.by ?? "API Manager"}</strong> · {r.action}{r.apiName ? <> · {r.apiId ? <Link className="gw-link" to={`/apis/${r.apiId}?tab=history`}>{r.apiName}</Link> : r.apiName}</> : null} · <span className="gw-faint">{Number.isFinite(Date.parse(r.at)) ? ago(Date.parse(r.at)) : txt(r.at)}</span> {r.outcome === "failed" && <Chip tone="bad">failed</Chip>}
+                  {r.what && <div className="gw-muted" style={{ overflowWrap: "anywhere" }}>{r.what}</div>}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="gw-note" style={{ margin: 0 }}>No changes recorded yet.</p>}
+        </Section>
       </div>
     </>
   );

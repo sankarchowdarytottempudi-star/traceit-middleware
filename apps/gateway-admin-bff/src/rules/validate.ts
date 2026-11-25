@@ -66,7 +66,7 @@ export function checkTraffic(raw: unknown, ops: { verb: string; target: string }
 }
 
 // ---------- access: security, CORS, address rules ----------
-export const SECURITY = ["oauth2", "apikey", "both", "none"] as const;
+export const SECURITY = ["oauth2", "apikey", "both", "basic", "none"] as const;
 export type Security = (typeof SECURITY)[number];
 export const AccessInput = z.object({
   security: z.enum(SECURITY),
@@ -273,4 +273,41 @@ export const ID = /^[0-9a-fA-F-]{8,64}$/;
 export function checkId(id: unknown, what = "id"): string {
   if (typeof id !== "string" || !ID.test(id)) bad(`That ${what} is not valid.`);
   return id as string;
+}
+
+// ---------- built-in policies shipped with API Manager 4.5 ----------
+export const BUILT_IN: Record<string, string[]> = {
+  subscription: ["Gold", "Silver", "Bronze", "Unauthenticated", "Unlimited", "DefaultSubscriptionless", "AsyncGold", "AsyncSilver", "AsyncBronze",
+    "AsyncUnlimited", "AsyncDefaultSubscriptionless", "AsyncWHGold", "AsyncWHSilver", "AsyncWHBronze", "AsyncWHUnlimited", "AIGold", "AISilver", "AIBronze"],
+  advanced: ["10KPerMin", "20KPerMin", "50KPerMin", "Unlimited"],
+  application: ["10PerMin", "20PerMin", "50PerMin", "Unlimited", "DefaultApplication"],
+  custom: [],
+};
+export const isBuiltIn = (kind: string, name: string) => (BUILT_IN[kind] ?? []).includes(name);
+
+// ---------- Policies tab input ----------
+const HDR = /^[A-Za-z_][A-Za-z0-9_-]{0,99}$/;
+export function checkPolicies(raw: unknown) {
+  const r = (raw ?? {}) as any;
+  const int = (v: unknown, lo: number, hi: number, what: string) => { const n = Number(v); if (!Number.isInteger(n) || n < lo || n > hi) bad(`${what} must be a whole number from ${lo} to ${hi}.`, what); return n; };
+  const apiKeyHeader = String(r.apiKeyHeader ?? "ApiKey").trim();
+  if (!HDR.test(apiKeyHeader)) bad("The API key header name may use letters, digits, dash and underscore.", "apiKeyHeader");
+  const caching = { enabled: !!r.caching?.enabled, seconds: r.caching?.enabled ? int(r.caching?.seconds ?? 300, 1, 86400, "Cache time (seconds)") : Number(r.caching?.seconds ?? 300) || 300 };
+  const tps = (v: unknown, what: string) => (v == null || v === "" ? null : int(v, 1, 100000, what));
+  const maxTps = { production: tps(r.maxTps?.production, "Backend limit (production)"), sandbox: tps(r.maxTps?.sandbox, "Backend limit (sandbox)") };
+  const ms = (v: unknown, what: string) => (v == null || v === "" ? null : int(v, 1000, 300000, what));
+  const endpoint = { timeoutMs: ms(r.endpoint?.timeoutMs, "Backend timeout (ms)"), suspendMs: ms(r.endpoint?.suspendMs, "Pause after failure (ms)") };
+  const jt = r.jsonThreat;
+  const jsonThreat = jt ? { maxJsonDepth: int(jt.maxJsonDepth, 1, 999, "Max JSON depth"), maxPropertyCount: int(jt.maxPropertyCount, 1, 999, "Max properties"),
+    maxStringLength: int(jt.maxStringLength, 1, 999, "Max string length"), maxArrayElementCount: int(jt.maxArrayElementCount, 1, 999, "Max array elements"), maxKeyLength: int(jt.maxKeyLength ?? 100, 1, 999, "Max key length") } : null;
+  const addHeaders = (Array.isArray(r.addHeaders) ? r.addHeaders : []).slice(0, 20).map((h: any) => {
+    const name = String(h?.name ?? "").trim(); const value = String(h?.value ?? "");
+    if (!HDR.test(name)) bad(`"${name}" is not a valid header name.`, "addHeaders");
+    if (!value || value.length > 500 || /[\r\n]/.test(value)) bad(`Give ${name} a value (one line, up to 500 characters).`, "addHeaders");
+    if (/^(authorization|host|content-length)$/i.test(name)) bad(`${name} is managed by the gateway and cannot be added here.`, "addHeaders");
+    return { name, value };
+  });
+  const removeHeaders = [...new Set((Array.isArray(r.removeHeaders) ? r.removeHeaders : []).slice(0, 20).map((h: unknown) => String(h).trim()).filter(Boolean))] as string[];
+  for (const h of removeHeaders) if (!HDR.test(h)) bad(`"${h}" is not a valid header name.`, "removeHeaders");
+  return { apiKeyHeader, caching, maxTps, endpoint, jsonThreat, xmlThreat: !!r.xmlThreat, addHeaders, removeHeaders, httpsOnly: !!r.httpsOnly, schemaValidation: !!r.schemaValidation };
 }

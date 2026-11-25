@@ -54,6 +54,25 @@ def run(cfg: Config, h: Http, r: Run, ses):
     st = StandIn(cfg)
     state: Dict[str, Any] = {}
 
+    # Console mode: when the Gateway console (cs/gateway) answers /api/rules/*, the rules of G2-G4 are
+    # set through the console's own API (as an operator would from its screens) and enforcement is
+    # still measured on the gateway. Otherwise they are set on API Manager directly.
+    Gw = (cfg.gateway_url or "").rstrip("/")
+    ghd = ses.headers("gateway", "admin") if Gw else None
+    console = False
+    if ghd is not None and Gw and cfg.secret("ACC_GW_DIRECT") != "1":
+        console = h.get(Gw + "/api/rules/context", headers=ghd, timeout=20).status == 200
+    if console:
+        cfg.env["_ACC_CONSOLE_USED"] = "1"
+    via = "via the Gateway console" if console else "via API Manager REST (console rules API not available)"
+
+    def con(method, path, data=None):
+        u = urllib.parse.urlsplit(Gw)
+        x = h.request(method, Gw + path, headers=dict(ghd or {}, Origin=f"{u.scheme}://{u.netloc}"), data=data, timeout=60)
+        if x.status not in (200, 201, 204):
+            raise ApimError(f"console {method} {path} -> {x.status} {short(x.text, 160)}")
+        return x.json() if x.body else None
+
     def call(token: Optional[str] = None, apikey: Optional[str] = None, xff: Optional[str] = None, method="GET", origin=None):
         hd: Dict[str, str] = {}
         if token:
@@ -139,17 +158,24 @@ def run(cfg: Config, h: Http, r: Run, ses):
             other = BLOCK_IP_PREFIX + "250"
             tok = state["app"]["token"]
             before = call(tok, xff=ip).status
-            pol_ = a.call("POST", ADM + "/deny-policies", {"conditionType": "IP", "conditionStatus": True,
-                                                            "conditionValue": {"fixedIp": ip, "invert": False}})
-            state["deny"] = pol_.get("policyId") or pol_.get("conditionId")
+            if console:
+                pol_ = con("POST", "/api/rules/blocking", {"type": "IP", "value": ip, "enabled": True}) or {}
+                state["deny"] = pol_.get("id")
+            else:
+                pol_ = a.call("POST", ADM + "/deny-policies", {"conditionType": "IP", "conditionStatus": True,
+                                                                "conditionValue": {"fixedIp": ip, "invert": False}})
+                state["deny"] = pol_.get("policyId") or pol_.get("conditionId")
             res = wait_for(lambda: ((lambda x: (x.status == 403, x.status))(call(tok, xff=ip))), 90)
             blocked = call(tok, xff=ip)
             others = call(tok, xff=other).status
-            a.call("DELETE", f"{ADM}/deny-policies/{state['deny']}")
+            if console:
+                con("DELETE", f"/api/rules/blocking/{state['deny']}")
+            else:
+                a.call("DELETE", f"{ADM}/deny-policies/{state['deny']}")
             state.pop("deny", None)
             wait_for(lambda: ((lambda x: (x.status == 200, x.status))(call(tok, xff=ip))), 90)
             after = call(tok, xff=ip).status
-            ev = (f"from {ip}: before {before}, blocked {blocked.status} ({short(blocked.text, 80)}), other address {others}, "
+            ev = (f"{via}: from {ip}: before {before}, blocked {blocked.status} ({short(blocked.text, 80)}), other address {others}, "
                   f"after unblock {after}")
             return (PASS if before == 200 and blocked.status == 403 and others == 200 and after == 200 else FAIL), ev
         r.check("G2", G, titles["G2"], g2)
@@ -158,15 +184,22 @@ def run(cfg: Config, h: Http, r: Run, ses):
         def g3():
             need()
             init_ok = cors_allows(origin1)
-            api = a.call("GET", f"{PUB}/apis/{state['api']}")
-            api["corsConfiguration"]["accessControlAllowOrigins"] = [origin2]
-            a.call("PUT", f"{PUB}/apis/{state['api']}", api)
-            rev2 = a.call("POST", f"{PUB}/apis/{state['api']}/revisions", {"description": "cs-acc revision 2 (changed CORS)"})
-            state["rev2"] = rev2["id"]
-            deploy(rev2["id"])
+            if console:
+                out = con("POST", f"/api/rules/apis/{state['api']}/access", {
+                    "security": "both", "ipAllow": [], "ipDeny": [],
+                    "cors": {"enabled": True, "origins": [origin2], "headers": ["authorization", "Content-Type", "apikey"],
+                             "methods": ["GET", "POST", "OPTIONS"], "credentials": False}}) or {}
+                state["rev2"] = (out.get("revision") or {}).get("id") or "console"
+            else:
+                api = a.call("GET", f"{PUB}/apis/{state['api']}")
+                api["corsConfiguration"]["accessControlAllowOrigins"] = [origin2]
+                a.call("PUT", f"{PUB}/apis/{state['api']}", api)
+                rev2 = a.call("POST", f"{PUB}/apis/{state['api']}/revisions", {"description": "cs-acc revision 2 (changed CORS)"})
+                state["rev2"] = rev2["id"]
+                deploy(rev2["id"])
             wait_for(lambda: (cors_allows(origin2), None), 90)
             new_ok, old_ok = cors_allows(origin2), cors_allows(origin1)
-            ev = f"before: {origin1} allowed={init_ok}; after revision 2: {origin2} allowed={new_ok}, {origin1} allowed={old_ok}"
+            ev = f"{via}: before: {origin1} allowed={init_ok}; after revision 2: {origin2} allowed={new_ok}, {origin1} allowed={old_ok}"
             return (PASS if init_ok and new_ok and not old_ok else FAIL), ev
         r.check("G3", G, titles["G3"], g3)
 
@@ -175,12 +208,15 @@ def run(cfg: Config, h: Http, r: Run, ses):
             need()
             if not state.get("rev2"):
                 raise ApimError("not run: no second revision (see G3)")
-            a.call("POST", f"{PUB}/apis/{state['api']}/restore-revision?revisionId={state['rev1']}")
-            deploy(state["rev1"])
+            if console:
+                con("POST", f"/api/rules/apis/{state['api']}/rollback", {"revisionId": state["rev1"]})
+            else:
+                a.call("POST", f"{PUB}/apis/{state['api']}/restore-revision?revisionId={state['rev1']}")
+                deploy(state["rev1"])
             wait_for(lambda: (cors_allows(origin1), None), 90)
             o1, o2 = cors_allows(origin1), cors_allows(origin2)
             served = call(state["app"]["token"]).status
-            ev = f"revision 1 deployed again: {origin1} allowed={o1}, {origin2} allowed={o2}, call -> {served}"
+            ev = f"{via}: revision 1 deployed again: {origin1} allowed={o1}, {origin2} allowed={o2}, call -> {served}"
             return (PASS if o1 and not o2 and served == 200 else FAIL), ev
         r.check("G4", G, titles["G4"], g4)
 
@@ -278,8 +314,8 @@ def _console(cfg: Config, h: Http, r: Run, ses):
     """G8/G9: the Gateway console offers the rules and records them (cs/gateway). Probed by the
     console's API; WAITING while the console does not answer those routes."""
     Gw = (cfg.gateway_url or "").rstrip("/")
-    paths = [p for p in cfg.secret("ACC_GW_RULE_PATHS", "/api/policies,/api/consumers,/api/blocking,/api/revisions,/api/cors").split(",") if p]
-    audit = cfg.secret("ACC_GW_AUDIT_PATH", "/api/audit")
+    paths = [p for p in cfg.secret("ACC_GW_RULE_PATHS", "/api/rules/context,/api/rules/apis,/api/rules/blocking,/api/rules/applications,/api/rules/policies/usage,/api/rules/overview").split(",") if p]
+    audit = cfg.secret("ACC_GW_AUDIT_PATH", "/api/rules/audit")
 
     def rules():
         if not Gw:
@@ -304,5 +340,10 @@ def _console(cfg: Config, h: Http, r: Run, ses):
         x = h.get(Gw + audit, headers=hd, timeout=15)
         if x.status in (404, 405):
             return WAITING, f"no console audit at {audit} yet (cs/gateway)"
-        return (PASS if x.status == 200 else FAIL), f"GET {audit} -> {x.status} {short(x.text, 100)}"
+        if x.status != 200:
+            return FAIL, f"GET {audit} -> {x.status} {short(x.text, 100)}"
+        mine = f"cs-acc-{cfg.stamp}" in x.text
+        if cfg.env.get("_ACC_CONSOLE_USED") == "1" and not mine:
+            return FAIL, f"the audit does not show this run's console changes on cs-acc-{cfg.stamp}-api"
+        return PASS, f"audit answers; this run's changes listed: {mine}"
     r.check("G9", G, "Gateway console keeps an audit of rule changes", gaudit)

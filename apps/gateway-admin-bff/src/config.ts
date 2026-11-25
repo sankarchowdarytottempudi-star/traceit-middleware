@@ -32,6 +32,12 @@ const schema = z.object({
   APIM_LOG_DIR: z.string().optional().or(z.literal("")),
   // Directory with one folder per migrated service (names only are read).
   SERVICES_DIR: z.string().optional().or(z.literal("")),
+  // Gateway rules: JSON-lines audit of every write made from this console.
+  GATEWAY_AUDIT_FILE: z.string().optional().or(z.literal("")),
+  // What this gateway serves: "production" (default, strictest warnings) or "uat".
+  GATEWAY_STAGE: z.enum(["production", "uat"]).optional().or(z.literal("")),
+  // Header the per-API address rules read the caller address from (set only when the gateway sits behind your proxy).
+  GATEWAY_CLIENT_IP_HEADER: z.string().regex(/^[A-Za-z0-9-]{0,60}$/).optional().or(z.literal("")),
 });
 
 export type Config = Omit<z.infer<typeof schema>, "APIM_PUBLIC_URL" | "DATA_DIR"> & { APIM_PUBLIC_URL: string; DATA_DIR: string; caPem: string };

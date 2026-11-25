@@ -10,6 +10,8 @@ import type { SessionStore } from "./sessionStore.js";
 import { registerRoutes } from "./routes.js";
 import { registerInsightRoutes } from "./insightRoutes.js";
 import { classifyUnmatched } from "./spaFallback.js";
+import { registerRuleRoutes } from "./rules/routes.js";
+import { createAudit } from "./rules/audit.js";
 
 export async function buildServer(cfg: Config, creds: ClientCreds, store: SessionStore): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
@@ -18,8 +20,10 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   app.get("/healthz", async () => ({ status: "UP" }));
 
   registerAuth(app, cfg, creds, store);
-  registerRoutes(app, cfg);
+  const audit = createAudit(cfg.GATEWAY_AUDIT_FILE || join(cfg.DATA_DIR || ".data", "gateway-audit.jsonl"));
+  registerRoutes(app, cfg, audit);
   registerInsightRoutes(app, cfg);
+  registerRuleRoutes(app, cfg, { audit });
 
   app.setErrorHandler((error, _req, reply) => {
     const err = error as { statusCode?: number; message?: string };

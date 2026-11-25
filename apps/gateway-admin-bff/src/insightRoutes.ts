@@ -28,6 +28,7 @@ export function registerInsightRoutes(app: FastifyInstance, cfg: Config) {
   const logs = createLogs({ k8s, runtime, servicesNs, gatewayNs: cfg.GATEWAY_NAMESPACE || "apim", gatewayPodPrefix: cfg.GATEWAY_POD_PREFIX || "wso2am" });
 
   gw.start();
+  app.decorate("gwAnalytics", gw);
   app.addHook("onClose", async () => { await gw.stop(); });
 
   async function need(req: FastifyRequest): Promise<string> {

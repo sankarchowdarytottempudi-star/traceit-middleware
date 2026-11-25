@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Config } from "./config.js";
 import { api } from "./wso2.js";
 import * as R from "./reshape.js";
+import type { Audit } from "./rules/audit.js";
+import { BadInput, POLICY_NAME, rateWords } from "./rules/validate.js";
 
 const ADMIN = "/api/am/admin/v4";
 const GOV = "/api/am/governance/v1";
@@ -15,7 +17,22 @@ const SUB_PATH: Record<string, string> = {
   deny: `${ADMIN}/throttling/deny-policies`,
 };
 
-export function registerRoutes(app: FastifyInstance, cfg: Config) {
+const WRITABLE = ["advanced", "application", "subscription"];
+
+/** Server-side check of a throttling policy body sent by the Rate limiting screen. */
+export function checkPolicyBody(type: string, body: any, isNew: boolean): string {
+  if (!WRITABLE.includes(type)) throw new BadInput(`Policies of type "${type}" cannot be changed from this console.`);
+  const name = String(body?.policyName ?? "").trim();
+  if (isNew && !POLICY_NAME.test(name)) throw new BadInput("Name the policy with letters, digits and underscores only (up to 60). API Manager refuses dashes, dots and spaces.");
+  const rc = body?.defaultLimit?.requestCount;
+  if (body?.defaultLimit?.type !== "REQUESTCOUNTLIMIT" || !rc) throw new BadInput("Only request-count limits can be set from this console.");
+  const n = Number(rc.requestCount);
+  if (!Number.isInteger(n) || n < 1 || n > 1_000_000_000) throw new BadInput("Requests must be a whole number between 1 and 1,000,000,000.");
+  if (!["sec", "min", "hour", "day"].includes(String(rc.timeUnit))) throw new BadInput("Time unit must be second, minute, hour or day.");
+  return rateWords(n, String(rc.timeUnit), Number(rc.unitTime) || 1);
+}
+
+export function registerRoutes(app: FastifyInstance, cfg: Config, audit?: Audit) {
   const w = { baseUrl: cfg.APIM_BASE_URL, caPem: cfg.caPem };
 
   async function need(req: FastifyRequest): Promise<string> {
@@ -35,26 +52,37 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
     return { list: R.reshapeAdvanced(list) };
   });
 
+  async function actor(req: FastifyRequest) { return (await app.userForRequest?.(req)) ?? "unknown"; }
   app.post("/api/ratelimits/:type", async (req, reply) => {
     const { type } = req.params as { type: string };
+    const words = checkPolicyBody(type, req.body, true);
     const t = await need(req);
-    const { status, json } = await api(w, t, "POST", SUB_PATH[type] ?? SUB_PATH.subscription, req.body);
-    reply.code(status);
+    const body = { ...(req.body as any) };
+    if (type === "subscription") body.billingPlan ??= "FREE";
+    const { status, json } = await api(w, t, "POST", SUB_PATH[type], body);
+    await audit?.write({ user: await actor(req), action: `create ${type} limit`, target: String(body.policyName), after: words, outcome: status < 400 ? "ok" : "failed", detail: status < 400 ? undefined : String(json?.description ?? json?.message ?? status) });
+    reply.code(status === 0 ? 502 : status);
     return json;
   });
   app.put("/api/ratelimits/:type/:id", async (req, reply) => {
     const { type, id } = req.params as { type: string; id: string };
+    const words = checkPolicyBody(type, req.body, false);
+    if (!/^[0-9a-fA-F-]{8,64}$/.test(id)) throw new BadInput("That policy id is not valid.");
     const t = await need(req);
-    const { status, json } = await api(w, t, "PUT", `${SUB_PATH[type] ?? SUB_PATH.subscription}/${id}`, req.body);
-    reply.code(status);
+    const { status, json } = await api(w, t, "PUT", `${SUB_PATH[type]}/${id}`, req.body);
+    await audit?.write({ user: await actor(req), action: `change ${type} limit`, target: String((req.body as any)?.policyName ?? id), after: words, outcome: status < 400 ? "ok" : "failed" });
+    reply.code(status === 0 ? 502 : status);
     return json;
   });
   app.delete("/api/ratelimits/:type/:id", async (req, reply) => {
     const { type, id } = req.params as { type: string; id: string };
+    if (!WRITABLE.includes(type)) throw new BadInput(`Policies of type "${type}" cannot be changed from this console.`);
+    if (!/^[0-9a-fA-F-]{8,64}$/.test(id)) throw new BadInput("That policy id is not valid.");
     const t = await need(req);
-    const { status } = await api(w, t, "DELETE", `${SUB_PATH[type] ?? SUB_PATH.subscription}/${id}`);
-    reply.code(status === 0 ? 500 : status);
-    return { ok: status < 400 };
+    const { status, json } = await api(w, t, "DELETE", `${SUB_PATH[type]}/${id}`);
+    await audit?.write({ user: await actor(req), action: `delete ${type} limit`, target: id, after: "deleted", outcome: status < 400 && status > 0 ? "ok" : "failed", detail: status < 400 ? undefined : String(json?.description ?? json?.message ?? status) });
+    reply.code(status === 0 ? 502 : status);
+    return status < 400 ? { ok: true } : { type: "about:blank", title: String(json?.description ?? json?.message ?? "API Manager refused the change"), status };
   });
 
   app.get("/api/environments", async (req) => {
@@ -110,8 +138,12 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
   });
   app.post("/api/workflows/:referenceId", async (req, reply) => {
     const { referenceId } = req.params as { referenceId: string };
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(referenceId)) throw new BadInput("That request reference is not valid.");
+    const decision = String((req.body as any)?.status ?? "APPROVED");
+    if (!["APPROVED", "REJECTED"].includes(decision)) throw new BadInput("Decision must be APPROVED or REJECTED.");
     const t = await need(req);
-    const { status: s, json } = await api(w, t, "POST", `${ADMIN}/workflows/update-workflow-status?workflowReferenceId=${referenceId}`, { status: (req.body as any)?.status ?? "APPROVED", description: (req.body as any)?.description ?? "" });
+    const { status: s, json } = await api(w, t, "POST", `${ADMIN}/workflows/update-workflow-status?workflowReferenceId=${referenceId}`, { status: decision, description: String((req.body as any)?.description ?? "").slice(0, 500) });
+    await audit?.write({ user: await actor(req), action: decision === "APPROVED" ? "approve request" : "reject request", target: referenceId, after: decision.toLowerCase(), outcome: s > 0 && s < 400 ? "ok" : "failed" });
     reply.code(s === 0 ? 500 : s);
     return json ?? { ok: s < 400 };
   });

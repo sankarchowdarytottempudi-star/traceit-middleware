@@ -10,7 +10,10 @@ interface Session { tokens: TokenSet; expiresAt: number; user: string; }
 const SESSION_TTL = 86400;   // 1 day; refresh token kept server-side in the store
 const PKCE_TTL = 600;
 const SCOPE = "openid apim:admin apim:api_view apim:api_manage apim:tier_view apim:tier_manage apim:admin_settings apim:environment_manage " +
-  "apim:environment_read apim:keymanagers_manage apim:workflow_approve apim:api_governance_view apim:api_governance_manage";
+  "apim:environment_read apim:keymanagers_manage apim:workflow_approve apim:api_governance_view apim:api_governance_manage " +
+  // gateway rules: publish revisions, consumer applications/keys/subscriptions, blocking rules, API-specific policies
+  "apim:api_create apim:api_publish apim:subscribe apim:app_manage apim:sub_manage apim:subscription_view apim:subscription_block " +
+  "apim:bl_view apim:bl_manage apim:common_operation_policy_view apim:api_key";
 
 export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCreds, store: SessionStore) {
   const redirectUri = `${cfg.PUBLIC_BASE_URL}/api/auth/callback`;
@@ -48,6 +51,15 @@ export function registerAuth(app: FastifyInstance, cfg: Config, creds: ClientCre
     }
     return devPending;
   }
+  // Service credentials token: the fallback the rules screens use when the signed-in person's own
+  // token sees no APIs (visibility/identity mismatch). The person is still the actor in the audit.
+  app.decorate("serviceToken", devToken);
+  app.decorate("userForRequest", async (req: FastifyRequest) => {
+    if (devUser) return devUser;
+    const sid = req.unsignCookie(req.cookies.sid ?? "").value;
+    const s = sid ? await store.get<Session>(`sess:${sid}`) : null;
+    return s?.user ?? null;
+  });
   app.decorate("tokenForRequest", async (req: FastifyRequest) => {
     if (devUser) return devToken();
     const sid = req.unsignCookie(req.cookies.sid ?? "").value;

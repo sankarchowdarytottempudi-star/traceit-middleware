@@ -10,12 +10,14 @@ weave_start(){
   local comp="$1" image="$2" args=() cmd=() limits=()
   [ "$ISOLATED" = 1 ] && limits=(--cpus 1 --memory 1g)
   local ca=(-v "$ETC/apim-ca.pem:/etc/weave/apim-ca.pem:ro" -v "$ETC/extra-ca.pem:/etc/weave/extra-ca.pem:ro")
+  # users and access: one users file for both consoles (rw), first-admin password / OIDC secret (ro)
+  local access=(-v "$DATA/access:/data/access" -v "$ETC/access:/run/weave-access:ro")
   case "$comp" in
     runtime) args=(--user 1000:1000 --env-file "$ETC/runtime.env" -v "$DATA/runtime:/data" "${ca[@]}");;
-    gateway) args=(--env-file "$ETC/gateway.env" -v "$DATA/gateway:/app/apps/gateway-admin-bff/.data" "${ca[@]}"
+    gateway) args=(--env-file "$ETC/gateway.env" -v "$DATA/gateway:/app/apps/gateway-admin-bff/.data" "${ca[@]}" "${access[@]}"
                -v "$ETC/k8s:/etc/weave/k8s:ro" -v "$DATA_ROOT/logs/apim:/var/log/weave/apim:ro" -v "$PLATFORM_DIR/services:/estate/services:ro")
              cmd=(node dist/src/index.js);;   # the image's default CMD points at dist/index.js; the compiled entry is dist/src/index.js
-    factory) args=(--env-file "$ETC/factory.env" -v "$DATA/factory:/app/apps/weave-factory-bff/.data" "${ca[@]}"
+    factory) args=(--env-file "$ETC/factory.env" -v "$DATA/factory:/app/apps/weave-factory-bff/.data" "${ca[@]}" "${access[@]}"
                -v "$ETC/k8s:/etc/weave/k8s:ro" -v "$DATA_ROOT/logs/apim:/var/log/weave/apim:ro" -v "$PLATFORM_DIR/services:/estate/services:ro"
                -v "$PLATFORM_DIR/framework:/estate/framework:ro")
              [ -d "$ETC/target" ] && args+=(-v "$ETC/target:/etc/weave/target:ro");;

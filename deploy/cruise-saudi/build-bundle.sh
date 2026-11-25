@@ -197,6 +197,9 @@ fi
 # ---- 5. installer --------------------------------------------------------------------------
 log "installer files"
 cp -a "$HERE"/. "$STAGE/"
+# Entra ID / users-and-access guide for Cruise Saudi's administrators (from the users stream)
+if [ -f "$SRC/docs/CRUISE-SAUDI-SSO.md" ]; then mkdir -p "$STAGE/docs"; cp "$SRC/docs/CRUISE-SAUDI-SSO.md" "$STAGE/docs/"
+else log "WARNING: $SRC has no docs/CRUISE-SAUDI-SSO.md (images built without users and access?)"; fi
 echo "$VERSION" > "$STAGE/VERSION"
 (cd "$SRC" && git rev-parse HEAD 2>/dev/null || echo unknown) > "$STAGE/SOURCE_COMMIT"
 (cd "$STAGE" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)

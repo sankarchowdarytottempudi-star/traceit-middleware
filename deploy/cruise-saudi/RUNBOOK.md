@@ -65,19 +65,36 @@ Re-running is safe at any time. To change a setting: edit `/opt/weave/etc/weave.
 setting restarts API Manager (about 3 minutes of gateway downtime); Weave containers are recreated
 (seconds).
 
-## 3. First sign-in
+## 3. First sign-in, users and Microsoft Entra ID
 
-1. Read the generated administrator password (never printed by the installer):
-   `grep ^APIM_ADMIN_PASSWORD= /opt/weave/etc/secrets.env | cut -d= -f2`
-2. Open `https://weave.aroya.com/` → **Sign in** → API Manager's login page → user `admin`
-   (`APIM_ADMIN_USER`) and that password. The Factory (`/factory`) uses the same sign-in.
-3. Create named users in `https://apim.aroya.com/carbon` (Users and Roles) or connect the corporate
-   directory; give them the `admin` / `Internal/creator` / `Internal/publisher` roles as needed.
-   Use named accounts for daily work and keep `admin` for emergencies.
+Weave has its own users and roles (**Admin**, **Migration**, **Gateway**), shared by the Gateway
+console and the Factory through one file: `/opt/weave/data/access/users.json` (+ `audit.jsonl`),
+mounted read-write at `/data/access` in both containers. Sign-in choices come from `AUTH_PROVIDER`
+in `weave.conf` (default `local,oidc`):
 
-Changing the admin password later: change it in API Manager (Carbon → Users → admin → Change
-password), then put the same value into `APIM_ADMIN_PASSWORD` in `/opt/weave/etc/secrets.env` and
-re-run `install.sh` (the Weave services register with it).
+* `local` – Weave accounts (e-mail + password on this server). Keep it: it is the break-glass path
+  when Microsoft cannot be reached.
+* `oidc` – Microsoft Entra ID. Switched on as soon as `OIDC_ISSUER`, `OIDC_CLIENT_ID` and
+  `OIDC_CLIENT_SECRET_FILE` are filled in and `install.sh` is re-run (until then the installer warns
+  and leaves it off, because the consoles refuse to start with an incomplete OIDC setting). What Cruise
+  Saudi's Entra administrator creates (app registration, redirect URIs, groups claim, groups) is in
+  `docs/CRUISE-SAUDI-SSO.md` (in the bundle). The only outbound connection it needs from the server
+  is `login.microsoftonline.com:443` (NETWORK.md); `OIDC_HTTPS_PROXY` if that goes through a proxy.
+* `wso2` – API Manager users (not used at Cruise Saudi).
+
+**First admin** – `WEAVE_ADMIN_EMAIL` becomes a Weave account with the Admin role on the first start.
+Its password is generated at install, stored in `/opt/weave/etc/secrets.env`
+(`WEAVE_BOOTSTRAP_PASSWORD`) and **printed once** at the end of the first `install.sh` run. Put it in
+the company vault, sign in at `https://weave.aroya.com/`, change it (account menu), then add people
+and map Entra groups under **Admin → Users and access**. The bootstrap does nothing once an active
+admin exists. Lost admin password: `docker exec -it weave-gateway node dist/src/access/cli.js
+reset-password --email <admin e-mail>`.
+
+**API Manager portals** (`https://apim.aroya.com/publisher`, `/devportal`, `/admin`, `/carbon`):
+user `admin` (`APIM_ADMIN_USER`), password `grep ^APIM_ADMIN_PASSWORD= /opt/weave/etc/secrets.env | cut -d= -f2`
+(generated; admin/admin is refused). The Weave consoles also use this account as their service
+account towards API Manager. Changing it later: change it in Carbon (Users → admin → Change password),
+put the same value into `APIM_ADMIN_PASSWORD` in `secrets.env`, re-run `install.sh`.
 
 **Local code model** – a bundle built with `--with-model` carries the self-hosted code model
 (`/opt/weave-model/*.gguf`, ~4.7 GB) and its llama.cpp image; install.sh starts container
@@ -85,11 +102,6 @@ re-run `install.sh` (the Weave services register with it).
 
 **Offline code generation** – the Ballerina package cache from the bundle is unpacked into
 `/root/.ballerina/repositories`; migrated services build with `bal build --offline`.
-
-**SSO (OIDC)** – `AUTH_PROVIDER=oidc` and the `OIDC_*` values are written into the Weave env files
-(`/opt/weave/etc/gateway.env`, `factory.env`), ready for the consoles' SSO support; until that is
-enabled in the product, sign-in goes through API Manager, which itself can federate to the corporate
-IdP (Carbon → Identity Providers).
 
 ## 4. Where things are
 
@@ -101,6 +113,8 @@ IdP (Carbon → Identity Providers).
 | PostgreSQL data | `/opt/weave/data/postgres` |
 | API Manager volume (keystores!, index) | `/opt/weave/data/apim` |
 | Weave data (sessions, flows, runtime key) | `/opt/weave/data/{gateway,factory,runtime}` |
+| Weave users, roles, audit log | `/opt/weave/data/access/{users.json,audit.jsonl}` |
+| First-admin password / OIDC secret files (container-readable) | `/opt/weave/etc/access/` |
 | Migration tool data | `/opt/weave/data/migration-tool` |
 | Code generator workspace | `/opt/weave/platform` (migrated services under `services/`) |
 | Backups | `BACKUP_TARGET` (default `/opt/weave/backups`) |

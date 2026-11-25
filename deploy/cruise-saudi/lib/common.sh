@@ -75,7 +75,9 @@ cs_load(){
   : "${APIM_MGMT_NODEPORT:=30443}"; : "${MT_NODEPORT:=30900}"
   : "${ENABLE_GW_PATH:=yes}"
   : "${BACKUP_TARGET:=$DATA_ROOT/backups}"; : "${BACKUP_RETENTION_DAYS:=14}"
-  : "${AUTH_PROVIDER:=apim}"
+  : "${AUTH_PROVIDER:=local,oidc}"
+  : "${WEAVE_ADMIN_EMAIL:=${ADMIN_EMAIL:-admin@$WEAVE_DOMAIN}}"; : "${WEAVE_ADMIN_NAME:=Weave Admin}"
+  : "${AUTH_SESSION_HOURS:=12}"; : "${OIDC_GROUPS_CLAIM:=groups}"
   if [ "$ISOLATED" = 0 ]; then
     case "$DATA_ROOT" in /|/usr*|/etc*|/var|/root|/home) die "DATA_ROOT=$DATA_ROOT is not allowed";; esac
   fi
@@ -143,6 +145,11 @@ cs_secrets(){
            GATEWAY_SESSION_SECRET FACTORY_SESSION_SECRET RUNTIME_INTERNAL_KEY MT_ADMIN_TOKEN; do
     grep -q "^$k=" "$SECRETS" || echo "$k=$(gen_secret)" >>"$SECRETS"
   done
+  # first Weave admin's password: 20 characters, letters and digits (printed once at the end of install)
+  if ! grep -q "^WEAVE_BOOTSTRAP_PASSWORD=" "$SECRETS"; then
+    echo "WEAVE_BOOTSTRAP_PASSWORD=$(openssl rand -base64 30 | tr -dc 'A-Za-z0-9' | head -c 20)" >>"$SECRETS"
+    NEW_BOOTSTRAP_PASSWORD=1
+  fi
   # 128-bit symmetric key API Manager encrypts secrets in its database with (32 hex chars)
   grep -q "^APIM_ENCRYPTION_KEY=" "$SECRETS" || echo "APIM_ENCRYPTION_KEY=$(gen_secret 16)" >>"$SECRETS"
   # shellcheck disable=SC1090

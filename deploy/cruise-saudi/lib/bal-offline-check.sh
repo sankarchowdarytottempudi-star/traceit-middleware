@@ -16,10 +16,9 @@ printf '[workspace]\npackages = [\n    "framework/integration-commons",\n    "se
 tar -C "$W/home/.ballerina" -xzf "$STAGE/platform/ballerina-repositories.tgz"
 DEB="$(ls "$STAGE"/pkgs/ballerina-*.deb | head -1)"
 echo "service: $SVC   image: $IMAGE   network: none   cache: bundle platform/ballerina-repositories.tgz"
-docker run --rm --network none -e HOME=/w/home -v "$W:/w" -v "$DEB:/tmp/bal.deb:ro" "$IMAGE" bash -c '
+docker run --rm --network none -v "$W:/w" -v "$W/home/.ballerina:/root/.ballerina" -v "$DEB:/tmp/bal.deb:ro" "$IMAGE" bash -c '
   set -eo pipefail
   dpkg -i /tmp/bal.deb >/dev/null 2>&1
-  ln -sfn /w/home/.ballerina /root/.ballerina
   bal version | head -1
   cd /w/ws && bal build --offline 2>&1 | tail -20
   find /w/ws -path "*/target/bin/*.jar"'

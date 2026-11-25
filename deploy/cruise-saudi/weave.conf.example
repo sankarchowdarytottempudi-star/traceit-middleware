@@ -73,15 +73,28 @@ DEPLOY_TARGET_REGISTRY_USER=
 DEPLOY_TARGET_REGISTRY_PASSWORD_FILE= # file holding the registry password (not the password itself)
 
 # ---- Sign-in ----------------------------------------------------------------------------
-# apim = sign in with API Manager users (default; first user: APIM_ADMIN_USER, password in secrets.env)
-# oidc = corporate SSO (placeholder: values are written to the Weave env files; see RUNBOOK "SSO")
-AUTH_PROVIDER=apim
-APIM_ADMIN_USER=admin
-OIDC_ISSUER=                          # e.g. https://login.microsoftonline.com/<tenant>/v2.0
-OIDC_CLIENT_ID=
-OIDC_CLIENT_SECRET_FILE=              # file holding the client secret (not the secret itself)
+# Sign-in choices for the Weave consoles, in order (comma separated):
+#   local = Weave accounts (e-mail + password kept on this server)  - keep it as the break-glass path
+#   oidc  = Microsoft Entra ID (needs the OIDC_* values below; skipped with a warning while they are empty)
+#   wso2  = API Manager users (TraceIT behaviour; not used at Cruise Saudi)
+# Roles (Admin / Migration / Gateway) are managed in Gateway console -> Admin -> Users and access.
+# Entra set-up for Cruise Saudi's administrator: docs/CRUISE-SAUDI-SSO.md
+AUTH_PROVIDER=local,oidc
+# First Weave admin (a Weave account). Its password is generated at install, kept in secrets.env
+# (WEAVE_BOOTSTRAP_PASSWORD) and printed ONCE at the end of the first install.
+WEAVE_ADMIN_EMAIL=integration-admin@aroya.com
+WEAVE_ADMIN_NAME="Weave Admin"
+OIDC_ISSUER=                          # https://login.microsoftonline.com/<tenant id>/v2.0
+OIDC_CLIENT_ID=                       # application (client) ID of the "Cruise Saudi Weave" app registration
+OIDC_CLIENT_SECRET_FILE=              # file holding the client secret VALUE (root-only), never the secret itself
+OIDC_GROUPS_CLAIM=groups              # "roles" when Entra App roles are used instead of groups
 OIDC_SCOPES="openid profile email"
-OIDC_ADMIN_GROUP=
+OIDC_LABEL="Sign in with Microsoft"
+OIDC_HTTPS_PROXY=                     # proxy for the Microsoft calls only, e.g. http://proxy.aroya.local:3128
+AUTH_SESSION_HOURS=12
+# API Manager administrator (portals at APIM_DOMAIN; also the service account Weave uses towards
+# API Manager). Password generated at install (secrets.env: APIM_ADMIN_PASSWORD).
+APIM_ADMIN_USER=admin
 
 # ---- Backups ----------------------------------------------------------------------------
 # A local directory or a mounted share (NFS/CIFS). Must exist or be creatable.

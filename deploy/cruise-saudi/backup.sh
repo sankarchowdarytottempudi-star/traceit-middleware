@@ -6,7 +6,7 @@
 # Writes <BACKUP_TARGET>/weave-backup-<UTC timestamp>/ with:
 #   apim_db.dump, shared_db.dump   PostgreSQL custom-format dumps (pg_restore), globals.sql (roles)
 #   apim-volume.tgz                API Manager volume: keystores (!), search index, local registry
-#   weave-data.tgz                 Weave Gateway / Factory data, flow runtime (flows, secret.key)
+#   weave-data.tgz                 Weave Gateway / Factory data, flow runtime (flows, secret.key), users + audit log
 #   migration-tool.tgz             migration tool data (projects, uploads, runs)
 #   platform.tgz                   code generator workspace (migrated services; build output excluded)
 #   etc.tgz                        weave.conf, secrets.env, certificates, keys  (SENSITIVE)
@@ -39,7 +39,7 @@ kubectl -n "$NS_APIM" exec "$PGPOD" -- pg_dumpall -U postgres --globals-only >"$
 step "API Manager volume, Weave data, migration tool, workspace, configuration"
 tar -C "$DATA" -czf "$DEST/apim-volume.tgz" apim 2>>"$LOG_FILE" || die "apim volume archive failed"
 ok "apim-volume.tgz $(du -h "$DEST/apim-volume.tgz" | cut -f1)"
-tar -C "$DATA" -czf "$DEST/weave-data.tgz" gateway factory runtime 2>>"$LOG_FILE" || die "weave data archive failed"
+tar -C "$DATA" -czf "$DEST/weave-data.tgz" gateway factory runtime access 2>>"$LOG_FILE" || die "weave data archive failed"
 ok "weave-data.tgz $(du -h "$DEST/weave-data.tgz" | cut -f1)"
 tar -C "$DATA" -czf "$DEST/migration-tool.tgz" migration-tool 2>>"$LOG_FILE" || die "migration tool archive failed"
 ok "migration-tool.tgz $(du -h "$DEST/migration-tool.tgz" | cut -f1)"

@@ -72,10 +72,25 @@ class Sessions:
         return None
 
 
+def _access_base(cfg: Config, h: Http, ses: Sessions, path: str) -> str:
+    """User management and its audit are served by one console (both share the users file); use the
+    first that answers. Returns the base URL, or "" when neither does."""
+    for app, base in (("gateway", cfg.gateway_url), ("factory", cfg.factory_url)):
+        if not base:
+            continue
+        hd = ses.headers(app, "admin")
+        if hd is not None and h.get(base.rstrip("/") + path, headers=hd, timeout=15).status == 200:
+            return base.rstrip("/")
+    return ""
+
+
 def run(cfg: Config, h: Http, r: Run, ses: Sessions):
-    F, Gw = cfg.factory_url.rstrip("/"), (cfg.gateway_url or "").rstrip("/")
+    F0, Gw = cfg.factory_url.rstrip("/"), (cfg.gateway_url or "").rstrip("/")
+    F = F0
     users_path = cfg.secret("ACC_USERS_PATH", "/api/access/users")
     audit_path = cfg.secret("ACC_AUDIT_PATH", "/api/access/audit")
+    U = _access_base(cfg, h, ses, users_path) if not cfg.dev_auth else ""
+    UA = "gateway" if U and U == Gw else "factory"
 
     def unauth(base, path):
         def f():
@@ -134,12 +149,12 @@ def run(cfg: Config, h: Http, r: Run, ses: Sessions):
     # harness makes two temporary local accounts (cs-acc-<stamp>-mig/-gw) and removes them after A9.
     temp_users = []
     if not cfg.read_only and not cfg.dev_auth:
-        adm = ses.headers("factory", "admin")
+        adm = ses.headers(UA, "admin") if U else None
         for role, tag in (("migration", "mig"), ("gateway", "gw")):
             if ses.creds(role)[0] or adm is None:
                 continue
             email, pw = f"cs-acc-{cfg.stamp}-{tag}@example.com", f"Cs-Acc-{cfg.stamp}-{tag}-pw-long"
-            mk = h.request("POST", F + users_path, headers=adm, timeout=15,
+            mk = h.request("POST", U + users_path, headers=adm, timeout=15,
                            data={"provider": "local", "email": email, "name": f"Acceptance {role} only", "roles": [role], "password": pw})
             if mk.status in (200, 201):
                 uid = ((mk.json() or {}).get("user") or {}).get("id")
@@ -182,14 +197,16 @@ def run(cfg: Config, h: Http, r: Run, ses: Sessions):
             return SKIP, "dev-auth test instance"
         if cfg.read_only:
             return SKIP, "read-only run"
-        hd = ses.headers("factory", "admin")
+        hd = ses.headers(UA, "admin")
         if hd is None:
             return WAITING, ses.last_error
-        lst = h.get(F + users_path, headers=hd, timeout=15)
+        if not U:
+            return WAITING, f"no console answers {users_path} (cs/users)"
+        lst = h.get(U + users_path, headers=hd, timeout=15)
         if lst.status == 404:
             return WAITING, f"no user management at {users_path} yet (cs/users)"
         name = f"cs-acc-user-{cfg.stamp}@example.com"
-        mk = h.request("POST", F + users_path, headers=hd, timeout=15,
+        mk = h.request("POST", U + users_path, headers=hd, timeout=15,
                        data={"provider": "local", "email": name, "name": "Acceptance test user",
                              "roles": ["migration"], "password": "Cs-Acc-" + cfg.stamp + "-x9!long"})
         if mk.status not in (200, 201):
@@ -197,12 +214,12 @@ def run(cfg: Config, h: Http, r: Run, ses: Sessions):
         created["name"] = name
         mj = mk.json() or {}
         uid = (mj.get("user") or {}).get("id") or mj.get("id") or name
-        again = h.get(F + users_path, headers=hd, timeout=15)
+        again = h.get(U + users_path, headers=hd, timeout=15)
         listed = name in again.text
-        rm = h.request("DELETE", F + users_path + "/" + urllib.parse.quote(str(uid)), headers=hd, timeout=15)
-        gone = name not in h.get(F + users_path, headers=hd, timeout=15).text
+        rm = h.request("DELETE", U + users_path + "/" + urllib.parse.quote(str(uid)), headers=hd, timeout=15)
+        gone = name not in h.get(U + users_path, headers=hd, timeout=15).text
         if listed and rm.status in (200, 204) and gone:
-            return PASS, f"created {name} (role migration), listed, deleted ({rm.status})"
+            return PASS, f"on the {UA} console: created {name} (role migration), listed, deleted ({rm.status})"
         return FAIL, f"listed={listed} delete={rm.status} gone={gone}"
     r.check("A8", G, "An admin can add, list and remove a user", manage_users)
 
@@ -210,10 +227,12 @@ def run(cfg: Config, h: Http, r: Run, ses: Sessions):
         if cfg.dev_auth:
             hd: Optional[Dict[str, str]] = {}
         else:
-            hd = ses.headers("factory", "admin")
+            hd = ses.headers(UA, "admin")
             if hd is None:
                 return WAITING, ses.last_error
-        x = h.get(F + audit_path, headers=hd, timeout=15)
+        if not U:
+            return WAITING, f"no console answers {audit_path} (cs/users)"
+        x = h.get(U + audit_path, headers=hd, timeout=15)
         if x.status == 404:
             return WAITING, f"no audit at {audit_path}"
         if x.status != 200:
@@ -232,11 +251,11 @@ def run(cfg: Config, h: Http, r: Run, ses: Sessions):
     r.check("A9", G, "Audit lines record who did what", audit)
 
     if temp_users:
-        adm = ses.headers("factory", "admin") or {}
+        adm = ses.headers(UA, "admin") or {}
         for uid, email in temp_users:
             if uid:
-                h.request("DELETE", F + users_path + "/" + urllib.parse.quote(str(uid)), headers=adm, timeout=15)
-        left = [e for _, e in temp_users if e in h.get(F + users_path, headers=adm, timeout=15).text]
+                h.request("DELETE", U + users_path + "/" + urllib.parse.quote(str(uid)), headers=adm, timeout=15)
+        left = [e for _, e in temp_users if e in h.get(U + users_path, headers=adm, timeout=15).text]
         if left:
             r.notes.append(f"temporary accounts NOT removed: {left}")
 

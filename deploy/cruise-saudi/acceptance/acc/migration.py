@@ -171,7 +171,17 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         go = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/autorun", headers=hd, data={}, timeout=60)
         if go.status not in (200, 201, 202):
             return FAIL, f"'Run automatically' -> {go.status} {short(go.text, 140)}"
-        m = wait_idle(int(cfg.secret("ACC_MIGRATION_TIMEOUT", "1800")))
+        limit = int(cfg.secret("ACC_MIGRATION_TIMEOUT", "1800"))
+        m = wait_idle(limit)
+        # 'Run automatically' only writes the documents while the API name is unknown; once the
+        # documents named it, run it again for generate -> test -> deploy (as a user would).
+        for _ in range(2):
+            if phase(m, "scaffold").get("status") not in (None, "pending") or not m.get("apiName"):
+                break
+            if phase(m, "mapping").get("status") not in ("done",):
+                h.request("POST", F + f"/api/factory/migrations/{state['id']}/advance", headers=hd, data={}, timeout=60)
+            h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/autorun", headers=hd, data={}, timeout=60)
+            m = wait_idle(limit)
         state["m"] = m
         d = h.get(F + f"/api/factory/migrations/{state['id']}/docs", headers=hd, timeout=30).json() or {}
         names = [x if isinstance(x, str) else x.get("name") for x in (d.get("docs") or d.get("documents") or [])]

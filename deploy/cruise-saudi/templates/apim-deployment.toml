@@ -127,6 +127,14 @@ username = "${admin.username}"
 password = "${admin.password}"
 'header.X-WSO2-KEY-MANAGER' = "default"
 
+# The resident key manager validates gateway tokens against its OWN JWKS. By default that URL is built
+# from the public name (https://@@APIM_DOMAIN@@@@HTTPS_SUFFIX@@/oauth2/jwks), which the pod may not resolve
+# (UnknownHostException -> 900900 on every call with a token). Inside the pod it is localhost:9443;
+# the token issuer and the portal URLs keep the public name. (No hostAliases for the public name: once
+# it resolves inside the pod, the sign-in redirects of the portals turn into IP addresses.)
+[oauth.endpoints]
+oauth2_jwks_url = "https://localhost:9443/oauth2/jwks"
+
 [oauth.grant_type.token_exchange]
 enable = true
 allow_refresh_tokens = true

@@ -32,14 +32,49 @@ by the server, the Weave services and the migration tool).
 |---|---|---|
 | 443/tcp | users' network | Weave consoles (`weave.aroya.com`), API Manager portals (`apim.aroya.com`) |
 | 80/tcp | users' network (optional) | redirect to HTTPS only |
-| 30243/tcp (`GATEWAY_HTTPS_NODEPORT`) | internal load balancer | API gateway (HTTPS) for API consumers. The LB must set/append `X-Forwarded-For` (per-API IP allow/deny rules read it) |
-| 30280/tcp (`GATEWAY_HTTP_NODEPORT`) | internal load balancer (only if plain HTTP is wanted) | API gateway (HTTP) |
+| 30243/tcp (`GATEWAY_HTTPS_NODEPORT`) | internal load balancer, **only** the addresses in `LB_SOURCE_CIDRS` | API gateway (HTTPS) for API consumers, only when `LB_SOURCE_CIDRS` is set. The LB must set/append `X-Forwarded-For` (per-API IP allow/deny rules read it) |
+| 30280/tcp (`GATEWAY_HTTP_NODEPORT`) | as above, only with `GATEWAY_HTTP_EXPOSE=yes` | API gateway (plain HTTP) |
 | 22/tcp | administrators | SSH |
 
-Everything else stays closed from outside (30443 API Manager management, 30900 migration tool, 6443
-k3s API, 8787-8790 Weave internals – they are reached through 443 or only locally). The migration
-tool connects from the pod network (10.42.0.0/16) to this server's own port 22: allow that on any
-host firewall.
+### What the installer exposes (default: nothing beyond 80/443)
+
+* **No NodePort or LoadBalancer services.** Every Kubernetes Service in the `apim` and `weave`
+  namespaces is `ClusterIP`.
+* API Manager management (`APIM_MGMT_NODEPORT`, 30443) and the migration tool (`MT_NODEPORT`, 30900)
+  are pod **host ports bound to 127.0.0.1**: the reverse proxy, the Weave containers and the installer
+  reach them on the server itself; from any other address they do not answer. The API Manager portals
+  are published only through `https://apim.aroya.com` (443).
+* The API gateway is reached by API consumers through `https://weave.aroya.com/gw/<context>/<version>/...`
+  (443, `ENABLE_GW_PATH=yes`). With `LB_SOURCE_CIDRS` empty (default) its ports 30243/30280 are bound
+  to 127.0.0.1 as well.
+* If the existing load balancer must call the gateway port directly, list its address(es) in
+  `weave.conf`: `LB_SOURCE_CIDRS=10.20.30.40,10.20.30.41` (IPv4 addresses or CIDRs, comma separated).
+  The gateway HTTPS port then listens on every address, and the installer installs the iptables chain
+  `WEAVE_GW` in the `raw` table (systemd unit `weave-firewall`, re-applied at boot; script
+  `/opt/weave/bin/weave-firewall.sh`): a connection to 30243 is dropped unless it comes from
+  loopback, the pod network (10.42.0.0/16) or `LB_SOURCE_CIDRS`. The rule sits in `raw/PREROUTING`
+  because the host port is translated (DNAT) to the pod before the normal INPUT chain is consulted.
+  Plain HTTP 30280 is added only with `GATEWAY_HTTP_EXPOSE=yes`. Emptying `LB_SOURCE_CIDRS` and re-running
+  `install.sh` removes the chain and binds the gateway to 127.0.0.1 again. Check:
+  `sudo /opt/weave/bin/weave-firewall.sh show WEAVE_GW`.
+* Never exposed: 6443 (k3s API), 8787-8790 (Weave internals, 127.0.0.1 only), 8099 (local model).
+
+The migration tool connects from the pod network (10.42.0.0/16) to this server's own port 22: allow
+that on any host firewall. API Manager's key manager validates tokens against its own JWKS at
+`https://localhost:9443` inside the pod, so gateway calls do not depend on the pod resolving
+`apim.aroya.com` (the internal DNS name usually does not resolve from the pod network).
+
+### Security headers (reverse proxy)
+
+Both sites send `Strict-Transport-Security: max-age=31536000; includeSubDomains`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and a restrictive
+`Permissions-Policy`; the `Server` header is removed. `weave.aroya.com` (consoles) adds
+`X-Frame-Options: DENY` and a `Content-Security-Policy` (`default-src 'self'`, scripts from the site
+plus the consoles' own inline scripts by SHA-256 hash, `frame-ancestors 'none'`, `object-src 'none'`).
+`apim.aroya.com` adds `frame-ancestors 'self'` (the WSO2 portals frame their own session-check page)
+and keeps API Manager's own `X-Frame-Options`; its portals rely on inline scripts, so script sources
+are not restricted there. HSTS makes browsers refuse plain HTTP to both names for a year: the names
+must keep a valid certificate.
 
 ## Outbound allow-list (from the Weave server)
 

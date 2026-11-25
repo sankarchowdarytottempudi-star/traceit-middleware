@@ -55,7 +55,8 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
     },
   });
   await app.register(cookie, { secret: cfg.SESSION_SECRET });
-  app.get("/healthz", async () => ({ status: "UP" }));
+  // version: the installed bundle version (WEAVE_VERSION, set by the installer); read by acceptance I7
+  app.get("/healthz", async () => ({ status: "UP", ...(process.env.WEAVE_VERSION ? { version: process.env.WEAVE_VERSION } : {}) }));
   registerAuth(app, cfg, creds, store);
   registerRoutes(app, cfg);
   registerMigrate(app, cfg);

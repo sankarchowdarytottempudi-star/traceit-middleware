@@ -12,9 +12,9 @@ troubleshooting) is in [RUNBOOK.md](RUNBOOK.md).
 | Weave Factory (`/factory`) | Docker container `weave-factory`, 127.0.0.1:8788 | `https://weave.aroya.com/factory/` |
 | Flow runtime | Docker container `weave-runtime`, 127.0.0.1:8790 + pod network | internal |
 | WSO2 API Manager 4.5.0 all-in-one | k3s, namespace `apim`, Deployment `wso2am` | `https://apim.aroya.com/` (portals) |
-| API gateway | same pod; NodePort **30243** (HTTPS) / 30280 (HTTP) | load balancer → `:30243`, and `https://weave.aroya.com/gw/...` |
+| API gateway | same pod; host port **30243** (HTTPS) / 30280 (HTTP): 127.0.0.1 only, or the load balancer only (`LB_SOURCE_CIDRS`) | `https://weave.aroya.com/gw/...`; load balancer → `:30243` when `LB_SOURCE_CIDRS` is set |
 | PostgreSQL 16 (API Manager data) | k3s, namespace `apim`, Deployment `apim-postgres` | internal |
-| Migration tool (control plane) | k3s, namespace `weave`, NodePort 30900 (internal) | used by the Factory |
+| Migration tool (control plane) | k3s, namespace `weave`, 127.0.0.1:30900 (host port, loopback only) | used by the Factory |
 | Code generator + toolchain | on the host: Python 3.12, Docker, Ballerina 2201.13.4 (JRE 21), helm, kubectl | `/opt/weave/platform` |
 | Reverse proxy | Caddy (own binary), systemd unit `weave-caddy`, ports 80/443, **provided certificate** | |
 
@@ -29,7 +29,8 @@ Migrated APIs are deployed to a **different** cluster later (`DEPLOY_TARGET_*` i
 * OS prerequisites (present on a standard server install): `curl openssl tar gzip sha256sum ss ip
   ssh-keygen sshd systemctl iptables`; recommended `git rsync crontab`; RHEL 9 with SELinux enforcing
   also needs `container-selinux`. Python 3.12 comes from the OS or, if missing, from the bundle.
-* Ports 80 and 443 free; inbound 443 (and 80 for the redirect) from users, 30243 from the load balancer.
+* Ports 80 and 443 free; inbound 443 (and 80 for the redirect) from users; 30243 from the load balancer
+  only if it calls the gateway port directly (`LB_SOURCE_CIDRS`, see NETWORK.md).
 * DNS: **internal A records** `weave.aroya.com` and `apim.aroya.com` → the server's private IP.
 * A TLS certificate covering both names (SAN or `*.aroya.com`): PEM certificate file and an
   **unencrypted** PEM private key; for an internal CA also the CA chain file (`TLS_CA_FILE`).
@@ -63,6 +64,7 @@ schedule → smoke checks (every URL, API Manager health, gateway, sign-in redir
 | `weave.conf.example` | the only file an operator edits |
 | `install.sh` | install / re-apply; `--preflight`, `--skip-dns`, `--allow-small`, `--isolated-test` |
 | `upgrade.sh` | new bundle → backup → rolling replace with automatic rollback |
+| `rollback.sh` | go back on purpose to the version installed before the last upgrade (RUNBOOK §5) |
 | `backup.sh` / `restore.sh` | online backup (DB dumps, volumes, data, config) with retention / full restore |
 | `uninstall.sh` | remove the services, keep data (`--purge` deletes data, `--remove-k3s`) |
 | `build-bundle.sh` | **our side**: builds the Cruise Saudi images and the offline bundle (`--with-model` adds the local code model) |

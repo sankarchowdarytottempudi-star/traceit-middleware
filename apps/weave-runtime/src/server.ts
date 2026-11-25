@@ -88,7 +88,7 @@ export async function buildApp(cfg: Config, rt: Runtime): Promise<{ app: Fastify
 
   // ---------------------------------------------------------------- /v1
   await app.register(async (v1) => {
-    v1.get("/healthz", async () => ({ status: "UP", flowsDeployed: rt.flowsDeployed(), gateway: (await rt.gatewayReachable()) ? "reachable" : "unreachable" }));
+    v1.get("/healthz", async () => ({ status: "UP", ...(process.env.WEAVE_VERSION ? { version: process.env.WEAVE_VERSION } : {}), flowsDeployed: rt.flowsDeployed(), gateway: (await rt.gatewayReachable()) ? "reachable" : "unreachable" }));
     v1.get("/catalog", async () => rt.catalog());
 
     v1.get("/flows", async () => ({ flows: rt.listFlows() }));

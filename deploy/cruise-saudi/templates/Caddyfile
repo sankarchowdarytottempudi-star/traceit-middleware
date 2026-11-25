@@ -15,10 +15,31 @@
 	}
 }
 
+# Security headers for both sites (set when the response is written, replacing what an upstream sent)
+(security_headers) {
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		-Server
+		-X-Powered-By
+	}
+}
+
 @@WEAVE_DOMAIN@@@@HTTPS_SUFFIX@@ {
 @@CADDY_BIND_LINE@@
 	tls @@ETC@@/tls/weave.crt @@ETC@@/tls/weave.key
 	encode gzip
+	import security_headers
+	# Weave consoles: never framed; scripts only from this origin plus the consoles' own inline
+	# scripts (hashes taken from the installed images at install time)
+	header {
+		defer
+		X-Frame-Options "DENY"
+		Content-Security-Policy "@@WEAVE_CSP@@"
+	}
 	log {
 		output file @@DATA_ROOT@@/logs/caddy/weave-access.log {
 			roll_size 50MiB
@@ -41,6 +62,15 @@
 @@CADDY_BIND_LINE@@
 	tls @@ETC@@/tls/apim.crt @@ETC@@/tls/apim.key
 	encode gzip
+	import security_headers
+	# API Manager portals frame their own pages (OIDC session check), so framing is limited to the
+	# same origin; API Manager sends X-Frame-Options itself on most pages (kept when present). Its
+	# portals rely on inline scripts, so the policy here does not restrict script sources.
+	header {
+		defer
+		?X-Frame-Options "SAMEORIGIN"
+		Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'self'; upgrade-insecure-requests"
+	}
 	log {
 		output file @@DATA_ROOT@@/logs/caddy/apim-access.log {
 			roll_size 50MiB
@@ -49,6 +79,9 @@
 	}
 	# API Manager portals (Publisher, DevPortal, Admin, Carbon) on port 9443 of the APIM pod
 	reverse_proxy https://127.0.0.1:@@APIM_MGMT_NODEPORT@@ {
+		# keep the public name: Caddy sends the upstream address as Host to an HTTPS upstream, and API
+		# Manager builds its sign-in redirects from it (https://127.0.0.1:<port>/oauth2/authorize otherwise)
+		header_up Host {hostport}
 		transport http {
 			tls_server_name localhost
 			tls_trust_pool file @@ETC@@/apim-ca.pem

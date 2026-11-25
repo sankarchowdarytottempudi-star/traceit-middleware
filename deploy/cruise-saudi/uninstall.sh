@@ -32,6 +32,14 @@ if [ -f "/etc/systemd/system/$CADDY_UNIT.service" ]; then
   ok "removed $CADDY_UNIT.service"
 else ok "no $CADDY_UNIT.service"; fi
 
+step "Gateway firewall"
+if [ -f "/etc/systemd/system/$FW_UNIT.service" ]; then
+  systemctl disable --now "$FW_UNIT" >>"$LOG_FILE" 2>&1 || true
+  rm -f "/etc/systemd/system/$FW_UNIT.service"; systemctl daemon-reload
+  ok "removed $FW_UNIT.service (chain $FW_CHAIN)"
+else ok "no $FW_UNIT.service"; fi
+[ -x "$BIN/weave-firewall.sh" ] && "$BIN/weave-firewall.sh" remove "$FW_CHAIN" >>"$LOG_FILE" 2>&1 || true
+
 step "Kubernetes objects"
 if kubectl get ns >/dev/null 2>&1; then
   for ns in "$NS_APIM" "$NS_WEAVE"; do

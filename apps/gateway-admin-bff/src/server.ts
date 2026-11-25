@@ -17,7 +17,8 @@ export async function buildServer(cfg: Config, creds: ClientCreds, store: Sessio
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
   await app.register(cookie, { secret: cfg.SESSION_SECRET });
 
-  app.get("/healthz", async () => ({ status: "UP" }));
+  // version: the installed bundle version (WEAVE_VERSION, set by the installer)
+  app.get("/healthz", async () => ({ status: "UP", ...(process.env.WEAVE_VERSION ? { version: process.env.WEAVE_VERSION } : {}) }));
 
   registerAuth(app, cfg, creds, store);
   const audit = createAudit(cfg.GATEWAY_AUDIT_FILE || join(cfg.DATA_DIR || ".data", "gateway-audit.jsonl"));

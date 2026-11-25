@@ -68,6 +68,16 @@ for c in $REC_CMDS; do command -v "$c" >/dev/null || warn "recommended command '
 [ -n "$missing" ] || ok "OS prerequisites present: $REQ_CMDS"
 case "$GATEWAY_STAGE" in production|uat) ;; *) die "GATEWAY_STAGE must be production or uat";; esac
 [[ "$GATEWAY_CLIENT_IP_HEADER" =~ ^[A-Za-z0-9-]{0,60}$ ]] || die "GATEWAY_CLIENT_IP_HEADER must be a header name"
+for c in $LB_SOURCE_CIDRS; do
+  [[ "$c" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/([0-9]|[12][0-9]|3[0-2]))?$ ]] || die "LB_SOURCE_CIDRS: '$c' is not an IPv4 address or CIDR"
+  [ "${c#*/}" = 0 ] && warn "LB_SOURCE_CIDRS contains $c: the API gateway port is open to every address"
+done
+case "$GATEWAY_HTTP_EXPOSE" in yes|no) ;; *) die "GATEWAY_HTTP_EXPOSE must be yes or no";; esac
+if [ -n "$LB_SOURCE_CIDRS" ]; then ok "API gateway port $GATEWAY_HTTPS_NODEPORT$([ "$GW_HTTP_HOSTIP" = 0.0.0.0 ] && echo "/$GATEWAY_HTTP_NODEPORT") open to: $LB_SOURCE_CIDRS (firewall chain $FW_CHAIN)"
+else
+  [ "$ENABLE_GW_PATH" = yes ] || die "ENABLE_GW_PATH=no and LB_SOURCE_CIDRS empty: API consumers would have no way to reach the gateway"
+  ok "API gateway reachable only through $WEAVE_URL/gw (LB_SOURCE_CIDRS empty: no port beyond 80/443)"
+fi
 
 
 CPUS=$(nproc); MEM_GB=$(awk '/MemTotal/ {print int($2/1048576)}' /proc/meminfo)
@@ -103,10 +113,11 @@ done
 if command -v kubectl >/dev/null && kubectl get ns >/dev/null 2>&1; then
   used=$(kubectl get svc -A -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{range .spec.ports[*]}{.nodePort}{" "}{end}{"\n"}{end}' 2>/dev/null | grep -vE "^($NS_APIM|$NS_WEAVE) " || true)
   for p in "$APIM_MGMT_NODEPORT" "$GATEWAY_HTTPS_NODEPORT" "$GATEWAY_HTTP_NODEPORT" "$MT_NODEPORT"; do
-    { [ "$p" -ge 30000 ] && [ "$p" -le 32767 ]; } || die "NodePort $p is outside the Kubernetes NodePort range 30000-32767"
-    echo "$used" | grep -qw "$p" && die "NodePort $p is already used by another namespace: $(echo "$used" | grep -w "$p" | cut -d' ' -f1)"
+    { [ "$p" -ge 30000 ] && [ "$p" -le 32767 ]; } || die "port $p is outside the range 30000-32767"
+    echo "$used" | grep -qw "$p" && die "port $p is already used as a NodePort by another namespace: $(echo "$used" | grep -w "$p" | cut -d' ' -f1)"
+    o="$(port_owner "$p")"; [ -n "$o" ] && die "port $p is in use by '$o' on this host"
   done
-  ok "NodePorts $APIM_MGMT_NODEPORT/$GATEWAY_HTTPS_NODEPORT/$GATEWAY_HTTP_NODEPORT/$MT_NODEPORT free"
+  ok "host ports $APIM_MGMT_NODEPORT/$GATEWAY_HTTPS_NODEPORT/$GATEWAY_HTTP_NODEPORT/$MT_NODEPORT free (pod host ports, no NodePort services)"
 fi
 
 if [ "$ISOLATED" = 1 ]; then
@@ -327,6 +338,13 @@ fi
 for _ in $(seq 1 60); do [ -n "$(cni_ip)" ] && break; sleep 2; done
 CNI_IP="$(cni_ip)"; [ -n "$CNI_IP" ] || die "no cni0 address (k3s networking not up)"
 CLUSTER_DNS="$(kubectl -n kube-system get svc kube-dns -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo 10.43.0.10)"
+# API Manager management, the migration tool and the gateway are pod host ports on 127.0.0.1: the
+# kernel must route the DNAT of loopback traffic (kube-proxy normally sets this already)
+if [ "$(sysctl -n net.ipv4.conf.all.route_localnet 2>/dev/null)" != 1 ]; then
+  [ "$ISOLATED" = 1 ] && die "test profile expects net.ipv4.conf.all.route_localnet=1 on the host (k3s default)"
+  run sysctl -w net.ipv4.conf.all.route_localnet=1
+  echo "net.ipv4.conf.all.route_localnet = 1   # Cruise Saudi Weave: 127.0.0.1 host ports" >/etc/sysctl.d/90-weave.conf
+fi
 ok "pod network gateway $CNI_IP, cluster DNS $CLUSTER_DNS"
 
 # =================================================================================== toolchain
@@ -394,6 +412,10 @@ kubectl -n "$NS_APIM" create secret generic apim-db --from-literal=superuser-pas
   --from-literal=apim-password="$APIM_DB_PASSWORD" --from-literal=keystore-password="$APIM_KEYSTORE_PASSWORD" \
   --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
 kubectl -n "$NS_WEAVE" create secret generic mt-admin --from-literal=token="$MT_ADMIN_TOKEN" --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
+# the migration tool publishes each deployed API on API Manager (MT_PUBLISH_ON_DEPLOY) with the API Manager
+# administrator account: Secret mt-apim, password mounted as a file (APIM_DCR_PASSWORD_FILE), never in env/logs
+kubectl -n "$NS_WEAVE" create secret generic mt-apim --from-literal=username="$APIM_ADMIN_USER" --from-literal=password="$APIM_ADMIN_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
 mkdir -p "$ETC/mt-ssh"; chmod 700 "$ETC/mt-ssh"
 [ -f "$ETC/mt-ssh/id_ed25519" ] || run ssh-keygen -q -t ed25519 -N "" -f "$ETC/mt-ssh/id_ed25519" -C "weave-migration-tool:${PREFIX%-}"
 # The migration tool runs its helpers (versions.py, hostgit.py, bal/docker/kubectl ...) on this host
@@ -432,11 +454,16 @@ kubectl -n "$NS_WEAVE" create secret generic mt-ssh --from-file=id_ed25519="$ETC
 render "$CS_DIR/manifests/weave-rbac.yaml" "$STATE/weave-rbac.yaml"; kubectl apply -f "$STATE/weave-rbac.yaml" >>"$LOG_FILE"
 for _ in $(seq 1 30); do tok=$(kubectl -n "$NS_WEAVE" get secret weave-reader-token -o jsonpath='{.data.token}' 2>/dev/null); [ -n "$tok" ] && break; sleep 1; done
 [ -n "$tok" ] || die "service account token was not issued"
-mkdir -p "$ETC/k8s"; echo "$tok" | base64 -d >"$ETC/k8s/token"
+# root copy (600) in $ETC/k8s; the consoles (uid 1000) read their own copy in $ETC/svc/k8s (700/400, uid 1000)
+mkdir -p "$ETC/k8s" "$ETC/svc/k8s"; chmod 700 "$ETC/k8s" "$ETC/svc"
+( umask 077; echo "$tok" | base64 -d >"$ETC/k8s/token" )
 kubectl -n "$NS_WEAVE" get secret weave-reader-token -o jsonpath='{.data.ca\.crt}' | base64 -d >"$ETC/k8s/ca.crt"
-chown -R root:1000 "$ETC/k8s"; chmod 750 "$ETC/k8s"; chmod 640 "$ETC/k8s/token" "$ETC/k8s/ca.crt"
+chown -R root:root "$ETC/k8s"; chmod 600 "$ETC/k8s/token"; chmod 644 "$ETC/k8s/ca.crt"
+install -m 400 -o "$SVC_UID" -g "$SVC_UID" "$ETC/k8s/token" "$ETC/svc/k8s/token"
+install -m 400 -o "$SVC_UID" -g "$SVC_UID" "$ETC/k8s/ca.crt" "$ETC/svc/k8s/ca.crt"
+chown "$SVC_UID:$SVC_UID" "$ETC/svc/k8s"; chmod 700 "$ETC/svc/k8s"
 kubectl -n "$NS_APIM" create configmap apim-log4j2 --from-file=log4j2.properties="$CS_DIR/templates/apim-log4j2.properties" --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
-ok "namespaces $NS_APIM, $NS_WEAVE, $NS_SERVICES; secrets; service account weave-reader (token in $ETC/k8s)"
+ok "namespaces $NS_APIM, $NS_WEAVE, $NS_SERVICES; secrets; service account weave-reader (token in $ETC/k8s, mode 600)"
 
 # =================================================================================== postgres
 step "PostgreSQL for API Manager"
@@ -506,15 +533,49 @@ code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$ETC/apim-ca.pem" -u adm
   "https://localhost:$APIM_MGMT_NODEPORT/client-registration/v0.17/register" || true)
 case "$code" in 200|201) die "API Manager accepts admin/admin - refusing to continue";; *) ok "admin/admin is refused ($code)";; esac
 
+# =================================================================================== firewall
+step "Exposure: API gateway port and host firewall"
+install -m 755 "$CS_DIR/lib/firewall.sh" "$BIN/weave-firewall.sh"
+FW_PORTS="$GATEWAY_HTTPS_NODEPORT"; [ "$GW_HTTP_HOSTIP" = 0.0.0.0 ] && FW_PORTS="$FW_PORTS $GATEWAY_HTTP_NODEPORT"
+if [ -n "$LB_SOURCE_CIDRS" ]; then
+  cat >"/etc/systemd/system/$FW_UNIT.service" <<EOF
+[Unit]
+Description=Cruise Saudi Weave - API gateway port $FW_PORTS only for loopback, pod network and $LB_SOURCE_CIDRS
+Before=k3s.service
+After=network-pre.target
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=$BIN/weave-firewall.sh apply $FW_CHAIN "$FW_PORTS" "$LB_SOURCE_CIDRS"
+ExecStop=$BIN/weave-firewall.sh remove $FW_CHAIN
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload; run systemctl enable "$FW_UNIT"; run systemctl restart "$FW_UNIT" || die "firewall unit $FW_UNIT failed (journalctl -u $FW_UNIT)"
+  "$BIN/weave-firewall.sh" show "$FW_CHAIN" | grep -q -- "-j DROP" || die "firewall chain $FW_CHAIN missing after $FW_UNIT started"
+  ok "gateway port(s) $FW_PORTS: every address, admitted only from loopback, 10.42.0.0/16 and $LB_SOURCE_CIDRS ($FW_UNIT)"
+else
+  if [ -f "/etc/systemd/system/$FW_UNIT.service" ]; then
+    systemctl disable --now "$FW_UNIT" >>"$LOG_FILE" 2>&1 || true; rm -f "/etc/systemd/system/$FW_UNIT.service"; systemctl daemon-reload
+  fi
+  [ "$ISOLATED" = 1 ] || "$BIN/weave-firewall.sh" remove "$FW_CHAIN" >>"$LOG_FILE" 2>&1 || true
+  ok "gateway ports bound to 127.0.0.1 (reached through $WEAVE_URL/gw); no firewall rule needed"
+fi
+ok "Kubernetes services in $NS_APIM/$NS_WEAVE: ClusterIP only; API Manager :$APIM_MGMT_NODEPORT and migration tool :$MT_NODEPORT on 127.0.0.1 only"
+
 # =================================================================================== migration tool
 step "Migration tool (control plane)"
 mkdir -p "$DATA/migration-tool"
 MT_SSH_TARGET="root@$HOST_IP"
+# in-cluster address of API Manager for the tool's publishing step: the public APIM name (covered by API
+# Manager's certificate) pinned to the wso2am ClusterIP inside the tool pod (hostAliases); no DNS needed
+APIM_CLUSTER_IP=$(kubectl -n "$NS_APIM" get svc wso2am -o jsonpath='{.spec.clusterIP}')
+[ -n "$APIM_CLUSTER_IP" ] || die "no ClusterIP for service $NS_APIM/wso2am"
 render "$CS_DIR/manifests/migration-tool.yaml" "$STATE/migration-tool.yaml"
 kubectl apply -f "$STATE/migration-tool.yaml" >>"$LOG_FILE" || die "applying migration tool manifests failed"
 kubectl -n "$NS_WEAVE" rollout status deploy/migration-tool --timeout=240s >>"$LOG_FILE" 2>&1 || die "migration tool did not become ready (kubectl -n $NS_WEAVE logs deploy/migration-tool)"
 c=$(wait_http "http://127.0.0.1:$MT_NODEPORT/api/health" 200 20) || die "migration tool /api/health answered $c"
-ok "migration tool ready on NodePort $MT_NODEPORT (drives this host as $MT_SSH_TARGET, workspace $PLATFORM_DIR)"
+ok "migration tool ready on 127.0.0.1:$MT_NODEPORT (drives this host as $MT_SSH_TARGET, workspace $PLATFORM_DIR)"
 # what the migration tool's helpers see when they run on this host (through the forced command)
 MTPOD=$(kubectl -n "$NS_WEAVE" get pod -l app.kubernetes.io/name=migration-tool -o jsonpath='{.items[0].metadata.name}')
 seen=$(kubectl -n "$NS_WEAVE" exec "$MTPOD" -- ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i /secrets/id_ed25519 "$MT_SSH_TARGET" \
@@ -524,6 +585,20 @@ echo probe >"$STATE/mt-scp-probe"
 kubectl -n "$NS_WEAVE" exec "$MTPOD" -- sh -c "echo probe > /tmp/p && scp -q -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i /secrets/id_ed25519 /tmp/p $MT_SSH_TARGET:$STATE/mt-scp-probe.copy" >>"$LOG_FILE" 2>&1 \
   && cmp -s "$STATE/mt-scp-probe" "$STATE/mt-scp-probe.copy" || die "migration tool cannot copy files to this host over SSH (scp)"
 rm -f "$STATE/mt-scp-probe" "$STATE/mt-scp-probe.copy"
+# the tool's API Manager account works from the pod (publishing step): TLS verified with APIM_CA_CERT_PATH,
+# sign-in proven by registering a check client (same name every time); the password never leaves the pod
+mtapim=$(kubectl -n "$NS_WEAVE" exec "$MTPOD" -- python3 -c '
+import base64, json, os, ssl, urllib.request
+b = os.environ["APIM_BASE_URL"]; u = os.environ["APIM_DCR_USERNAME"]; p = open(os.environ["APIM_DCR_PASSWORD_FILE"]).read().strip()
+c = ssl.create_default_context(cafile=os.environ["APIM_CA_CERT_PATH"]); h = {"Authorization": "Basic " + base64.b64encode((u + ":" + p).encode()).decode(), "Content-Type": "application/json"}
+v = urllib.request.urlopen(b + "/services/Version", context=c, timeout=20).status
+r = urllib.request.urlopen(urllib.request.Request(b + "/client-registration/v0.17/register", json.dumps({"clientName": "weave-mt-install-check", "owner": u, "grantType": "client_credentials", "saasApp": True}).encode(), h), context=c, timeout=30)
+cid = json.load(r)["clientId"]
+try: urllib.request.urlopen(urllib.request.Request(b + "/client-registration/v0.17/register/" + cid, headers=h, method="DELETE"), context=c, timeout=30)
+except Exception: pass   # best effort: re-registering the same name reuses the client
+print("ok", v, r.status)' 2>>"$LOG_FILE" | tail -1)
+[[ "$mtapim" == "ok 200 20"* ]] || die "migration tool pod cannot sign in to API Manager at https://$APIM_DOMAIN:9443 (-> $APIM_CLUSTER_IP; see $LOG_FILE)"
+ok "migration tool publishes to API Manager: https://$APIM_DOMAIN:9443 (ClusterIP $APIM_CLUSTER_IP), certificate verified, account '$APIM_ADMIN_USER' signs in"
 ok "migration tool SSH to the host works (commands + scp); version store $DATA/versions, git transports: ${seen#*|}"
 
 # =================================================================================== weave
@@ -532,16 +607,20 @@ for d in gateway factory runtime; do mkdir -p "$DATA/$d"; chown 1000:1000 "$DATA
 umask 077
 if [ -n "${DEPLOY_TARGET_KUBECONFIG:-}" ]; then
   [ -r "$DEPLOY_TARGET_KUBECONFIG" ] || die "DEPLOY_TARGET_KUBECONFIG $DEPLOY_TARGET_KUBECONFIG not readable"
-  mkdir -p "$ETC/target"; install -m 640 -g 1000 "$DEPLOY_TARGET_KUBECONFIG" "$ETC/target/kubeconfig"
-  [ -n "${DEPLOY_TARGET_REGISTRY_PASSWORD_FILE:-}" ] && install -m 640 -g 1000 "$DEPLOY_TARGET_REGISTRY_PASSWORD_FILE" "$ETC/target/registry-password"
-  chgrp 1000 "$ETC/target"; chmod 750 "$ETC/target"
-elif [ -d "$ETC/target" ]; then rm -rf "$ETC/target"
+  # the Factory (uid 1000) reads them: its own copies, directory 700 / files 400, owner uid 1000
+  rm -rf "$ETC/svc/target"; mkdir -p "$ETC/svc/target"
+  install -m 400 -o "$SVC_UID" -g "$SVC_UID" "$DEPLOY_TARGET_KUBECONFIG" "$ETC/svc/target/kubeconfig"
+  [ -n "${DEPLOY_TARGET_REGISTRY_PASSWORD_FILE:-}" ] && install -m 400 -o "$SVC_UID" -g "$SVC_UID" "$DEPLOY_TARGET_REGISTRY_PASSWORD_FILE" "$ETC/svc/target/registry-password"
+  chown "$SVC_UID:$SVC_UID" "$ETC/svc/target"; chmod 700 "$ETC/svc/target"
+else rm -rf "$ETC/svc/target"
 fi
+rm -rf "$ETC/target"     # location used by releases before 1.0.0-rc6
 # ---- users and access (docs/CRUISE-SAUDI-SSO.md): shared users file, sign-in providers, first admin
 # $DATA/access: users.json + audit.jsonl, read-write for uid 1000 in BOTH consoles (/data/access)
 mkdir -p "$DATA/access"; chown 1000:1000 "$DATA/access"; chmod 700 "$DATA/access"
-# $ETC/access: files the containers read (owner 1000, mode 400): first admin's password, OIDC client secret
-mkdir -p "$ETC/access"; chown root:1000 "$ETC/access"; chmod 750 "$ETC/access"
+# $ETC/access: files the containers read (directory 700 / files 400, owner uid 1000): first admin's
+# password, OIDC client secret
+mkdir -p "$ETC/access"; chown "$SVC_UID:$SVC_UID" "$ETC/access"; chmod 700 "$ETC/access"
 printf '%s' "$WEAVE_BOOTSTRAP_PASSWORD" >"$ETC/access/bootstrap-password"
 chown 1000:1000 "$ETC/access/bootstrap-password"; chmod 400 "$ETC/access/bootstrap-password"
 AUTH_EFFECTIVE=""
@@ -575,6 +654,7 @@ APIM_DCR_USERNAME=$APIM_ADMIN_USER
 APIM_DCR_PASSWORD=$APIM_ADMIN_PASSWORD
 RUNTIME_INTERNAL_KEY=$RUNTIME_INTERNAL_KEY
 GATEWAY_PUBLIC_URL=$GATEWAY_PUBLIC_URL
+WEAVE_VERSION=$BUNDLE_VERSION
 EOF
 }
 sso_env(){ # $1 = public base URL of the app (its OIDC redirect URI is <base>/api/auth/callback)
@@ -684,6 +764,28 @@ if [ "$ENABLE_GW_PATH" = yes ]; then GW_BLOCK="	# API gateway: /gw/<context>/<ve
 			}
 		}
 	}"; fi
+# Content-Security-Policy of the Weave consoles: scripts from this origin, plus the inline scripts of
+# the installed consoles' index pages by hash (theme switch, load-failure notice). The hashes are taken
+# from what the running containers serve, so a new image brings its own on the next install/upgrade.
+csp_hashes(){
+  python3 - "http://127.0.0.1:$PORT_GATEWAY/" "http://127.0.0.1:$PORT_FACTORY/factory/" <<'PYEOF'
+import base64, hashlib, re, sys, urllib.request
+out = set()
+for u in sys.argv[1:]:
+    html = urllib.request.urlopen(u, timeout=15).read().decode("utf-8")
+    for attrs, body in re.findall(r"<script([^>]*)>(.*?)</script>", html, re.S | re.I):
+        if "src=" in attrs.lower() or not body.strip():
+            continue
+        out.add("'sha256-" + base64.b64encode(hashlib.sha256(body.encode("utf-8")).digest()).decode() + "'")
+print(" ".join(sorted(out)))
+PYEOF
+}
+if CSP_SCRIPT_HASHES="$(csp_hashes 2>>"$LOG_FILE")"; then
+  ok "console Content-Security-Policy: scripts 'self' + $(echo "$CSP_SCRIPT_HASHES" | wc -w) inline script hash(es)"
+else
+  CSP_SCRIPT_HASHES="'unsafe-inline'"; warn "could not read the consoles' index pages for the script hashes; CSP allows inline scripts (re-run install.sh)"
+fi
+WEAVE_CSP="default-src 'self'; script-src 'self' $CSP_SCRIPT_HASHES; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
 mkdir -p "$DATA/caddy"
 render "$CS_DIR/templates/Caddyfile" "$ETC/Caddyfile.new"
 "$BIN/caddy" validate --config "$ETC/Caddyfile.new" --adapter caddyfile >>"$LOG_FILE" 2>&1 || die "Caddyfile does not validate (see log; $ETC/Caddyfile.new)"
@@ -728,6 +830,15 @@ elif [ -n "${BACKUP_SCHEDULE:-}" ]; then
   chmod 644 /etc/cron.d/weave-backup; ok "nightly backup: '$BACKUP_SCHEDULE' -> $BACKUP_TARGET (keep $BACKUP_RETENTION_DAYS days)"
 else ok "no schedule (BACKUP_SCHEDULE empty)"; fi
 
+# =================================================================================== permissions
+step "Self-check: permissions of secrets, tokens and keys"
+cs_secure_files
+if offenders="$(cs_check_files)"; then
+  ok "secrets, tokens, keys: root-only 600 (directories 700); service copies 400 in uid-$SVC_UID-only 700 directories ($ETC/access, $ETC/svc/*)"
+else
+  echo "$offenders" | tee -a "$LOG_FILE" >&2; die "files with loose permissions remain (listed above)"
+fi
+
 # =================================================================================== smoke
 step "Smoke checks"
 R=(--resolve "$WEAVE_DOMAIN:$HTTPS_PORT:127.0.0.1" --resolve "$APIM_DOMAIN:$HTTPS_PORT:127.0.0.1")
@@ -747,8 +858,21 @@ chk "API Manager Publisher  $APIM_URL/publisher/" "$APIM_URL/publisher/" "200|30
 chk "API Manager DevPortal  $APIM_URL/devportal/" "$APIM_URL/devportal/" "200|302"
 chk "Gateway health         127.0.0.1:$APIM_MGMT_NODEPORT gateway startup check" "https://localhost:$APIM_MGMT_NODEPORT/api/am/gateway/v2/server-startup-healthcheck" 200 --cacert "$ETC/apim-ca.pem"
 [ "$ENABLE_GW_PATH" = yes ] && chk "API gateway via proxy  $WEAVE_URL/gw/ (no API = 404)" "$WEAVE_URL/gw/no-such-api/1.0" "404|401|403"
-chk "API gateway NodePort   :$GATEWAY_HTTPS_NODEPORT (no API = 404)" "https://localhost:$GATEWAY_HTTPS_NODEPORT/no-such-api/1.0" "404|401|403" --cacert "$ETC/apim-ca.pem"
+chk "API gateway port      :$GATEWAY_HTTPS_NODEPORT (no API = 404)" "https://localhost:$GATEWAY_HTTPS_NODEPORT/no-such-api/1.0" "404|401|403" --cacert "$ETC/apim-ca.pem"
 chk "Migration tool health  :$MT_NODEPORT/api/health" "http://127.0.0.1:$MT_NODEPORT/api/health" 200
+# exposure: no NodePort/LoadBalancer services; management and migration tool not reachable from outside
+np="$(kubectl get svc -n "$NS_APIM" -o jsonpath='{range .items[*]}{.metadata.name}={.spec.type} {end}' 2>/dev/null; kubectl get svc -n "$NS_WEAVE" -o jsonpath='{range .items[*]}{.metadata.name}={.spec.type} {end}' 2>/dev/null)"
+if echo "$np" | grep -qE '=(NodePort|LoadBalancer)'; then warn "NodePort/LoadBalancer services remain: $np"; fails=$((fails+1)); else ok "services: $np(no NodePort)"; fi
+for p in "$APIM_MGMT_NODEPORT" "$MT_NODEPORT" $([ "$GW_HTTPS_HOSTIP" = 127.0.0.1 ] && echo "$GATEWAY_HTTPS_NODEPORT") $([ "$GW_HTTP_HOSTIP" = 127.0.0.1 ] && echo "$GATEWAY_HTTP_NODEPORT"); do
+  c=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "https://$HOST_IP:$p/" 2>/dev/null || true)
+  if [ "$c" = 000 ]; then ok "port $p not reachable on $HOST_IP (127.0.0.1 only)"; else warn "port $p answers on $HOST_IP ($c)"; fails=$((fails+1)); fi
+done
+hdr=$(curl -s -o /dev/null -D - --max-time 20 "${CURL_CA[@]+"${CURL_CA[@]}"}" "${R[@]}" "$WEAVE_URL/" | tr -d '\r' | tr 'A-Z' 'a-z')
+miss=""; for hname in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy; do echo "$hdr" | grep -q "^$hname:" || miss="$miss $hname"; done
+[ -z "$miss" ] && ok "security headers on $WEAVE_URL/: HSTS, nosniff, X-Frame-Options, CSP, Referrer-Policy" || { warn "security headers missing on $WEAVE_URL/:$miss"; fails=$((fails+1)); }
+v=$(curl -s --max-time 20 "${CURL_CA[@]+"${CURL_CA[@]}"}" "${R[@]}" "$WEAVE_URL/factory/healthz" || true)
+if [[ "$v" == *"\"version\":\"$BUNDLE_VERSION\""* ]]; then ok "Factory /healthz reports version $BUNDLE_VERSION"
+else warn "Factory /healthz does not report version $BUNDLE_VERSION ($(echo "$v" | cut -c1-80); images built before 1.0.0-rc6 do not)"; fi
 chk "HTTP -> HTTPS redirect :$HTTP_PORT" "http://$WEAVE_DOMAIN:$HTTP_PORT/" "301|302|308" --resolve "$WEAVE_DOMAIN:$HTTP_PORT:127.0.0.1"
 # sign-in: Weave accounts (users and access) when the images have it; API Manager sign-in otherwise / as well
 CJ=$(mktemp)
@@ -795,7 +919,7 @@ cat <<EOF
    Weave (Gateway console)  $WEAVE_URL/
    Weave Factory            $WEAVE_URL/factory/
    API Manager portals      $APIM_URL/publisher/   $APIM_URL/devportal/   $APIM_URL/admin/
-   API gateway              $GATEWAY_PUBLIC_URL   (NodePort $GATEWAY_HTTPS_NODEPORT for the load balancer)
+   API gateway              $GATEWAY_PUBLIC_URL   ($([ -n "$LB_SOURCE_CIDRS" ] && echo "port $GATEWAY_HTTPS_NODEPORT for the load balancer $LB_SOURCE_CIDRS" || echo "gateway port on 127.0.0.1 only"))
 
  Weave sign-in, first admin (Weave account):  $WEAVE_ADMIN_EMAIL
  API Manager portals: user '$APIM_ADMIN_USER', password: sudo grep ^APIM_ADMIN_PASSWORD= $SECRETS | cut -d= -f2

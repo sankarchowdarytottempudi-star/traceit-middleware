@@ -17,7 +17,7 @@
 #                    sources), Ballerina package cache (every library the services/framework import),
 #                    BALLERINA-DEPENDENCIES.txt, OFFLINE-BUILD-PROOF.txt
 #   model/           local code model .gguf (only with --with-model, ~4.7 GB)
-#   installer files  install.sh, upgrade.sh, backup.sh, restore.sh, uninstall.sh, docs, templates
+#   installer files  install.sh, upgrade.sh, rollback.sh, backup.sh, restore.sh, uninstall.sh, docs, templates
 #
 # Options:
 #   --version V        bundle version (default: 1.0.0-<git short sha>)

@@ -74,6 +74,9 @@ cs_load(){
   : "${GATEWAY_HTTPS_NODEPORT:=30243}"; : "${GATEWAY_HTTP_NODEPORT:=30280}"
   : "${APIM_MGMT_NODEPORT:=30443}"; : "${MT_NODEPORT:=30900}"
   : "${ENABLE_GW_PATH:=yes}"
+  # load balancer address(es) allowed to reach the API gateway port directly (empty = the gateway is
+  # bound to 127.0.0.1 and reached only through https://WEAVE_DOMAIN/gw); see NETWORK.md
+  : "${LB_SOURCE_CIDRS:=}"; : "${GATEWAY_HTTP_EXPOSE:=no}"
   : "${BACKUP_TARGET:=$DATA_ROOT/backups}"; : "${BACKUP_RETENTION_DAYS:=14}"
   : "${AUTH_PROVIDER:=local,oidc}"
   : "${WEAVE_ADMIN_EMAIL:=${ADMIN_EMAIL:-admin@$WEAVE_DOMAIN}}"; : "${WEAVE_ADMIN_NAME:=Weave Admin}"
@@ -99,12 +102,24 @@ cs_load(){
     PG_CPU_LIMIT=1; PG_MEMORY_LIMIT=1Gi; APIM_DATA_SIZE=2Gi; PG_DATA_SIZE=2Gi
     BACKUP_TARGET=$DATA_ROOT/backups; BACKUP_RETENTION_DAYS=2
     CADDY_UNIT=cstest-caddy
+    LB_SOURCE_CIDRS=""; GATEWAY_HTTP_EXPOSE=no       # test profile: nothing listens beyond loopback
     LOG_FILE=/var/log/weave-cstest-install.log
   fi
   if [ "$ISOLATED" = 1 ]; then   # the test profile can never address live resources
     [[ "$NS_APIM" == cs-* && "$NS_WEAVE" == cs-* && "$PREFIX" == cstest- && "$DATA_ROOT" == /opt/weave-cstest ]] || die "isolated profile guard failed"
   fi
   ETC="$DATA_ROOT/etc"; DATA="$DATA_ROOT/data"; BIN="$DATA_ROOT/bin"; STATE="$DATA_ROOT/state"
+  # Exposure (NETWORK.md): every Kubernetes Service is ClusterIP. API Manager management, the migration
+  # tool and (unless LB_SOURCE_CIDRS is set) the API gateway are published as pod host ports bound to
+  # 127.0.0.1 only. With LB_SOURCE_CIDRS the gateway HTTPS port (and HTTP with GATEWAY_HTTP_EXPOSE=yes)
+  # listens on every address, and the installer's firewall chain admits only loopback, the pod
+  # network and LB_SOURCE_CIDRS to it.
+  LB_SOURCE_CIDRS="$(echo "$LB_SOURCE_CIDRS" | tr ',' ' ' | xargs)"
+  GW_HTTPS_HOSTIP=127.0.0.1; GW_HTTP_HOSTIP=127.0.0.1
+  if [ -n "$LB_SOURCE_CIDRS" ]; then
+    GW_HTTPS_HOSTIP=0.0.0.0; [ "$GATEWAY_HTTP_EXPOSE" = yes ] && GW_HTTP_HOSTIP=0.0.0.0
+  fi
+  FW_UNIT="${PREFIX}firewall"; FW_CHAIN="$(echo "${PREFIX}GW" | tr 'a-z-' 'A-Z_')"
   SECRETS="$ETC/secrets.env"
   PLATFORM_DIR="$DATA_ROOT/platform"
   HTTPS_SUFFIX=""; [ "$HTTPS_PORT" = 443 ] || HTTPS_SUFFIX=":$HTTPS_PORT"
@@ -112,7 +127,7 @@ cs_load(){
   APIM_URL="https://$APIM_DOMAIN$HTTPS_SUFFIX"
   : "${GATEWAY_PUBLIC_URL:=}"
   if [ -z "$GATEWAY_PUBLIC_URL" ]; then
-    if [ "$ENABLE_GW_PATH" = yes ]; then GATEWAY_PUBLIC_URL="$WEAVE_URL/gw"; else GATEWAY_PUBLIC_URL="https://$WEAVE_DOMAIN:$GATEWAY_HTTPS_NODEPORT"; fi
+    if [ "$ENABLE_GW_PATH" = yes ] || [ -z "$LB_SOURCE_CIDRS" ]; then GATEWAY_PUBLIC_URL="$WEAVE_URL/gw"; else GATEWAY_PUBLIC_URL="https://$WEAVE_DOMAIN:$GATEWAY_HTTPS_NODEPORT"; fi
   fi
   [ "$ISOLATED" = 1 ] && GATEWAY_PUBLIC_URL="$WEAVE_URL/gw"
   export PATH="$BIN:/usr/local/bin:$PATH"
@@ -182,3 +197,48 @@ wait_http(){ # url expected-code tries [curl opts...]
 }
 host_ip(){ ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}'; }
 cni_ip(){ ip -4 -o addr show cni0 2>/dev/null | awk '{print $4}' | cut -d/ -f1; }
+
+# ---- file permissions (install, re-run, upgrade, restore): every secret, token and key -----------
+# Root-only files: mode 600, directories 700, owner root. The Weave containers run as uid 1000 and
+# cannot read root-only files, so the few secrets they need are COPIES in service directories that
+# belong to uid 1000 alone (directory 700, files 400): $ETC/access (first-admin password, OIDC client
+# secret), $ETC/svc/k8s (service account token), $ETC/svc/target (deployment kubeconfig, registry
+# password). They are bind-mounted read-only into the containers.
+# cs_secure_files fixes, cs_check_files verifies (prints every offender, returns 1 if any).
+SVC_UID=1000
+cs_svc_dirs(){ local d; for d in "$ETC/access" "$ETC"/svc/*; do [ -d "$d" ] && echo "$d"; done; }
+cs_secure_files(){
+  local f d
+  for d in "$ETC" "$STATE" "$ETC/svc" "$ETC/tls" "$ETC/mt-ssh" "$ETC/k8s"; do [ -d "$d" ] && { chown root:root "$d"; chmod 700 "$d"; }; done
+  for f in "$SECRETS" "$ETC/weave.conf" "$ETC"/*.env "$ETC"/tls/*.key "$ETC/mt-ssh/id_ed25519" "$ETC/k8s/token" \
+           "$ETC"/secrets.env.before-restore-*; do
+    [ -f "$f" ] && { chown root:root "$f"; chmod 600 "$f"; }
+  done
+  while IFS= read -r d; do
+    chown -R "$SVC_UID:$SVC_UID" "$d"; chmod 700 "$d"; find "$d" -type f -exec chmod 400 {} +
+  done < <(cs_svc_dirs)
+  [ -d "$DATA/access" ] && { chown "$SVC_UID:$SVC_UID" "$DATA/access"; chmod 700 "$DATA/access"; }
+  [ -f "$DATA/runtime/secret.key" ] && chmod 600 "$DATA/runtime/secret.key"
+  return 0
+}
+cs_check_files(){
+  local bad=0 f d m o
+  _want(){ # path mode owner-uid
+    [ -e "$1" ] || return 0
+    m=$(stat -c %a "$1"); o=$(stat -c %u "$1")
+    if [ "$m" != "$2" ] || [ "$o" != "$3" ]; then echo "    $1: mode $m owner $o (want $2, owner $3)"; bad=1; fi
+  }
+  for d in "$ETC" "$STATE" "$ETC/svc" "$ETC/tls" "$ETC/mt-ssh" "$ETC/k8s"; do _want "$d" 700 0; done
+  for f in "$SECRETS" "$ETC/weave.conf" "$ETC"/*.env "$ETC"/tls/*.key "$ETC/mt-ssh/id_ed25519" "$ETC/k8s/token"; do
+    [ -f "$f" ] && _want "$f" 600 0
+  done
+  while IFS= read -r d; do
+    _want "$d" 700 "$SVC_UID"; for f in "$d"/*; do [ -f "$f" ] && _want "$f" 400 "$SVC_UID"; done
+  done < <(cs_svc_dirs)
+  _want "$DATA/access" 700 "$SVC_UID"
+  # nothing under etc/ that looks like a secret may be readable by group or others
+  while IFS= read -r f; do echo "    $f: readable by group/others ($(stat -c %a "$f"))"; bad=1; done < <(
+    find "$ETC" -type f \( -name '*.key' -o -name '*.env' -o -name 'token' -o -name 'id_*' ! -name '*.pub' \
+      -o -name '*password*' -o -name '*secret*' -o -name 'kubeconfig' -o -name 'weave.conf' \) -perm /077 2>/dev/null)
+  return $bad
+}

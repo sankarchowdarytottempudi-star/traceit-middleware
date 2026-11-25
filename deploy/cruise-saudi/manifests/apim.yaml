@@ -99,10 +99,13 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - { name: JVM_MEM_OPTS, value: "-Xms1024m -Xmx@@APIM_JVM_HEAP@@" }
+          # host ports (NETWORK.md): management on 127.0.0.1 only (Caddy, Weave, installer); the gateway on
+          # 127.0.0.1 unless LB_SOURCE_CIDRS is set (then every address, admitted by the firewall chain
+          # only from the load balancer). No NodePort: the Service below is ClusterIP.
           ports:
-            - { containerPort: 9443, name: mgmt }
-            - { containerPort: 8243, name: gw-https }
-            - { containerPort: 8280, name: gw-http }
+            - { containerPort: 9443, name: mgmt, hostPort: @@APIM_MGMT_NODEPORT@@, hostIP: 127.0.0.1 }
+            - { containerPort: 8243, name: gw-https, hostPort: @@GATEWAY_HTTPS_NODEPORT@@, hostIP: "@@GW_HTTPS_HOSTIP@@" }
+            - { containerPort: 8280, name: gw-http, hostPort: @@GATEWAY_HTTP_NODEPORT@@, hostIP: "@@GW_HTTP_HOSTIP@@" }
           resources:
             requests: { cpu: "1", memory: 2Gi }
             limits: { cpu: "@@APIM_CPU_LIMIT@@", memory: @@APIM_MEMORY_LIMIT@@ }
@@ -159,9 +162,9 @@ metadata:
   namespace: @@NS_APIM@@
   labels: { app.kubernetes.io/part-of: cruise-saudi-weave }
 spec:
-  type: NodePort
+  type: ClusterIP
   selector: { app: wso2am }
   ports:
-    - { name: mgmt, port: 9443, targetPort: mgmt, nodePort: @@APIM_MGMT_NODEPORT@@ }
-    - { name: gw-https, port: 8243, targetPort: gw-https, nodePort: @@GATEWAY_HTTPS_NODEPORT@@ }
-    - { name: gw-http, port: 8280, targetPort: gw-http, nodePort: @@GATEWAY_HTTP_NODEPORT@@ }
+    - { name: mgmt, port: 9443, targetPort: mgmt }
+    - { name: gw-https, port: 8243, targetPort: gw-https }
+    - { name: gw-http, port: 8280, targetPort: gw-http }

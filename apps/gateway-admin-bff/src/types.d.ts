@@ -8,5 +8,11 @@ declare module "fastify" {
     tokenForRequest: (req: FastifyRequest) => Promise<string | null>;
     /** Sign-in, roles and audit log (src/access). */
     access: Access;
+    /** Token from the service credentials (fallback when the person's token sees nothing). */
+    serviceToken: () => Promise<string>;
+    /** Signed-in person's name, or null. */
+    userForRequest: (req: FastifyRequest) => Promise<string | null>;
+    /** Native gateway analytics (set by the insight routes). */
+    gwAnalytics?: import("./gwanalytics/index.js").GatewayAnalytics;
   }
 }

@@ -1,0 +1,292 @@
+// Pure model of an API's live rules: read them from the API Manager definition, compute the new
+// definition for a change, and describe the change in plain words (what the confirmation shows and
+// what goes into the audit). No I/O here.
+import { addressesRegex, rateWords, UNLIMITED, type Security, type TAccessInput, type TTrafficInput } from "./validate.js";
+
+export interface PolicyInfo { name: string; limit: number; timeUnit: string; unitTime: number; quotaType?: string; description?: string; }
+export interface PolicyBook { subscription: PolicyInfo[]; advanced: PolicyInfo[]; application?: PolicyInfo[]; }
+
+export function policyInfo(p: any): PolicyInfo {
+  const dl = p?.defaultLimit ?? {};
+  const rc = dl.requestCount ?? dl.bandwidth ?? dl.eventCount ?? {};
+  const limit = Number(rc.requestCount ?? rc.dataAmount ?? rc.eventCount ?? 0);
+  return { name: String(p?.policyName ?? p?.name ?? ""), limit: limit || 0, timeUnit: String(rc.timeUnit ?? "min"), unitTime: Number(rc.unitTime ?? 1) || 1,
+    quotaType: dl.type, description: p?.description ?? undefined };
+}
+
+export function isUnlimited(name: string | null | undefined, book?: PolicyInfo[]): boolean {
+  if (!name) return true;
+  if (name === "Unlimited") return true;
+  const p = book?.find((x) => x.name === name);
+  return !!p && p.limit >= UNLIMITED;
+}
+
+/** Plain words for a policy in a role. */
+export function policyWords(name: string | null | undefined, book: PolicyInfo[], role: "plan" | "api" | "operation" | "application"): string {
+  if (!name || name === "Unlimited") return role === "plan" ? "Unlimited (no limit per consumer)" : "no limit";
+  const p = book.find((x) => x.name === name);
+  if (!p) return `${name} (not found on API Manager)`;
+  if (p.quotaType && p.quotaType !== "REQUESTCOUNTLIMIT") return `${name} (${p.quotaType.toLowerCase().replace("limit", " limit")})`;
+  const r = rateWords(p.limit, p.timeUnit, p.unitTime);
+  const tail = role === "plan" ? " per consumer application" : role === "api" ? ", shared by every caller of this API" : role === "operation" ? ", shared by every caller of this operation" : " per application, across all its APIs";
+  return p.limit >= UNLIMITED ? `${name} (no limit)` : `${name} (${r}${tail})`;
+}
+
+// ---------- security ----------
+const OPEN = /^none$/i;
+export function readSecurity(api: any): Security {
+  const ops: any[] = api?.operations ?? [];
+  if (ops.length && ops.every((o) => OPEN.test(String(o.authType ?? "")))) return "none";
+  const s: string[] = api?.securityScheme ?? [];
+  const oauth = s.includes("oauth2"), key = s.includes("api_key");
+  if (s.includes("basic_auth") && !oauth && !key) return "basic";
+  if (oauth && key) return "both";
+  if (key) return "apikey";
+  return "oauth2";
+}
+export const SECURITY_WORDS: Record<Security, string> = {
+  oauth2: "OAuth2 token required", apikey: "API key required", both: "OAuth2 token or API key", basic: "User name and password (basic authentication against the key manager's users)", none: "Open: no sign-in, anyone can call",
+};
+/** securityScheme + per-operation auth for a choice. Keeps unrelated schemes (mutual TLS, basic auth) as they were. */
+export function securityPatch(api: any, sec: Security): { securityScheme: string[]; operations: any[] } {
+  const keep = (api?.securityScheme ?? []).filter((s: string) => !["oauth2", "api_key", "basic_auth", "oauth_basic_auth_api_key_mandatory"].includes(s));
+  const schemes = sec === "apikey" ? ["api_key"] : sec === "both" ? ["oauth2", "api_key"] : sec === "basic" ? ["basic_auth"] : ["oauth2"];
+  const securityScheme = [...new Set([...schemes, ...keep, "oauth_basic_auth_api_key_mandatory"])];
+  const operations = (api?.operations ?? []).map((o: any) => ({
+    ...o,
+    authType: sec === "none" ? "None" : OPEN.test(String(o.authType ?? "")) || !o.authType ? "Application & Application User" : o.authType,
+  }));
+  return { securityScheme, operations };
+}
+
+// ---------- per-API address rules (API-specific operation policy) ----------
+export const ADDRESS_POLICY = { name: "weaveAddressFilter", version: "v1" } as const;
+
+export function addressPolicySpec(): string {
+  const attr = (name: string, displayName: string, description: string) => ({ name, displayName, description, type: "String", required: false, allowedValues: [] });
+  return JSON.stringify({
+    category: "Security", name: ADDRESS_POLICY.name, version: ADDRESS_POLICY.version, displayName: "Address rules (Weave console)",
+    description: "Allows or blocks callers of this API by IP address or range. Managed from the Weave Gateway console; edit it there.",
+    applicableFlows: ["request"], supportedGateways: ["Synapse"], supportedApiTypes: ["HTTP"],
+    policyAttributes: [
+      attr("allowList", "Allowed addresses", "Comma-separated, for people"),
+      attr("denyList", "Blocked addresses", "Comma-separated, for people"),
+      attr("allowRegex", "Allowed (pattern)", "Generated by the console"),
+      attr("denyRegex", "Blocked (pattern)", "Generated by the console"),
+      attr("clientIpHeader", "Caller address header", "Empty = the connection address"),
+    ],
+  }, null, 2);
+}
+
+const DENY = `
+    <property name="HTTP_SC" value="403" scope="axis2"/>
+    <property name="messageType" value="application/json" scope="axis2"/>
+    <property name="ContentType" value="application/json" scope="axis2"/>
+    <payloadFactory media-type="json"><format>{"code":"403","message":"Forbidden","description":"Calls from your address are not allowed for this API"}</format><args/></payloadFactory>
+    <property name="RESPONSE" value="true"/>
+    <header name="To" action="remove"/>
+    <respond/>`;
+export function addressPolicySynapse(): string {
+  return `<property name="weave.caller" expression="get-property('axis2','REMOTE_ADDR')"/>
+{% if clientIpHeader %}
+<filter xpath="boolean($trp:{{clientIpHeader}})">
+  <then><property name="weave.caller" expression="$trp:{{clientIpHeader}}"/></then>
+</filter>
+{% endif %}
+{% if denyRegex %}
+<filter source="get-property('weave.caller')" regex="{{denyRegex}}">
+  <then>${DENY}
+  </then>
+</filter>
+{% endif %}
+{% if allowRegex %}
+<filter source="get-property('weave.caller')" regex="{{allowRegex}}">
+  <then><property name="weave.caller.allowed" value="true"/></then>
+  <else>${DENY}
+  </else>
+</filter>
+{% endif %}
+`;
+}
+
+const isOurs = (p: any) => p?.policyName === ADDRESS_POLICY.name;
+export function readAddresses(api: any): { allow: string[]; deny: string[] } {
+  for (const o of api?.operations ?? []) {
+    const p = (o.operationPolicies?.request ?? []).find(isOurs);
+    if (p) {
+      const split = (s: unknown) => String(s ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+      return { allow: split(p.parameters?.allowList), deny: split(p.parameters?.denyList) };
+    }
+  }
+  return { allow: [], deny: [] };
+}
+/** Operations with the address policy set (first in the request flow) or removed. Other policies are kept. */
+export function withAddressPolicy(operations: any[], allow: string[], deny: string[], policyId: string | null, header: string): any[] {
+  const on = allow.length > 0 || deny.length > 0;
+  return operations.map((o) => {
+    const op = o.operationPolicies ?? { request: [], response: [], fault: [] };
+    const rest = (op.request ?? []).filter((p: any) => !isOurs(p));
+    const request = on ? [{ policyName: ADDRESS_POLICY.name, policyVersion: ADDRESS_POLICY.version, policyType: "api", ...(policyId ? { policyId } : {}),
+      parameters: { allowList: allow.join(", "), denyList: deny.join(", "), allowRegex: addressesRegex(allow), denyRegex: addressesRegex(deny), clientIpHeader: header } }, ...rest] : rest;
+    return { ...o, operationPolicies: { request, response: op.response ?? [], fault: op.fault ?? [] } };
+  });
+}
+
+// ---------- views ----------
+export interface CorsView { enabled: boolean; origins: string[]; headers: string[]; methods: string[]; credentials: boolean; }
+export function readCors(api: any): CorsView {
+  const c = api?.corsConfiguration ?? {};
+  return { enabled: !!c.corsConfigurationEnabled, origins: c.accessControlAllowOrigins ?? [], headers: c.accessControlAllowHeaders ?? [],
+    methods: c.accessControlAllowMethods ?? [], credentials: !!c.accessControlAllowCredentials };
+}
+export function readTraffic(api: any) {
+  return {
+    tiers: (api?.policies ?? []) as string[],
+    apiPolicy: (api?.apiThrottlingPolicy ?? null) as string | null,
+    operations: ((api?.operations ?? []) as any[]).map((o) => ({ verb: String(o.verb), target: String(o.target), policy: (o.throttlingPolicy ?? null) as string | null })),
+  };
+}
+
+// ---------- plans: new definition + change list ----------
+export interface Plan { body: any; changes: string[]; }
+const list = (a: string[]) => (a.length ? a.join(", ") : "none");
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+
+export function planTraffic(api: any, input: TTrafficInput, book: PolicyBook): Plan {
+  const cur = readTraffic(api);
+  const changes: string[] = [];
+  if (!sameSet(cur.tiers, input.tiers))
+    changes.push(`Plans consumers can pick: ${list(cur.tiers)} → ${list(input.tiers)}. Each plan is a limit per consumer application: ${input.tiers.map((t) => policyWords(t, book.subscription, "plan")).join("; ")}.`);
+  if ((cur.apiPolicy || null) !== (input.apiPolicy || null))
+    changes.push(`Limit for the whole API: ${policyWords(cur.apiPolicy, book.advanced, "api")} → ${policyWords(input.apiPolicy, book.advanced, "api")}.`);
+  const byKey = new Map(input.operations.map((o) => [`${o.verb} ${o.target}`, o.policy]));
+  const operations = (api.operations ?? []).map((o: any) => {
+    const k = `${String(o.verb).toUpperCase()} ${o.target}`;
+    if (!byKey.has(k)) return o;
+    const next = byKey.get(k) || "Unlimited";
+    const before = o.throttlingPolicy || "Unlimited";
+    if (next !== before) changes.push(`${k}: ${policyWords(before, book.advanced, "operation")} → ${policyWords(next, book.advanced, "operation")}.`);
+    return { ...o, throttlingPolicy: next };
+  });
+  const body = { ...api, policies: input.tiers, apiThrottlingPolicy: input.apiPolicy || null, operations };
+  return { body, changes };
+}
+
+export function planAccess(api: any, input: TAccessInput, policyId: string | null, header: string): Plan {
+  const changes: string[] = [];
+  const curSec = readSecurity(api);
+  const sec = securityPatch(api, input.security);
+  if (curSec !== input.security) changes.push(`Sign-in: ${SECURITY_WORDS[curSec]} → ${SECURITY_WORDS[input.security]}.`);
+  const c = readCors(api);
+  const n = input.cors;
+  const corsWords = (v: CorsView) => (v.enabled ? `on (origins ${list(v.origins)}; headers ${list(v.headers)}; methods ${list(v.methods)}; credentials ${v.credentials ? "allowed" : "not allowed"})` : "off (gateway default)");
+  const corsChanged = c.enabled !== n.enabled || (n.enabled && (!sameSet(c.origins, n.origins) || !sameSet(c.headers, n.headers) || !sameSet(c.methods, n.methods) || c.credentials !== n.credentials));
+  if (corsChanged) changes.push(`Browser access (CORS): ${corsWords(c)} → ${corsWords(n)}.`);
+  const a = readAddresses(api);
+  if (!sameSet(a.allow, input.ipAllow)) changes.push(`Addresses allowed to call: ${a.allow.length ? list(a.allow) : "any"} → ${input.ipAllow.length ? `only ${list(input.ipAllow)}` : "any"}.`);
+  if (!sameSet(a.deny, input.ipDeny)) changes.push(`Addresses blocked: ${list(a.deny)} → ${list(input.ipDeny)}.`);
+  const addrChanged = !sameSet(a.allow, input.ipAllow) || !sameSet(a.deny, input.ipDeny);
+  const operations = addrChanged ? withAddressPolicy(sec.operations, input.ipAllow, input.ipDeny, policyId, header) : sec.operations;
+  const body = {
+    ...api, securityScheme: sec.securityScheme, operations,
+    corsConfiguration: { ...(api.corsConfiguration ?? {}), corsConfigurationEnabled: n.enabled,
+      accessControlAllowOrigins: n.enabled ? n.origins : c.origins, accessControlAllowHeaders: n.enabled ? n.headers : c.headers,
+      accessControlAllowMethods: n.enabled ? n.methods : c.methods, accessControlAllowCredentials: n.enabled ? n.credentials : c.credentials },
+  };
+  return { body, changes };
+}
+
+/** API Manager keeps a limited number of revisions per API; the oldest one not deployed anywhere makes room. */
+export const MAX_REVISIONS = 5;
+export function revisionToPrune(revisions: any[]): any | null {
+  if (revisions.length < MAX_REVISIONS) return null;
+  const free = revisions.filter((r) => !(r.deploymentInfo ?? []).length).sort((a, b) => Number(a.createdTime) - Number(b.createdTime));
+  return free[0] ?? null;
+}
+
+/** Short summary of where an API is live, e.g. "Default (localhost)". */
+export function deploymentWords(deps: { name: string; vhost?: string }[]): string {
+  return deps.length ? deps.map((d) => `${d.name}${d.vhost ? ` (${d.vhost})` : ""}`).join(", ") : "not deployed to any gateway";
+}
+
+// ---------- gateway policies (Policies tab): caching, backend TPS, endpoint timeout/suspension,
+// JSON/XML threat protection, request header add/remove, API key header name ----------
+export interface PoliciesView {
+  apiKeyHeader: string;
+  caching: { enabled: boolean; seconds: number };
+  maxTps: { production: number | null; sandbox: number | null };
+  endpoint: { timeoutMs: number | null; suspendMs: number | null };
+  jsonThreat: null | { maxJsonDepth: number; maxPropertyCount: number; maxStringLength: number; maxArrayElementCount: number; maxKeyLength: number };
+  xmlThreat: boolean;
+  addHeaders: { name: string; value: string }[];
+  removeHeaders: string[];
+  httpsOnly: boolean;
+  schemaValidation: boolean;
+}
+const COMMON = { addHeader: "v2", removeHeader: "v1", jsonValidator: "v1", xmlValidator: "v1" } as const;
+export type CommonIds = Partial<Record<keyof typeof COMMON, string>>;
+const num0 = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; };
+
+export function readPolicies(api: any): PoliciesView {
+  const req: any[] = api?.operations?.[0]?.operationPolicies?.request ?? [];
+  const cfg = api?.endpointConfig?.production_endpoints?.config ?? {};
+  const jv = req.find((p) => p.policyName === "jsonValidator");
+  return {
+    apiKeyHeader: api?.apiKeyHeader || "ApiKey",
+    caching: { enabled: !!api?.responseCachingEnabled, seconds: Number(api?.cacheTimeout ?? 300) || 300 },
+    maxTps: { production: num0(api?.maxTps?.production), sandbox: num0(api?.maxTps?.sandbox) },
+    endpoint: { timeoutMs: num0(cfg.actionDuration), suspendMs: num0(cfg.suspendDuration) },
+    jsonThreat: jv ? { maxJsonDepth: Number(jv.parameters?.maxJsonDepth ?? 100), maxPropertyCount: Number(jv.parameters?.maxPropertyCount ?? 100),
+      maxStringLength: Number(jv.parameters?.maxStringLength ?? 100), maxArrayElementCount: Number(jv.parameters?.maxArrayElementCount ?? 100), maxKeyLength: Number(jv.parameters?.maxKeyLength ?? 100) } : null,
+    xmlThreat: req.some((p) => p.policyName === "xmlValidator"),
+    addHeaders: req.filter((p) => p.policyName === "addHeader").map((p) => ({ name: String(p.parameters?.headerName ?? ""), value: String(p.parameters?.headerValue ?? "") })),
+    removeHeaders: req.filter((p) => p.policyName === "removeHeader").map((p) => String(p.parameters?.headerName ?? "")),
+    httpsOnly: Array.isArray(api?.transport) && api.transport.length > 0 && !api.transport.includes("http"),
+    schemaValidation: !!api?.enableSchemaValidation,
+  };
+}
+
+const MANAGED = new Set(["addHeader", "removeHeader", "jsonValidator", "xmlValidator"]);
+export function planPolicies(api: any, v: PoliciesView, ids: CommonIds): Plan {
+  const cur = readPolicies(api);
+  const changes: string[] = [];
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  if (cur.apiKeyHeader !== v.apiKeyHeader) changes.push(`API key header name: ${cur.apiKeyHeader} → ${v.apiKeyHeader}. Callers must send the key in the new header.`);
+  if (!same(cur.caching, v.caching)) changes.push(`Response caching: ${cur.caching.enabled ? `on, ${cur.caching.seconds} s` : "off"} → ${v.caching.enabled ? `on, ${v.caching.seconds} s (same answer served to every caller of the same request)` : "off"}.`);
+  if (!same(cur.maxTps, v.maxTps)) changes.push(`Backend protection (max requests per second sent to the backend): ${cur.maxTps.production ?? "no limit"} → ${v.maxTps.production ?? "no limit"} production, ${cur.maxTps.sandbox ?? "no limit"} → ${v.maxTps.sandbox ?? "no limit"} sandbox.`);
+  if (!same(cur.endpoint, v.endpoint)) changes.push(`Backend timeout: ${cur.endpoint.timeoutMs ? `${cur.endpoint.timeoutMs / 1000} s` : "gateway default"} → ${v.endpoint.timeoutMs ? `${v.endpoint.timeoutMs / 1000} s` : "gateway default"}; pause the backend after failures: ${cur.endpoint.suspendMs ? `${cur.endpoint.suspendMs / 1000} s` : "default"} → ${v.endpoint.suspendMs ? `${v.endpoint.suspendMs / 1000} s` : "default"}.`);
+  if (!same(cur.jsonThreat, v.jsonThreat)) changes.push(v.jsonThreat ? `JSON threat protection: ${cur.jsonThreat ? "changed" : "off → on"} (depth ≤ ${v.jsonThreat.maxJsonDepth}, properties ≤ ${v.jsonThreat.maxPropertyCount}, strings ≤ ${v.jsonThreat.maxStringLength} chars, arrays ≤ ${v.jsonThreat.maxArrayElementCount}, keys ≤ ${v.jsonThreat.maxKeyLength} chars). Larger bodies are refused with 400.` : "JSON threat protection: on → off.");
+  if (cur.xmlThreat !== v.xmlThreat) changes.push(`XML threat protection: ${cur.xmlThreat ? "on" : "off"} → ${v.xmlThreat ? "on" : "off"}.`);
+  if (!same(cur.addHeaders, v.addHeaders)) changes.push(`Headers added to every request sent to the backend: ${cur.addHeaders.map((h) => h.name).join(", ") || "none"} → ${v.addHeaders.map((h) => h.name).join(", ") || "none"}.`);
+  if (cur.httpsOnly !== v.httpsOnly) changes.push(`Plain HTTP: ${cur.httpsOnly ? "refused" : "accepted"} → ${v.httpsOnly ? "refused (HTTPS only)" : "accepted"}.`);
+  if (cur.schemaValidation !== v.schemaValidation) changes.push(`OpenAPI schema validation: ${cur.schemaValidation ? "on" : "off"} → ${v.schemaValidation ? "on: requests and responses that do not match the API definition are refused" : "off"}.`);
+  if (!same(cur.removeHeaders, v.removeHeaders)) changes.push(`Headers removed before the backend: ${cur.removeHeaders.join(", ") || "none"} → ${v.removeHeaders.join(", ") || "none"}.`);
+  const ref = (name: keyof typeof COMMON, parameters: Record<string, unknown>) => ({ policyName: name, policyVersion: COMMON[name], policyType: "common", ...(ids[name] ? { policyId: ids[name] } : {}), parameters });
+  const managed: any[] = [
+    ...(v.jsonThreat ? [ref("jsonValidator", { ...Object.fromEntries(Object.entries(v.jsonThreat).map(([k, x]) => [k, String(x)])), requestMessageBufferSize: "1024", jsonSchemaValidator: "org.wso2.carbon.apimgt.gateway.mediators.JsonSchemaValidator" })] : []),
+    ...(v.xmlThreat ? [ref("xmlValidator", {})] : []),
+    ...v.removeHeaders.map((h) => ref("removeHeader", { headerName: h })),
+    ...v.addHeaders.map((h) => ref("addHeader", { headerName: h.name, headerValue: h.value })),
+  ];
+  const operations = (api.operations ?? []).map((o: any) => {
+    const op = o.operationPolicies ?? { request: [], response: [], fault: [] };
+    const req: any[] = op.request ?? [];
+    // address rules stay first, console-managed policies next, anything else after
+    const first = req.filter((p) => p.policyName === ADDRESS_POLICY.name);
+    const rest = req.filter((p) => p.policyName !== ADDRESS_POLICY.name && !MANAGED.has(p.policyName));
+    return { ...o, operationPolicies: { request: [...first, ...managed, ...rest], response: op.response ?? [], fault: op.fault ?? [] } };
+  });
+  const ep = api.endpointConfig ?? {};
+  const withCfg = (e: any) => {
+    if (!e || typeof e !== "object" || Array.isArray(e)) return e;
+    const cfg = { ...(e.config ?? {}) };
+    if (v.endpoint.timeoutMs) { cfg.actionDuration = String(v.endpoint.timeoutMs); cfg.actionSelect = "fault"; } else { delete cfg.actionDuration; delete cfg.actionSelect; }
+    if (v.endpoint.suspendMs) { cfg.suspendDuration = String(v.endpoint.suspendMs); cfg.suspendMaxDuration = String(v.endpoint.suspendMs * 4); cfg.factor = "2"; } else { delete cfg.suspendDuration; delete cfg.suspendMaxDuration; delete cfg.factor; }
+    return Object.keys(cfg).length ? { ...e, config: cfg } : (({ config: _c, ...r }) => r)(e);
+  };
+  const endpointConfig = same(cur.endpoint, v.endpoint) ? ep : { ...ep, production_endpoints: withCfg(ep.production_endpoints), sandbox_endpoints: withCfg(ep.sandbox_endpoints) };
+  const body = { ...api, apiKeyHeader: v.apiKeyHeader, responseCachingEnabled: v.caching.enabled, cacheTimeout: v.caching.seconds,
+    maxTps: v.maxTps.production || v.maxTps.sandbox ? { ...(api.maxTps ?? {}), production: v.maxTps.production ?? undefined, sandbox: v.maxTps.sandbox ?? undefined } : null,
+    endpointConfig, operations, transport: v.httpsOnly ? ["https"] : ["http", "https"], enableSchemaValidation: v.schemaValidation };
+  return { body, changes };
+}

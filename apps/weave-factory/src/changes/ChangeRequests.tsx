@@ -154,6 +154,7 @@ export function ChangeRequests({ api, migrationId }: { api: string; migrationId?
                     <span className="mf-mg-wrap mf-mg-grow">{c.requirement}</span>
                     <span className="mf-mg-small mf-mg-muted">{when(c.createdAt)}{c.by ? ` · ${c.by}` : ""}</span>
                   </button>
+                  {c.status === "failed" && c.why ? <div className="mf-mg-small mf-mg-wrap" data-testid="change-why" style={{ marginTop: 6, color: "var(--bad)" }}>Why: {c.why}</div> : null}
                   {open === c.id && <div style={{ marginTop: 10 }}><ChangeView id={c.id} onOnTop={(x) => setStart(`On top of the change "${(x.request?.requirement ?? "").slice(0, 80)}": `)} /></div>}
                 </li>
               ))}

@@ -4,7 +4,7 @@ import { URL } from "node:url";
 
 export interface Wso2Opts { baseUrl: string; caPem: string; }
 
-function request(opts: Wso2Opts, method: string, path: string, headers: Record<string, string>, body?: string):
+function request(opts: Wso2Opts, method: string, path: string, headers: Record<string, string>, body?: string | Buffer):
   Promise<{ status: number; text: string }> {
   const u = new URL(path.startsWith("http") ? path : opts.baseUrl + path);
   const agentOpts: https.AgentOptions = opts.caPem ? { ca: opts.caPem } : {};
@@ -78,6 +78,25 @@ export async function api(opts: Wso2Opts, accessToken: string, method: string, p
   const r = await request(opts, method, path,
     { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", Accept: "application/json" },
     body === undefined ? undefined : JSON.stringify(body));
+  let json: any = null;
+  try { json = r.text ? JSON.parse(r.text) : null; } catch { json = { raw: r.text }; }
+  return { status: r.status, json };
+}
+
+/** multipart/form-data upload (API-specific operation policies). Files only, no streaming: they are a few KB. */
+export async function apiMultipart(opts: Wso2Opts, accessToken: string, path: string,
+  parts: { name: string; filename: string; contentType: string; content: string }[]): Promise<{ status: number; json: any }> {
+  const boundary = `----weave${crypto.randomBytes(12).toString("hex")}`;
+  const chunks: Buffer[] = [];
+  for (const p of parts) {
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${p.name}"; filename="${p.filename}"\r\nContent-Type: ${p.contentType}\r\n\r\n`));
+    chunks.push(Buffer.from(p.content, "utf8"));
+    chunks.push(Buffer.from("\r\n"));
+  }
+  chunks.push(Buffer.from(`--${boundary}--\r\n`));
+  const body = Buffer.concat(chunks);
+  const r = await request(opts, "POST", path, { Authorization: `Bearer ${accessToken}`, Accept: "application/json",
+    "Content-Type": `multipart/form-data; boundary=${boundary}`, "Content-Length": String(body.length) }, body);
   let json: any = null;
   try { json = r.text ? JSON.parse(r.text) : null; } catch { json = { raw: r.text }; }
   return { status: r.status, json };

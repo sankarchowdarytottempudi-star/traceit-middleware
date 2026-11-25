@@ -47,6 +47,15 @@ describe("served under a path of a shared address", () => {
     // a name that only begins the same way is not the path
     expect((await app.inject({ url: "/factoryx/healthz" })).body).toContain('<meta name="weave-base" content="" />');
   });
+  it("reports the installed version on /healthz (WEAVE_VERSION, set by the installer)", async () => {
+    const keepV = process.env.WEAVE_VERSION;
+    try {
+      delete process.env.WEAVE_VERSION;
+      expect((await app.inject({ url: "/factory/healthz" })).json()).toEqual({ status: "UP" });
+      process.env.WEAVE_VERSION = "1.2.3-test";
+      expect((await app.inject({ url: "/factory/healthz" })).json()).toEqual({ status: "UP", version: "1.2.3-test" });
+    } finally { if (keepV === undefined) delete process.env.WEAVE_VERSION; else process.env.WEAVE_VERSION = keepV; }
+  });
   it.each(["/factory", "/factory/", "/factory/studio/flows/abc", "/factory?tab=1", "/factory/index.html"])("%s is the app, with its files and its place stated", async (url) => {
     const r = await app.inject({ url });
     expect(r.statusCode).toBe(200);

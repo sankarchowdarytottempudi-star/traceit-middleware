@@ -25,7 +25,8 @@ spec:
         - name: app
           image: @@IMG_MT@@
           imagePullPolicy: IfNotPresent
-          ports: [ { name: http, containerPort: 8080 } ]
+          # 127.0.0.1:@@MT_NODEPORT@@ on the host only (the Factory and the installer); Service is ClusterIP
+          ports: [ { name: http, containerPort: 8080, hostPort: @@MT_NODEPORT@@, hostIP: 127.0.0.1 } ]
           env:
             - { name: MT_RUNNER, value: "ssh" }
             - { name: MT_SSH_TARGET, value: "@@MT_SSH_TARGET@@" }
@@ -66,7 +67,7 @@ metadata:
   name: migration-tool
   namespace: @@NS_WEAVE@@
 spec:
-  type: NodePort
+  type: ClusterIP
   selector: { app.kubernetes.io/name: migration-tool }
   ports:
-    - { name: http, port: 80, targetPort: http, nodePort: @@MT_NODEPORT@@ }
+    - { name: http, port: 80, targetPort: http }

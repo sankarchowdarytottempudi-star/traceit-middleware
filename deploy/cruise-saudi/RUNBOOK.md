@@ -43,9 +43,13 @@ on RHEL 9 with SELinux enforcing `container-selinux`. Missing ones: install from
 repository, or let the installer do it with `--use-os-repo`. Python 3.12: from the OS, else the
 bundled standalone build (`/opt/weave/python`, linked as `/usr/local/bin/python3.12` and `python3`).
 
-**Firewall** – inbound: 443 and 80 from users, `GATEWAY_HTTPS_NODEPORT` (30243) from the load balancer,
-22 for administration. Block everything else from outside, in particular 30443 (API Manager
-management, already published through `apim.aroya.com`), 30900 (migration tool), 30280, 6443 (k3s).
+**Firewall** – inbound: 443 and 80 from users, 22 for administration, and `GATEWAY_HTTPS_NODEPORT`
+(30243) from the load balancer only when it calls the gateway port directly. The installer exposes
+nothing else: every Kubernetes Service is ClusterIP; API Manager management (30443), the migration tool
+(30900) and, unless `LB_SOURCE_CIDRS` is set, the gateway (30243/30280) are host ports bound to
+127.0.0.1. With `LB_SOURCE_CIDRS` the installer adds the iptables chain `WEAVE_GW` (systemd unit
+`weave-firewall`) that admits the gateway port only from loopback, the pod network and those
+addresses (NETWORK.md). Still block 6443 (k3s) from outside on the network firewall.
 The migration tool connects to this server's own SSH port (22) from the pod network (10.42.0.0/16):
 keep that allowed, with root key login (`PermitRootLogin prohibit-password` or `yes`).
 
@@ -106,7 +110,7 @@ put the same value into `APIM_ADMIN_PASSWORD` in `secrets.env`, re-run `install.
 **Gateway rules** (Gateway console → API rules: rate limits, IP allow/deny, policy library):
 `GATEWAY_STAGE` (`production`/`uat`) and `GATEWAY_CLIENT_IP_HEADER` (default `X-Forwarded-For`) in
 `weave.conf`. Per-API IP allow/deny lists must see the real caller, so **the existing load balancer
-in front of the gateway (NodePort 30243) must set or append `X-Forwarded-For`** with the client
+in front of the gateway (port 30243, `LB_SOURCE_CIDRS`) must set or append `X-Forwarded-For`** with the client
 address; calls through `https://weave.aroya.com/gw/...` get it from this server's proxy. Every
 change made from the console is written to `/opt/weave/data/access/gateway-audit.jsonl`; the
 policy library is `/opt/weave/data/gateway/policy-library.json` (persistent, in the backups).
@@ -144,7 +148,23 @@ migration tool are replaced one at a time. If one does not become healthy, every
 far returns to the previous images and the script exits 1 (the reason is printed). Then the code
 generator is refreshed (migrated services kept; previous code in `/opt/weave/platform/.previous`) and
 `install.sh` from the new bundle re-applies the configuration and runs the smoke checks.
-Going back on purpose: run `upgrade.sh` from the previous bundle.
+Going back on purpose (after a successful upgrade):
+
+```bash
+sudo /opt/weave/installer/rollback.sh            # asks for confirmation; --yes for scripts
+```
+
+`rollback.sh` returns to the version installed before the last `upgrade.sh`: the previous images (they
+stay on the server), the previous code generator (`/opt/weave/platform/.previous`) and – when the
+previous extracted bundle is still where it was installed from – that version's configuration (it
+re-runs the previous bundle's `install.sh`, smoke checks included). Keep the previous bundle directory
+until the new version is accepted. Data is not rolled back; to return it to the moment before the
+upgrade, restore the backup `upgrade.sh` took (§6, `restore.sh`). Running `rollback.sh` again returns
+to the newer version (if the older bundle has no `rollback.sh`, run it from the newer bundle directory).
+
+**Version**: `curl -s https://weave.aroya.com/factory/healthz` answers
+`{"status":"UP","version":"<bundle version>"}` (also the gateway console `/healthz` and the flow
+runtime `127.0.0.1:8790/v1/healthz`); `/opt/weave/state/weave-version` holds the same.
 
 ## 6. Backup and restore
 
@@ -204,7 +224,7 @@ Service control: `systemctl restart weave-caddy`; `docker restart weave-gateway 
 | namespaces | `apim`, `weave`, `wso2` | `cs-apim`, `cs-weave` |
 | PersistentVolumes | `weave-apim-*` | `cstest-apim-*` |
 | containers / ports | `weave-*` on 8787/8788/8790 | `cstest-*` on 18787/18788/18790, 1 CPU / 1 GB each |
-| NodePorts | 30443/30243/30280/30900 | 32443/32243/32280/32690 |
+| host ports (127.0.0.1; no NodePorts) | 30443/30243/30280/30900 | 32443/32243/32280/32690 |
 | API Manager | weave.conf sizes | 2 CPU / 6 Gi, 3g heap, 12 min startup budget; not started below 10 GB free memory (exit 3) |
 | host software | installs Docker/k3s/helm/Ballerina if missing | verifies only, never installs or changes host software |
 

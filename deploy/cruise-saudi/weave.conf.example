@@ -50,14 +50,22 @@ PG_MEMORY_LIMIT=2Gi
 APIM_DATA_SIZE=20Gi                   # API Manager volume (search index, keystores, local registry)
 PG_DATA_SIZE=50Gi                     # PostgreSQL volume (all API Manager data)
 
-# ---- Ports ------------------------------------------------------------------------------
-# API gateway, exposed on every interface for the existing load balancer:
+# ---- Ports and exposure (NETWORK.md) ---------------------------------------------------
+# No NodePorts: every port below is a host port bound to 127.0.0.1, except the API gateway port when
+# LB_SOURCE_CIDRS is set.
+# Load balancer address(es) that call the API gateway port DIRECTLY (IPv4 addresses or CIDRs, comma
+# separated). Empty = the gateway port stays on 127.0.0.1 and consumers use https://WEAVE_DOMAIN/gw.
+# Set = GATEWAY_HTTPS_NODEPORT listens on every address and a firewall chain installed by install.sh
+# admits it only from these addresses (plus loopback and the pod network).
+LB_SOURCE_CIDRS=
 GATEWAY_HTTPS_NODEPORT=30243
 GATEWAY_HTTP_NODEPORT=30280
+GATEWAY_HTTP_EXPOSE=no                # yes = also expose plain-HTTP 30280 to LB_SOURCE_CIDRS
 # Also publish the gateway under https://WEAVE_DOMAIN/gw/<context>/<version>/... (yes|no)
 ENABLE_GW_PATH=yes
 # Address API consumers use (shown in the consoles). Empty = https://WEAVE_DOMAIN/gw when
-# ENABLE_GW_PATH=yes, else https://WEAVE_DOMAIN:GATEWAY_HTTPS_NODEPORT. Put the load balancer URL here.
+# ENABLE_GW_PATH=yes (or LB_SOURCE_CIDRS is empty), else https://WEAVE_DOMAIN:GATEWAY_HTTPS_NODEPORT.
+# Put the load balancer URL here.
 GATEWAY_PUBLIC_URL=
 # Gateway rules (Gateway console): which stage this gateway is, and the request header that carries
 # the REAL caller address for per-API IP allow/deny lists. Cruise Saudi's load balancer in front of the
@@ -65,7 +73,7 @@ GATEWAY_PUBLIC_URL=
 # without it every call appears to come from the load balancer.
 GATEWAY_STAGE=production              # production | uat
 GATEWAY_CLIENT_IP_HEADER=X-Forwarded-For
-# Internal NodePorts (only change if they clash with something)
+# Internal ports, 127.0.0.1 only (only change if they clash with something)
 APIM_MGMT_NODEPORT=30443
 MT_NODEPORT=30900
 

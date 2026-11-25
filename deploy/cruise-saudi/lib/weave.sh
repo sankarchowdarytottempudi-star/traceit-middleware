@@ -15,12 +15,12 @@ weave_start(){
   case "$comp" in
     runtime) args=(--user 1000:1000 --env-file "$ETC/runtime.env" -v "$DATA/runtime:/data" "${ca[@]}");;
     gateway) args=(--env-file "$ETC/gateway.env" -v "$DATA/gateway:/app/apps/gateway-admin-bff/.data" "${ca[@]}" "${access[@]}"
-               -v "$ETC/k8s:/etc/weave/k8s:ro" -v "$DATA_ROOT/logs/apim:/var/log/weave/apim:ro" -v "$PLATFORM_DIR/services:/estate/services:ro")
+               -v "$ETC/svc/k8s:/etc/weave/k8s:ro" -v "$DATA_ROOT/logs/apim:/var/log/weave/apim:ro" -v "$PLATFORM_DIR/services:/estate/services:ro")
              cmd=(node dist/src/index.js);;   # the image's default CMD points at dist/index.js; the compiled entry is dist/src/index.js
     factory) args=(--env-file "$ETC/factory.env" -v "$DATA/factory:/app/apps/weave-factory-bff/.data" "${ca[@]}" "${access[@]}"
-               -v "$ETC/k8s:/etc/weave/k8s:ro" -v "$DATA_ROOT/logs/apim:/var/log/weave/apim:ro" -v "$PLATFORM_DIR/services:/estate/services:ro"
+               -v "$ETC/svc/k8s:/etc/weave/k8s:ro" -v "$DATA_ROOT/logs/apim:/var/log/weave/apim:ro" -v "$PLATFORM_DIR/services:/estate/services:ro"
                -v "$PLATFORM_DIR/framework:/estate/framework:ro")
-             [ -d "$ETC/target" ] && args+=(-v "$ETC/target:/etc/weave/target:ro");;
+             [ -d "$ETC/svc/target" ] && args+=(-v "$ETC/svc/target:/etc/weave/target:ro");;
     *) die "unknown component $comp";;
   esac
   # unchanged image + settings + mounts and still running: leave it alone (re-runs restart nothing)

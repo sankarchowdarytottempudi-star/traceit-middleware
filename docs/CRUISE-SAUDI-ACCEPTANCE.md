@@ -80,6 +80,10 @@ ACC_BACKEND_BIND=10.42.0.1                 # where the stand-in backend listens 
   one flow, a DataWeave transform and an HTTP request to a stand-in backend that the harness runs for
   the length of the test. The migration and its deployed service are left in place as evidence. The
   test application the harness made to call it is removed.
+- The migration runs only with `--isolated-test`, or with `ACC_ALLOW_MIGRATION=1` on the
+  customer's install before go-live. The harness refuses to run it against a live tool. It also
+  refuses when the migration tool's version recorder has a git remote connected, because a deploy
+  would commit and push to that repository.
 - For the gateway rules: an API, an application with keys and a subscription, a traffic policy, and
   an IP blocking rule for a documentation-only address (198.51.100.x). All are named `cs-acc-<stamp>-*`
   and all are removed at the end, also when a step fails. Item G7 proves nothing is left behind.

@@ -36,6 +36,25 @@ def build_sample(cfg: Config, backend_host: str = "", backend_port: str = "") ->
     return buf.getvalue()
 
 
+LIVE_HOSTS = ("traceit-tottech.com",)
+LIVE_PORTS = (":8788", ":8796")
+
+
+def _guard(cfg: Config, h: Http, F: str, hd) -> str:
+    """The migration runs the tool's generate/test/deploy steps. Never against a live tool, and never
+    where the tool's version recorder could push to a git remote (it commits on every deploy)."""
+    if any(x in F for x in LIVE_HOSTS) or any(F.split("/factory")[0].endswith(p) for p in LIVE_PORTS):
+        return f"refused: {F} is a live TraceIT Factory/tool - the migration runs only on the install under test"
+    if not (cfg.isolated or cfg.secret("ACC_ALLOW_MIGRATION") == "1"):
+        return "runs only with --isolated-test, or ACC_ALLOW_MIGRATION=1 on the customer's install before go-live"
+    v = h.get(F + "/api/factory/versions/status", headers=hd, timeout=20)
+    j = v.json() or {}
+    if v.status == 200 and (j.get("remote") or "").strip():
+        return ("refused: the migration tool's version recorder has a git remote connected (it would commit and push "
+                "on deploy) - disconnect it or point MT_VERSIONS_HOME at a scratch folder first")
+    return ""
+
+
 def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
     """Returns the ids of the migrations it made (their documents go into the branding scan)."""
     F = cfg.factory_url.rstrip("/")
@@ -77,6 +96,13 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
     if hd is None:
         for k, t in titles.items():
             r.add(k, G, t, WAITING, f"no Factory session: {ses.last_error}")
+        return made
+    stop = _guard(cfg, h, F, hd)
+    if stop:
+        for k, t in titles.items():
+            r.add(k, G, t, SKIP, stop)
+        if st:
+            st.stop()
         return made
 
     state: Dict[str, Any] = {}

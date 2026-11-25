@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { ChartColumn, ScrollText, ExternalLink, PanelRight } from "lucide-react";
-import { apiClient, type InventoryItem, type GatewayApi, type SourceState } from "../api.ts";
+import { ChartColumn, ScrollText, ExternalLink, PanelRight, SlidersHorizontal } from "lucide-react";
+import { apiClient, rulesClient, type InventoryItem, type GatewayApi, type SourceState } from "../api.ts";
 import { WEAVE_FACTORY_URL } from "../brand.tsx";
 import { Drawer, ErrorState, SegTabs } from "../components/ui.tsx";
 import { Tile, Section, Chip, Banner, HealthWord, Loading, DataTable, type Tone, type Col } from "../components/gw.tsx";
@@ -81,6 +81,7 @@ function ApiRowView({ item, gatewayKnown, onDetails }: { item: InventoryItem; ga
       </div>
       <div className="gw-apicell"><span className="gw-apicell-label">Last hour</span><TrafficCell item={item} /></div>
       <div className="gw-apiactions">
+        {item.gateway[0]?.id && <Link className="gw-btn gw-btn-sm gw-btn-pri" to={`/apis/${encodeURIComponent(item.gateway[0].id)}`} aria-label={`Rules of ${txt(item.name)}`}><SlidersHorizontal size={14} aria-hidden="true" />Rules</Link>}
         <button type="button" className="gw-btn gw-btn-sm" onClick={() => onDetails(item)} aria-label={`Details of ${txt(item.name)}`}><PanelRight size={14} aria-hidden="true" />Details</button>
         <Link className="gw-btn gw-btn-sm" to={analyticsLink(item)} aria-label={`Analytics for ${txt(item.name)}`}><ChartColumn size={14} aria-hidden="true" />Analytics</Link>
         {item.logSource && <Link className="gw-btn gw-btn-sm" to={`/logs?api=${encodeURIComponent(item.logSource)}`} aria-label={`Logs of ${txt(item.name)}`}><ScrollText size={14} aria-hidden="true" />Logs</Link>}
@@ -179,6 +180,28 @@ function sourceProblem(name: string, s: SourceState | undefined, effect: string)
   return `${name} could not be read${s.detail ? ` (${txt(s.detail)})` : ""}. ${effect}`;
 }
 
+/** Every API defined on the gateway, with a direct way into its rules. Read with the service account when the person's sign-in sees nothing. */
+function GatewayRulesList({ search }: { search: string }) {
+  const q = useQuery({ queryKey: ["rules-apis"], queryFn: rulesClient.apis, staleTime: 30000 });
+  const rows = (q.data?.list ?? []).filter((a) => !search.trim() || `${a.name} ${a.context}`.toLowerCase().includes(search.trim().toLowerCase()));
+  return (
+    <Section title={`Rules on the gateway (${q.data?.list.length ?? "…"})`} note="Open an API to change its traffic limits, access, consumers, and to see its live status and change history.">
+      {q.isLoading ? <span className="gw-faint">Loading…</span> : q.isError ? <Banner tone="warn">The gateway APIs could not be read: {(q.error as Error).message}</Banner> : (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} aria-label="APIs on the gateway">
+          {rows.map((a) => (
+            <Link key={a.id} to={`/apis/${a.id}`} className="gw-btn" style={{ height: "auto", padding: "8px 12px", flexDirection: "column", alignItems: "flex-start", gap: 2 }} data-gwapi={a.name}>
+              <span className="gw-mono" style={{ fontSize: 13 }}>{a.name}</span>
+              <span className="gw-faint" style={{ fontSize: 11.5, fontWeight: 400 }}>{`${a.context}/${a.version}`.replace(/\/+/g, "/")} · {a.lifeCycleStatus === "PUBLISHED" ? "published" : a.lifeCycleStatus.toLowerCase()}</span>
+            </Link>
+          ))}
+          {!rows.length && <span className="gw-faint">No API matches.</span>}
+        </div>
+      )}
+      {q.data?.via === "service" && <p className="gw-note" style={{ margin: "8px 0 0" }}>Listed with the console's service account because your own sign-in sees no APIs.</p>}
+    </Section>
+  );
+}
+
 export function Apis() {
   const [sel, setSel] = useState<InventoryItem | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -229,6 +252,7 @@ export function Apis() {
   return (
     <>
       <PageHeader area="APIs" title="APIs" subtitle="Everything that was migrated or built here, in one list: what is published on the gateway, what is only reachable inside the cluster, whether it is healthy and how much traffic it took in the last hour." />
+      <GatewayRulesList search={search} />
       {q.isLoading ? <Loading tiles={5} blocks={2} /> : q.isError || !d || !d.summary ? <ErrorState message="Could not load the API list" onRetry={() => q.refetch()} /> : (
         <>
           {problems.map((p) => <Banner key={p} tone="warn">{p}</Banner>)}

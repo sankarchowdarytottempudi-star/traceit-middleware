@@ -14,6 +14,9 @@ import { Analytics } from "./screens/Analytics.tsx";
 import { ApiAnalytics } from "./screens/ApiAnalytics.tsx";
 import { GatewayAnalytics } from "./screens/GatewayAnalytics.tsx";
 import { Logs } from "./screens/Logs.tsx";
+import { ApiRules } from "./screens/ApiRules.tsx";
+import { Blocking } from "./screens/Blocking.tsx";
+import { Applications } from "./screens/Applications.tsx";
 
 function SignIn() {
   const { resolved } = useTheme();
@@ -41,6 +44,9 @@ export function App() {
         <Route path="rate-limits" element={<RateLimits />} />
         <Route path="gateways" element={<Gateways />} />
         <Route path="apis" element={<Apis />} />
+        <Route path="apis/:id" element={<ApiRules />} />
+        <Route path="blocking" element={<Blocking />} />
+        <Route path="applications" element={<Applications />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="analytics/api/:name" element={<ApiAnalytics />} />
         <Route path="gateway-analytics" element={<GatewayAnalytics />} />

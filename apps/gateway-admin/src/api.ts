@@ -108,11 +108,86 @@ function qs(params: Record<string, string | number | undefined | null>): string 
   return s ? `?${s}` : "";
 }
 
+// ---- Gateway rules (live API changes) ----
+export interface PolicyInfo { name: string; limit: number; timeUnit: string; unitTime: number; quotaType?: string; description?: string; }
+export interface RulesApi { id: string; name: string; context: string; version: string; lifeCycleStatus: string; provider?: string; lastUpdatedTime?: string | null; type?: string; }
+export interface EnvRef { name: string; displayName: string; vhost: string; }
+export interface Cors { enabled: boolean; origins: string[]; headers: string[]; methods: string[]; credentials: boolean; }
+export type Security = "oauth2" | "apikey" | "both" | "none";
+export interface ApiRules {
+  stage: "production" | "uat"; stageWord: string; via: "user" | "service"; api: RulesApi;
+  traffic: { tiers: string[]; apiPolicy: string | null; operations: { verb: string; target: string; policy: string | null }[] };
+  policies: { subscription: PolicyInfo[]; advanced: PolicyInfo[]; application?: PolicyInfo[] };
+  access: { security: Security; securityWords: string; cors: Cors; ipAllow: string[]; ipDeny: string[]; clientIpHeader: string };
+  deployments: { name: string; vhost: string; revisionUuid: string; deployedTime: number | null; status?: string }[];
+  environments: EnvRef[];
+}
+export interface ChangePlan {
+  api: RulesApi; changes: string[]; noChange: boolean; environments: { name: string; vhost: string }[]; sentence: string;
+  pruneRevision?: { id: string; displayName: string } | null; applied: boolean; revision?: { id: string; displayName: string } | null;
+}
+export interface TrafficBody { tiers: string[]; apiPolicy: string | null; operations: { verb: string; target: string; policy: string | null }[]; environments?: string[]; }
+export interface AccessBody { security: Security; cors: Cors; ipAllow: string[]; ipDeny: string[]; confirmNoSecurity?: string; environments?: string[]; }
+export interface Consumer { subscriptionId: string; applicationId: string; application: string; owner: string; plan: string; status: string; }
+export interface Counts { requests: number; errors: number; throttled: number; refused: number; }
+export interface LiveStatus {
+  api: RulesApi; measured: boolean; analytics: { state: string; detail: string | null; lastEventAt: string | null } | null;
+  last5m: Counts | null; last1h: Counts | null;
+  deployments: { name: string; vhost: string; revision: string; revisionId: string; deployedTime: number | null }[];
+  lastChange: { at: string | null; by: string | null; action: string; outcome: string; what: string };
+}
+export interface AuditLine { at: string; user: string; action: string; outcome: "ok" | "failed"; apiId?: string; apiName?: string; target?: string; environment?: string; revision?: string; before?: string; after?: string; detail?: string; }
+export interface Revision { id: string; displayName: string; description: string; createdTime: number | null; deployedTo: { name: string; vhost: string; deployedTime: number | null }[]; }
+export interface BlockRule { id: string; type: string; value: unknown; enabled: boolean; words: string; }
+export interface AppRow { id: string; name: string; plan: string; description: string; owner: string; subscriptions: number; status: string; }
+export interface AppKey { keyMappingId: string; keyType: string; keyManager: string; consumerKey: string | null; state: string | null; grantTypes: string[]; }
+export interface AppDetail { id: string; name: string; plan: string; description: string; owner: string; keys: AppKey[];
+  subscriptions: { subscriptionId: string; apiId: string; apiName: string; apiVersion: string; plan: string; status: string }[]; }
+export interface Usage { usage: Record<string, { apis: { id: string; name: string; how: string }[]; applications: string[] }>; apis: { id: string; name: string }[]; }
+export interface Signals {
+  stage: string; stageWord: string; via: string; total: number; published: number;
+  environments: Record<string, { live: number; apis: string[] }>; notDeployed: { id: string; name: string }[];
+  open: { id: string; name: string; live: boolean }[]; blocking: { total: number; active: number } | null;
+  traffic: { requests: number; throttled: number; refused: number; errors: number; topThrottled: { name: string; throttled: number }[] } | null;
+  analytics: { state: string; detail: string | null } | null;
+  recent: { at: string; by: string | null; action: string; apiId: string | null; apiName: string; outcome: string; what: string }[];
+}
+const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body ?? {}) });
+
+export const rulesClient = {
+  context: () => j<{ stage: string; stageWord: string; user: string; via: string; clientIpHeader: string; environments: EnvRef[] }>("/api/rules/context"),
+  apis: () => j<{ via: string; list: RulesApi[] }>("/api/rules/apis"),
+  api: (id: string) => j<ApiRules>(`/api/rules/apis/${id}`),
+  traffic: (id: string, body: TrafficBody, preview: boolean) => j<ChangePlan>(`/api/rules/apis/${id}/traffic${preview ? "?preview=1" : ""}`, post(body)),
+  access: (id: string, body: AccessBody, preview: boolean) => j<ChangePlan>(`/api/rules/apis/${id}/access${preview ? "?preview=1" : ""}`, post(body)),
+  consumers: (id: string) => j<{ list: Consumer[] }>(`/api/rules/apis/${id}/consumers`),
+  subscriptionState: (subId: string, apiId: string, state: "BLOCKED" | "PROD_ONLY_BLOCKED" | "UNBLOCKED") => j(`/api/rules/subscriptions/${subId}/state`, post({ apiId, state })),
+  live: (id: string) => j<LiveStatus>(`/api/rules/apis/${id}/live`),
+  history: (id: string) => j<{ revisions: Revision[]; audit: AuditLine[]; maxRevisions: number }>(`/api/rules/apis/${id}/history`),
+  rollback: (id: string, revisionId: string, preview: boolean) => j<ChangePlan & { revision: { id: string; displayName: string } }>(`/api/rules/apis/${id}/rollback${preview ? "?preview=1" : ""}`, post({ revisionId })),
+  createPolicy: (body: { kind: "subscription" | "advanced" | "application"; name: string; requests: number; timeUnit: string }) => j<{ ok: boolean; name: string }>("/api/rules/policies", post(body)),
+  usage: () => j<Usage>("/api/rules/policies/usage"),
+  overview: () => j<Signals>("/api/rules/overview"),
+  blocking: () => j<{ list: BlockRule[] }>("/api/rules/blocking"),
+  addBlock: (body: { type: string; value: string; endIp?: string; invert?: boolean; enabled: boolean }) => j<{ id: string; words: string }>("/api/rules/blocking", post(body)),
+  setBlock: (id: string, enabled: boolean) => j(`/api/rules/blocking/${id}`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
+  removeBlock: (id: string) => j(`/api/rules/blocking/${id}`, { method: "DELETE", body: "{}" }),
+  applications: () => j<{ owner: string; plans: PolicyInfo[]; list: AppRow[] }>("/api/rules/applications"),
+  application: (id: string) => j<AppDetail>(`/api/rules/applications/${id}`),
+  createApplication: (body: { name: string; plan: string; description?: string }) => j<{ id: string; name: string }>("/api/rules/applications", post(body)),
+  deleteApplication: (id: string, confirm: string) => j(`/api/rules/applications/${id}`, { method: "DELETE", body: JSON.stringify({ confirm }) }),
+  generateKeys: (id: string, keyType: "PRODUCTION" | "SANDBOX") => j<AppKey & { consumerSecret: string | null }>(`/api/rules/applications/${id}/keys`, post({ keyType })),
+  regenerateSecret: (id: string, km: string) => j<{ consumerKey: string | null; consumerSecret: string | null }>(`/api/rules/applications/${id}/keys/${km}/regenerate`, post({})),
+  revokeKeys: (id: string, km: string, confirm: string) => j(`/api/rules/applications/${id}/keys/${km}/revoke`, post({ confirm })),
+  subscribe: (id: string, apiId: string, plan: string) => j<{ subscriptionId: string }>(`/api/rules/applications/${id}/subscriptions`, post({ apiId, plan })),
+  unsubscribe: (id: string, subId: string) => j(`/api/rules/applications/${id}/subscriptions/${subId}`, { method: "DELETE", body: "{}" }),
+};
+
 export const apiClient = {
   me: () => j<Me>("/api/auth/me"),
   rateLimits: (type: string) => j<{ list: (SubPolicy | AdvPolicy)[] }>(`/api/ratelimits/${type}`),
   createPolicy: (type: string, body: unknown) => j(`/api/ratelimits/${type}`, { method: "POST", body: JSON.stringify(body) }),
-  deletePolicy: (type: string, id: string) => j(`/api/ratelimits/${type}/${id}`, { method: "DELETE" }),
+  deletePolicy: (type: string, id: string) => j(`/api/ratelimits/${type}/${id}`, { method: "DELETE", body: "{}" }),
   environments: () => j<{ list: Environment[] }>("/api/environments"),
   keyManagers: () => j<{ list: KeyManager[] }>("/api/key-managers"),
   compliance: () => j<ComplianceSummary>("/api/compliance"),

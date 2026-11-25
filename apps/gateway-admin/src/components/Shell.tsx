@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Gauge, Server, Boxes, ShieldCheck, Inbox, ExternalLink, Info, ChartColumn, Activity, ScrollText, Menu, X, Waypoints, Factory } from "lucide-react";
+import { LayoutDashboard, Gauge, Server, Boxes, ShieldCheck, Inbox, ExternalLink, Info, ChartColumn, Activity, ScrollText, Menu, X, Waypoints, Factory, Ban, KeyRound } from "lucide-react";
 import { BRAND, MODULES, WEAVE_FACTORY_URL, WeaveMark, WeaveLockup, OwnerLogo, PRODUCT_NAME, TAGLINE, COMPANY_LINE } from "../brand.tsx";
 import { useTheme } from "../theme.tsx";
 import { ThemeSwitch } from "./ThemeSwitch.tsx";
@@ -15,9 +15,13 @@ const gatewayGroups: { title: string; items: { to: string; label: string; icon: 
     { to: "/gateway-analytics", label: "Gateway analytics", icon: Activity },
     { to: "/logs", label: "Logs", icon: ScrollText },
   ] },
-  { title: "PLATFORM", items: [
+  { title: "CONTROL", items: [
     { to: "/rate-limits", label: "Rate limiting", icon: Gauge },
-    { to: "/gateways", label: "Gateways & keys", icon: Server },
+    { to: "/blocking", label: "Blocking rules", icon: Ban },
+    { to: "/applications", label: "Applications & keys", icon: KeyRound },
+  ] },
+  { title: "PLATFORM", items: [
+    { to: "/gateways", label: "Gateways & key managers", icon: Server },
   ] },
   { title: "GOVERNANCE", items: [{ to: "/compliance", label: "Compliance", icon: ShieldCheck }] },
   { title: "WORKFLOWS", items: [{ to: "/approvals", label: "Approvals", icon: Inbox }] },

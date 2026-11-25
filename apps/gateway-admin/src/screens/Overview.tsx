@@ -1,35 +1,65 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { apiClient } from "../api.ts";
-import { rankApis } from "../lib/format.ts";
-import { Card, StatCard, Ring, useCountUp, Skeleton } from "../components/ui.tsx";
+import { apiClient, type GatewayApi, type InventoryItem } from "../api.ts";
+import { Card, StatCard, Ring, Skeleton } from "../components/ui.tsx";
 import { PageHeader } from "./PageHeader.tsx";
 
+// The operator's view of the live gateway: what is published, its traffic, and what needs action.
+// (It used to be built only from the governance check, which covers 0 APIs until a governance
+// policy is attached — so it said "Every API is compliant · 0 published" while 11 APIs were live.)
+
+const open = (g: GatewayApi) => g.security.length === 0 || g.operations.some((o) => /^none$/i.test(o.authType));
+const unlimited = (g: GatewayApi) => !g.throttling && (g.tiers.length === 0 || g.tiers.every((t) => /^unlimited$/i.test(t)));
+const n = (x: number | undefined | null) => (x ?? 0).toLocaleString();
+
+type Attention = { key: string; name: string; what: string; tone: "bad" | "warn"; to: string };
+
 export function Overview() {
+  const inv = useQuery({ queryKey: ["inventory"], queryFn: apiClient.inventory, refetchInterval: 60_000 });
+  const gw = useQuery({ queryKey: ["gw-summary", "24h"], queryFn: () => apiClient.gwSummary("24h"), refetchInterval: 60_000 });
   const comp = useQuery({ queryKey: ["compliance"], queryFn: apiClient.compliance });
   const wf = useQuery({ queryKey: ["workflows"], queryFn: apiClient.workflows });
+
+  const items: InventoryItem[] = inv.data?.items ?? [];
+  const gatewayApis = items.flatMap((i) => i.gateway.map((g) => ({ item: i, g })));
+  const seen = new Set<string>();
+  const live = gatewayApis.filter(({ g }) => (seen.has(g.id) ? false : (seen.add(g.id), true)));
+  const published = live.filter(({ g }) => /published/i.test(g.lifeCycleStatus));
+  const openApis = published.filter(({ g }) => open(g));
+  const noLimit = published.filter(({ g }) => unlimited(g));
+  const unhealthy = items.filter((i) => i.health && (i.health.state === "down" || i.health.state === "degraded"));
+  const t = gw.data?.summary?.totals;
+  const errors = (t?.clientErrors ?? 0) + (t?.serverErrors ?? 0) + (t?.faults ?? 0);
+  const pending = (wf.data?.types ?? []).reduce((s, x) => s + x.pending, 0);
   const c = comp.data;
-  const governed = useCountUp(c?.governed ?? 0);
-  const errors = useCountUp(c?.errors ?? 0);
-  const warnings = useCountUp(c?.warnings ?? 0);
-  const pending = (wf.data?.types ?? []).reduce((n, t) => n + t.pending, 0);
-  const atRisk = c ? c.total - c.compliant : 0;
-  const ranked = c ? rankApis(c.apis).slice(0, 6) : [];
+
+  const attention: Attention[] = [
+    ...unhealthy.map((i) => ({ key: `h:${i.id}`, name: i.name, what: `service ${i.health?.state} (${i.health?.ready ?? 0}/${i.health?.desired ?? 0} ready)`, tone: "bad" as const, to: "/apis" })),
+    ...openApis.map(({ g }) => ({ key: `o:${g.id}`, name: `${g.name} ${g.version}`, what: "open: no sign-in or key required", tone: "bad" as const, to: "/apis" })),
+    ...noLimit.map(({ g }) => ({ key: `l:${g.id}`, name: `${g.name} ${g.version}`, what: "no rate limit", tone: "warn" as const, to: "/apis" })),
+  ];
+
+  const title = inv.isLoading ? "Loading overview"
+    : `${published.length} API${published.length === 1 ? "" : "s"} live on the gateway`;
+  const subtitle = inv.data && <>
+    {n(inv.data.summary.services)} services running{unhealthy.length ? <>, <strong style={{ color: "var(--bad)" }}>{unhealthy.length} unhealthy</strong></> : ""}
+    {t ? <> · {n(t.requests)} requests in the last 24 hours</> : null}
+  </>;
 
   return (
     <>
-      <PageHeader area="Overview"
-        title={!c ? "Loading overview" : atRisk > 0 ? `${atRisk} APIs need governance attention` : "Every API is compliant"}
-        subtitle={c && (atRisk > 0
-          ? <>APIs are checked against the <strong style={{ color: "var(--text)" }}>WSO2 API Management Best Practices</strong> policy.</>
-          : "All published APIs pass the governance policy.")}
-        actions={<Link to="/compliance" className="mf-btn mf-pri" style={{ display: "inline-flex", alignItems: "center", height: 42, padding: "0 18px", borderRadius: 10, background: "var(--accent)", color: "var(--onAccent)", fontWeight: 600, textDecoration: "none" }}>Review compliance</Link>} />
+      <PageHeader area="Overview" title={title} subtitle={subtitle}
+        actions={<Link to="/apis" className="mf-btn mf-pri" style={{ display: "inline-flex", alignItems: "center", height: 42, padding: "0 18px", borderRadius: 10, background: "var(--accent)", color: "var(--onAccent)", fontWeight: 600, textDecoration: "none" }}>Open APIs</Link>} />
 
-      {comp.isLoading ? <Skeleton h={110} /> : (
-        <section aria-label="Summary" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
-          <StatCard label="APIs governed" value={governed} suffix="published" />
-          <StatCard label="Compliant" value={c?.compliant ?? 0} suffix={`of ${c?.total ?? 0} APIs`} status={atRisk > 0 ? { word: "AT RISK", color: "var(--bad)" } : { word: "HEALTHY", color: "var(--ok)" }} />
-          <StatCard label="Rule findings" value={errors} suffix={`errors · ${warnings} warnings`} />
+      {inv.isLoading ? <Skeleton h={110} /> : (
+        <section aria-label="Summary" data-testid="overview-cards" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
+          <StatCard label="APIs on the gateway" value={published.length} suffix={`published${live.length > published.length ? ` · ${live.length - published.length} not published` : ""}`} />
+          <StatCard label="Requests, 24 h" value={n(t?.requests)} suffix={`${n(t?.throttled)} throttled`}
+            status={!t ? undefined : (t.throttled ?? 0) > 0 ? { word: "LIMITS ACTIVE", color: "var(--warn)" } : { word: "NO THROTTLING", color: "var(--muted)" }} />
+          <StatCard label="Errors, 24 h" value={n(errors)} suffix={t && t.requests ? `${((errors / t.requests) * 100).toFixed(1)}% of requests` : "requests"}
+            status={!t ? undefined : errors > 0 ? { word: "CHECK", color: "var(--warn)" } : { word: "CLEAN", color: "var(--ok)" }} />
+          <StatCard label="Open APIs" value={openApis.length} suffix="without sign-in or key"
+            status={openApis.length ? { word: "SECURE THEM", color: "var(--bad)" } : { word: "ALL SECURED", color: "var(--ok)" }} />
           <StatCard label="Pending approvals" value={pending} suffix="tasks" status={pending === 0 ? { word: "ALL CLEAR", color: "var(--ok)" } : { word: "WAITING", color: "var(--warn)" }} />
         </section>
       )}
@@ -38,25 +68,31 @@ export function Overview() {
         <Card delay={300} style={{ flex: "2 1 520px", display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Needs attention</h2>
-            <Link to="/compliance" style={{ fontSize: 13, fontWeight: 600, color: "var(--accentText)", textDecoration: "none" }}>Open compliance →</Link>
+            <Link to="/apis" style={{ fontSize: 13, fontWeight: 600, color: "var(--accentText)", textDecoration: "none" }}>Open APIs →</Link>
           </div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {ranked.length === 0 && <p style={{ color: "var(--faint)" }}>Nothing needs attention.</p>}
-            {ranked.map((a) => (
-              <Link key={a.apiId} to="/compliance" className="mf-row" style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 10px", borderRadius: 10, borderTop: "1px solid var(--border)", textDecoration: "none", color: "var(--text)" }}>
-                <span style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0 }}>
-                  <span className="mf-mono" style={{ fontSize: 13.5 }}>{a.name}</span>
-                  <span style={{ fontSize: 12, color: "var(--faint)" }}>{a.version} · {a.policy}</span>
-                </span>
-                <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: 12, fontWeight: 700, color: a.errors > 0 ? "var(--bad)" : "var(--muted)", background: a.errors > 0 ? "var(--badSoft)" : "var(--surface3)" }}>{a.errors} errors</span>
-                <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: 12, fontWeight: 700, color: "var(--warn)", background: "var(--warnSoft)" }}>{a.warnings} warnings</span>
+          <div style={{ display: "flex", flexDirection: "column" }} data-testid="overview-attention">
+            {inv.isError && <p style={{ color: "var(--bad)" }}>The API list could not be read from the gateway right now.</p>}
+            {!inv.isLoading && !inv.isError && attention.length === 0 && <p style={{ color: "var(--faint)" }}>Nothing needs attention: every published API is secured and limited, and every service is healthy.</p>}
+            {attention.slice(0, 12).map((a) => (
+              <Link key={a.key} to={a.to} className="mf-row" style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 10px", borderRadius: 10, borderTop: "1px solid var(--border)", textDecoration: "none", color: "var(--text)" }}>
+                <span className="mf-mono" style={{ fontSize: 13.5, flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{a.name}</span>
+                <span style={{ padding: "3px 9px", borderRadius: 999, fontSize: 12, fontWeight: 700, color: a.tone === "bad" ? "var(--bad)" : "var(--warn)", background: a.tone === "bad" ? "var(--badSoft)" : "var(--warnSoft)" }}>{a.what}</span>
               </Link>
             ))}
+            {attention.length > 12 && <p style={{ color: "var(--faint)", margin: "8px 10px 0" }}>and {attention.length - 12} more on the APIs page.</p>}
           </div>
         </Card>
-        <Card delay={360} style={{ flex: "1 1 280px", display: "flex", flexDirection: "column", gap: 18, alignItems: "center", justifyContent: "center", textAlign: "center" }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, alignSelf: "flex-start" }}>Compliance score</h2>
-          <Ring pct={c?.apiCompliancePct ?? 0} color={(c?.apiCompliancePct ?? 0) >= 100 ? "var(--ok)" : "var(--bad)"} label="compliant" />
+        <Card delay={360} style={{ flex: "1 1 280px", display: "flex", flexDirection: "column", gap: 14, alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, alignSelf: "flex-start" }}>Governance</h2>
+          {comp.isLoading ? <Skeleton h={120} /> : !c || c.governed === 0 ? (
+            <p data-testid="overview-governance" style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+              Not checked yet: no governance policy is attached to any API, so nothing has been checked.
+              <br /><Link to="/compliance" style={{ color: "var(--accentText)", fontWeight: 600 }}>Attach a policy</Link>
+            </p>
+          ) : (<>
+            <Ring pct={c.apiCompliancePct ?? 0} color={(c.apiCompliancePct ?? 0) >= 100 ? "var(--ok)" : "var(--bad)"} label="compliant" />
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>{c.compliant} of {c.total} checked APIs pass · {c.errors} errors · {c.warnings} warnings</span>
+          </>)}
         </Card>
       </div>
     </>

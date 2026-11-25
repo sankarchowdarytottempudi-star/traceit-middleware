@@ -5,7 +5,6 @@ vi.hoisted(() => { vi.stubEnv("VITE_WEAVE_EDITION", "cruise-saudi"); });
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MigrationNew } from "../src/migrate/MigrationNew.tsx";
 import { SourceWays } from "../src/migrate/ui.tsx";
 import { Delivery, canImport } from "../src/migrate/Delivery.tsx";
 import { migrateRoutes } from "../src/migrate/routes.tsx";

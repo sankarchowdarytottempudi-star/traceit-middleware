@@ -148,7 +148,8 @@ turns `{customerName, items[{sku, qty, unitPrice}]}` into
 
 | ID | Check | How | Pass when |
 |---|---|---|---|
-| M0 | The edition offers only MuleSoft to WSO2 | Auto | New migration offers only Mule 4 (and automatic detection) as the source and WSO2 as the target |
+| M0 | The edition offers only MuleSoft to WSO2 | Auto | New migration offers only Mule 4 (and automatic detection) as the source and WSO2 (Ballerina) as the target |
+| M0b | Other sources and targets are refused by the server | Auto | Uploads with a Node.js source or a Spring Boot target are refused (400/403), not only hidden in the screen |
 | M1 | The sample project is packaged | Auto | Zip built from `sample-mule/`, pointed at the stand-in backend |
 | M2 | Upload | Auto | The upload is accepted and a migration is created |
 | M3 | Documents | Auto | The document phase is done. TECHNICAL.md, MAPPING.md and FUNCTIONAL.md exist. |

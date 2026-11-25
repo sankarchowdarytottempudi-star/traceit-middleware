@@ -69,7 +69,7 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         techs = [t.get("id") for t in j.get("technologies", [])]
         targets = [t.get("id") for t in (j.get("targets") or j.get("targetTechnologies") or [])]
         extra_t = [t for t in techs if t not in ("mule4", "auto")]
-        extra_g = [t for t in targets if t not in ("wso2",)]
+        extra_g = [t for t in targets if t not in ("wso2", "ballerina")]
         ev = f"sources offered: {techs}; targets offered: {targets or '(not listed)'}"
         return (FAIL if extra_t or extra_g else PASS), ev
     r.check("M0", G, "The edition offers only MuleSoft (Mule 4) -> WSO2", mule_only)
@@ -104,6 +104,26 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         if st:
             st.stop()
         return made
+
+    def refuses_other():
+        """Another source or target is refused by the server, not only hidden in the screen."""
+        z = io.BytesIO()
+        with zipfile.ZipFile(z, "w") as zz:
+            zz.writestr("cs-acc-node/package.json", '{"name": "cs-acc-node", "main": "index.js"}')
+            zz.writestr("cs-acc-node/index.js", "require('http').createServer((q, s) => s.end('ok')).listen(8080);")
+        body = z.getvalue()
+        out = []
+        for src, tgt in (("node", "wso2"), ("mule4", "springboot")):
+            q = urllib.parse.urlencode({"name": f"cs-acc-{cfg.stamp}-refused", "workspace": cfg.secret("ACC_WORKSPACE", "cs-acc"),
+                                        "filename": "cs-acc-node.zip", "sourceType": src, "target": tgt})
+            x = h.request("POST", F + "/api/factory/migrations?" + q, headers=dict(hd, **{"Content-Type": "application/octet-stream"}), data=body, timeout=60)
+            mid = (x.json() or {}).get("id")
+            if mid:  # accepted: remove it again
+                h.request("DELETE", F + f"/api/factory/migrations/{mid}", headers=hd, timeout=30)
+            out.append((src, tgt, x.status, bool(mid)))
+        ok = all(c in (400, 403, 409, 422) and not made_ for _, _, c, made_ in out)
+        return (PASS if ok else FAIL), "; ".join(f"{s_}->{t_}: {c}{' (accepted, removed again)' if m_ else ''}" for s_, t_, c, m_ in out)
+    r.check("M0b", G, "Another source (Node.js) or target (Spring Boot) is refused by the server", refuses_other)
 
     state: Dict[str, Any] = {}
     name = f"cs-acc-{cfg.stamp}-orders"

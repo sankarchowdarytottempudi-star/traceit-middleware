@@ -586,7 +586,7 @@ kubectl -n "$NS_WEAVE" exec "$MTPOD" -- sh -c "echo probe > /tmp/p && scp -q -o 
   && cmp -s "$STATE/mt-scp-probe" "$STATE/mt-scp-probe.copy" || die "migration tool cannot copy files to this host over SSH (scp)"
 rm -f "$STATE/mt-scp-probe" "$STATE/mt-scp-probe.copy"
 # the tool's API Manager account works from the pod (publishing step): TLS verified with APIM_CA_CERT_PATH,
-# sign-in proven by registering and deleting a throw-away client; the password never leaves the pod
+# sign-in proven by registering a check client (same name every time); the password never leaves the pod
 mtapim=$(kubectl -n "$NS_WEAVE" exec "$MTPOD" -- python3 -c '
 import base64, json, os, ssl, urllib.request
 b = os.environ["APIM_BASE_URL"]; u = os.environ["APIM_DCR_USERNAME"]; p = open(os.environ["APIM_DCR_PASSWORD_FILE"]).read().strip()
@@ -594,7 +594,8 @@ c = ssl.create_default_context(cafile=os.environ["APIM_CA_CERT_PATH"]); h = {"Au
 v = urllib.request.urlopen(b + "/services/Version", context=c, timeout=20).status
 r = urllib.request.urlopen(urllib.request.Request(b + "/client-registration/v0.17/register", json.dumps({"clientName": "weave-mt-install-check", "owner": u, "grantType": "client_credentials", "saasApp": True}).encode(), h), context=c, timeout=30)
 cid = json.load(r)["clientId"]
-urllib.request.urlopen(urllib.request.Request(b + "/client-registration/v0.17/register/" + cid, headers=h, method="DELETE"), context=c, timeout=30)
+try: urllib.request.urlopen(urllib.request.Request(b + "/client-registration/v0.17/register/" + cid, headers=h, method="DELETE"), context=c, timeout=30)
+except Exception: pass   # best effort: re-registering the same name reuses the client
 print("ok", v, r.status)' 2>>"$LOG_FILE" | tail -1)
 [[ "$mtapim" == "ok 200 20"* ]] || die "migration tool pod cannot sign in to API Manager at https://$APIM_DOMAIN:9443 (-> $APIM_CLUSTER_IP; see $LOG_FILE)"
 ok "migration tool publishes to API Manager: https://$APIM_DOMAIN:9443 (ClusterIP $APIM_CLUSTER_IP), certificate verified, account '$APIM_ADMIN_USER' signs in"

@@ -85,6 +85,19 @@ spec:
                 touch .weave-keystore
                 cd /; rm -rf "$DATA/security"; mv "$DATA/security.new" "$DATA/security"
               fi
+              # API keys are signed with this installation's key; the gateway (and the Developer
+              # Portal when a key is revoked) check them against the truststore entry
+              # gateway_certificate_alias (api-manager.xml ApiKeyAlias), which the image ships with the
+              # public default certificate. Set it to this installation's certificate (also on
+              # installations made before this step existed).
+              cd "$DATA/security"
+              $KT -exportcert -rfc -alias wso2carbon -keystore wso2carbon.jks -storepass "$KS_PASS" -file /tmp/weave.pem
+              if ! $KT -exportcert -rfc -alias gateway_certificate_alias -keystore client-truststore.jks -storepass wso2carbon 2>/dev/null | cmp -s - /tmp/weave.pem; then
+                $KT -delete -alias gateway_certificate_alias -keystore client-truststore.jks -storepass wso2carbon >/dev/null 2>&1 || true
+                $KT -importcert -noprompt -alias gateway_certificate_alias -file /tmp/weave.pem -keystore client-truststore.jks -storepass wso2carbon
+                echo "prepare: API key certificate (gateway_certificate_alias) set to this installation's key"
+              fi
+              rm -f /tmp/weave.pem; cd /
               chown -R 10001:10001 "$DATA"
               chown 10001:10001 /logs; chmod 755 /logs; chmod -R a+rX /logs
           resources:

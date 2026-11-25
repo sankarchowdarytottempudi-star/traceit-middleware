@@ -338,6 +338,7 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         url = cfg.apim_gw_url.rstrip("/") + d["context"].replace("{version}", d["version"]) + ("" if "{version}" in d["context"] else "/" + d["version"]) + "/api/orders"
         body = {"customerName": "Test Guest", "items": [{"sku": "CS-ACC-1", "qty": 2, "unitPrice": 10.5}]}
         x = None
+        state["call_started"] = time.time()
         for _ in range(20):
             x = h.request("POST", url, headers={"Authorization": "Bearer " + app["token"]}, data=body, timeout=30)
             if x.status not in (401, 404, 503):
@@ -372,14 +373,25 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         gh = ses.headers("gateway", "admin")
         if gh is None or not cfg.gateway_url:
             return WAITING, f"no gateway console session ({ses.last_error})"
+        # The console's gateway analytics (screen Gateway analytics, filtered on the API): every call API
+        # Manager measured, read from its per-call metrics log. /api/analytics/api/<name> is the
+        # service-reported view (Prometheus), which an offline install does not have - not the gateway's.
+        app_name = (state.get("app") or {}).get("name") or f"cs-acc-{cfg.stamp}-orders-app"
+        since = int((state.get("call_started") or state["called_at"]) * 1000) - 5000
+        x, rows = None, []
         for _ in range(18):
-            x = h.get(cfg.gateway_url.rstrip("/") + f"/api/analytics/api/{api}", headers=gh, timeout=30)
-            j = x.json() or {}
-            total = j.get("total") or j.get("requests") or (j.get("summary") or {}).get("total")
-            if total:
-                return PASS, f"gateway analytics for {api}: total {total}"
+            x = h.get(cfg.gateway_url.rstrip("/") + f"/api/gateway-analytics/requests?api={urllib.parse.quote(api)}&limit=200",
+                      headers=gh, timeout=30)
+            rows = [w for w in ((x.json() or {}).get("rows") or []) if isinstance(w, dict) and w.get("api") == api]
+            ours = [w for w in rows if (w.get("ts") or 0) >= since and w.get("status") == 200 and w.get("method") == "POST"
+                    and w.get("app") == app_name]
+            if ours:
+                w = ours[0]
+                return PASS, (f"gateway analytics for {api}: the call is there (POST {w.get('status')}, app {w.get('app')}, "
+                              f"{w.get('responseLatency')} ms, correlation {w.get('correlationId')}); {len(rows)} calls of {api} listed")
             time.sleep(10)
-        return FAIL, f"gateway analytics for {api} shows no call ({x.status} {short(x.text, 100)})"
+        st_ = (x.json() or {}).get("status") if x is not None else None
+        return FAIL, f"gateway analytics for {api} shows no call of this run ({x.status if x else 0}; {len(rows)} rows; indexer {short(st_, 160)})"
     r.check("M11", G, titles["M11"], m11)
 
     # clean-up: our application on API Manager; the migration stays listed (named cs-acc-*) so the

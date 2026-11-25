@@ -124,7 +124,7 @@ class Apim:
     def app_with_token(self, name: str, api_id: str, policy: str = "Unlimited") -> Dict[str, str]:
         app = self.call("POST", DEV + "/applications", {"name": name, "throttlingPolicy": "Unlimited", "tokenType": "JWT",
                                                         "description": "cs-acc acceptance run, removed at the end"})
-        out = {"applicationId": app["applicationId"]}
+        out = {"applicationId": app["applicationId"], "name": name}
         sub = self.call("POST", DEV + "/subscriptions", {"apiId": api_id, "applicationId": app["applicationId"], "throttlingPolicy": policy})
         out["subscriptionId"] = sub["subscriptionId"]
         k = self.call("POST", f"{DEV}/applications/{app['applicationId']}/generate-keys",

@@ -40,6 +40,8 @@ spec:
             # publish each deployed API on API Manager, secured (Mule 4 -> WSO2 edition)
             - { name: MT_EDITION, value: "cruise-saudi" }
             - { name: MT_PUBLISH_ON_DEPLOY, value: "1" }
+            - { name: MT_LOCAL_NAMESPACE, value: "@@NS_SERVICES@@" }   # migrated APIs on this cluster (no deployment target)
+            - { name: MT_LOCAL_SERVICE_TYPE, value: "ClusterIP" }      # ... reached through the gateway only (no node port)
             - { name: APIM_BASE_URL, value: "https://@@APIM_DOMAIN@@:9443" }        # = wso2am ClusterIP (hostAliases below)
             - { name: APIM_CA_CERT_PATH, value: "/etc/weave/ca/ca-bundle.pem" }    # holds API Manager's own certificate
             - { name: APIM_GATEWAY_URL, value: "@@GATEWAY_PUBLIC_URL@@" }

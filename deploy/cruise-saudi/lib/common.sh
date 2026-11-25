@@ -81,6 +81,9 @@ cs_load(){
   : "${AUTH_PROVIDER:=local,oidc}"
   : "${WEAVE_ADMIN_EMAIL:=${ADMIN_EMAIL:-admin@$WEAVE_DOMAIN}}"; : "${WEAVE_ADMIN_NAME:=Weave Admin}"
   : "${GATEWAY_STAGE:=production}"; : "${GATEWAY_CLIENT_IP_HEADER:=X-Forwarded-For}"
+  # load balancer / reverse proxy address(es) in front of port 443 whose X-Forwarded-For is kept
+  # (loopback always is); see NETWORK.md
+  : "${TRUSTED_PROXY_CIDRS:=}"
   : "${AUTH_SESSION_HOURS:=12}"; : "${OIDC_GROUPS_CLAIM:=groups}"
   if [ "$ISOLATED" = 0 ]; then
     case "$DATA_ROOT" in /|/usr*|/etc*|/var|/root|/home) die "DATA_ROOT=$DATA_ROOT is not allowed";; esac

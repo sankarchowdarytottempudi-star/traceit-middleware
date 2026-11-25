@@ -59,6 +59,18 @@ by the server, the Weave services and the migration tool).
   `sudo /opt/weave/bin/weave-firewall.sh show WEAVE_GW`.
 * Never exposed: 6443 (k3s API), 8787-8790 (Weave internals, 127.0.0.1 only), 8099 (local model).
 
+### Caller address (IP blocking, per-API IP rules)
+
+API Manager decides IP blocking and per-API IP allow/deny on the first address in
+`X-Forwarded-For`. Calls through `https://weave.aroya.com/gw/...` get that header from this server's
+proxy: it is the connection address of the caller. When users and API consumers reach port 443
+through Cruise Saudi's **load balancer / reverse proxy**, the connection address is the load
+balancer's, so list the load balancer's address(es) in `weave.conf`:
+`TRUSTED_PROXY_CIDRS=10.20.30.40,10.20.30.41`. The proxy then keeps the `X-Forwarded-For` the load
+balancer sends (the load balancer must set or append it) and appends its own peer. From any other
+address an incoming `X-Forwarded-For` is replaced, so a caller cannot choose its own address.
+Loopback (127.0.0.1) is always trusted (only processes on this server).
+
 The migration tool connects from the pod network (10.42.0.0/16) to this server's own port 22: allow
 that on any host firewall. API Manager's key manager validates tokens against its own JWKS at
 `https://localhost:9443` inside the pod, so gateway calls do not depend on the pod resolving

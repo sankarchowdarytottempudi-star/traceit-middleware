@@ -73,6 +73,11 @@ GATEWAY_PUBLIC_URL=
 # without it every call appears to come from the load balancer.
 GATEWAY_STAGE=production              # production | uat
 GATEWAY_CLIENT_IP_HEADER=X-Forwarded-For
+# Address(es) of the load balancer / reverse proxy that forwards users to port 443 of this server
+# (comma separated IPv4 addresses or CIDRs). Its X-Forwarded-For is kept, so IP blocking and per-API
+# IP rules see the real caller; from any other address the header is replaced by the connection
+# address. Empty = callers connect to this server directly (loopback is always trusted).
+TRUSTED_PROXY_CIDRS=
 # Internal ports, 127.0.0.1 only (only change if they clash with something)
 APIM_MGMT_NODEPORT=30443
 MT_NODEPORT=30900

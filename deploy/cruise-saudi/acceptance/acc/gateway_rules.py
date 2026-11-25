@@ -132,7 +132,10 @@ def run(cfg: Config, h: Http, r: Run, ses):
             state["rev1"] = rev1["id"]
             env = deploy(rev1["id"])
             a.call("POST", f"{PUB}/apis/change-lifecycle?apiId={state['api']}&action=Publish")
-            app = a.app_with_token(appname, state["api"], pol)
+            # G1-G5 use an application on the Unlimited tier: their calls (including the waiting loops
+            # of G2-G5) must not use up the traffic limit that G6 measures. G6 subscribes its own
+            # application with the limit, so its counter starts at zero.
+            app = a.app_with_token(appname, state["api"], "Unlimited")
             state["app"] = app
             res = wait_for(lambda: (call(app["token"]).status == 200, None), 120)
             first = call(app["token"])
@@ -245,17 +248,23 @@ def run(cfg: Config, h: Http, r: Run, ses):
         # ------------------------------------------------------------------ G6 traffic limit
         def g6():
             need()
-            tok = a.client_token(state["app"])
-            codes = []
-            for _ in range(40):
+            lim = a.app_with_token(appname + "-limit", state["api"], pol)
+            state["limit_app"] = lim
+            tok = lim["token"]
+            # a new subscription reaches the gateway within seconds: until then calls are refused
+            # (401/403) - wait for the first served or limited call, it counts as call 1
+            ok0, c0 = wait_for(lambda: ((lambda c: (c in (200, 429), c))(call(tok).status)), 60)
+            codes = [c0] if ok0 else []
+            for _ in range(0 if 429 in codes else 40):
                 c = call(tok).status
                 codes.append(c)
                 if c == 429:
                     break
             first429 = codes.index(429) + 1 if 429 in codes else None
             served = sum(1 for c in codes if c == 200)
-            ev = f"policy {pol} = 5 requests/min on the subscription; {len(codes)} calls: {served}x200, first 429 at call {first429}"
-            return (PASS if first429 and served >= 1 else FAIL), ev
+            ev = (f"policy {pol} = 5 requests/min on the subscription of a fresh application; {len(codes)} calls: "
+                  f"{served}x200, first 429 at call {first429}")
+            return (PASS if first429 and served >= 5 else FAIL), ev
         r.check("G6", G, titles["G6"], g6)
     finally:
         problems = _cleanup(a, state, pol, appname, name)
@@ -289,8 +298,9 @@ def _cleanup(a: Apim, state: Dict[str, Any], pol: str, appname: str, name: str):
             problems.append(f"{label}: {short(str(e), 100)}")
     if state.get("deny"):
         step("deny policy", lambda: a.call("DELETE", f"{ADM}/throttling/deny-policy/{state['deny']}"))
-    if state.get("app"):
-        step("application", lambda: a.call("DELETE", f"{DEV}/applications/{state['app']['applicationId']}"))
+    for k in ("app", "limit_app"):
+        if state.get(k):
+            step("application", lambda k=k: a.call("DELETE", f"{DEV}/applications/{state[k]['applicationId']}"))
     if state.get("api"):
         def undeploy_delete():
             revs = (a.call("GET", f"{PUB}/apis/{state['api']}/revisions") or {}).get("list", [])

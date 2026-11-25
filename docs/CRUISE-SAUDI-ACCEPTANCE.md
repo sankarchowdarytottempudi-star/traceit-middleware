@@ -162,7 +162,7 @@ turns `{customerName, items[{sku, qty, unitPrice}]}` into
 | M8 | Published on API Manager, secured | Auto | The API is PUBLISHED with OAuth2 and/or API-key security |
 | M9 | Called through the gateway with a key | Auto | With a token the answer is 200 with `total` 21.0 and the stand-in's order id. The backend got `customer: "TEST GUEST"` and `total: 21`. Without a key the answer is 401. |
 | M10 | Logs | Auto | The Factory shows the service's log lines of that call |
-| M11 | Analytics | Auto | The Gateway console's analytics for that API counts the call |
+| M11 | Analytics | Auto | The Gateway console's gateway analytics (filtered on that API) lists that call: POST, 200, the harness's application, after the call was made |
 | M12 | A real Cruise Saudi Mule project | Manual | Cruise Saudi picks one of its own Mule projects and runs M2 to M11 by hand in the UI with its team. The answers match the Mule answers for the same requests. |
 
 ## 5. Gateway rules on a live API
@@ -177,7 +177,7 @@ real gateway. It drives them through the API Manager API, which is what the cons
 | G3 | Change CORS | Auto | After a new revision, a preflight from the new origin is allowed and one from the old origin is not |
 | G4 | Roll back a revision | Auto | Revision 1 is restored and deployed. The old origin is allowed again, the new one is not, and calls are served. |
 | G5 | Revoke a key | Auto | An API key and an OAuth token both work, and both give 401 once revoked |
-| G6 | Traffic limit | Auto | A policy of 5 requests per minute is assigned to the subscription. Calls go through until the limit, then 429. |
+| G6 | Traffic limit | Auto | A policy of 5 requests per minute is assigned to the subscription of a fresh application (G1-G5 use another application on Unlimited, so their calls do not count). At least 5 calls go through, then 429. |
 | G7 | Clean-up | Auto | No `cs-acc-<stamp>` API, application, policy or blocking rule is left |
 | G8 | The console offers the rules | Auto | The Gateway console answers its routes for traffic limits, access/security/CORS/IP, consumers/apps/keys, blocking rules and revisions |
 | G9 | The console audits rule changes | Auto | The console's audit answers |
@@ -207,7 +207,7 @@ real gateway. It drives them through the API Manager API, which is what the cons
 | S2 | Console default passwords | Auto | `admin/admin` is refused by the local sign-in |
 | S3 | No open NodePorts | Auto | No Service in the install namespaces is of type NodePort or LoadBalancer, unless agreed (`ACC_ALLOWED_NODEPORTS`) |
 | S4 | Public ports | Auto | The host listens publicly only on 22, 80 and 443, plus agreed ports (`ACC_ALLOWED_PORTS`) |
-| S5 | TLS only | Auto | Plain HTTP is refused or redirected to HTTPS |
+| S5 | TLS only | Auto | Plain HTTP is refused or redirected to HTTPS on the same name (isolated test: its HTTP port 127.0.0.1:9080) |
 | S6 | TLS versions and certificate | Auto | TLS 1.0 and 1.1 are refused, TLS 1.2 or newer is accepted, and the certificate is trusted for the name |
 | S7 | Security headers | Auto | HSTS, `X-Content-Type-Options: nosniff`, no framing (X-Frame-Options or CSP frame-ancestors) |
 | S8 | Session cookies | Auto | HttpOnly, SameSite and Secure |

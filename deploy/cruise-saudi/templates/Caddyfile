@@ -6,6 +6,12 @@
 	auto_https disable_certs
 	http_port @@HTTP_PORT@@
 	https_port @@HTTPS_PORT@@
+	servers {
+		# X-Forwarded-For sent by these addresses (loopback + TRUSTED_PROXY_CIDRS: the load balancer
+		# in front of this server) is kept and the connection address appended; from any other
+		# address it is replaced. API Manager's IP blocking and per-API IP rules read its first entry.
+		trusted_proxies static @@TRUSTED_PROXIES@@
+	}
 	storage file_system @@DATA@@/caddy
 	log {
 		output file @@DATA_ROOT@@/logs/caddy/caddy.log {

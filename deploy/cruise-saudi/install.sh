@@ -73,6 +73,17 @@ for c in $LB_SOURCE_CIDRS; do
   [ "${c#*/}" = 0 ] && warn "LB_SOURCE_CIDRS contains $c: the API gateway port is open to every address"
 done
 case "$GATEWAY_HTTP_EXPOSE" in yes|no) ;; *) die "GATEWAY_HTTP_EXPOSE must be yes or no";; esac
+# Callers reach the gateway through this server's proxy (/gw). The proxy passes the caller address to
+# API Manager in X-Forwarded-For (IP blocking and per-API IP rules read it). An X-Forwarded-For that
+# arrives from outside is kept only from the load balancer(s) in TRUSTED_PROXY_CIDRS (and loopback);
+# from anyone else it is replaced by the connection address, so a caller cannot choose its own.
+TRUSTED_PROXIES="127.0.0.1/32"
+for c in ${TRUSTED_PROXY_CIDRS//,/ }; do
+  [[ "$c" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/([0-9]|[12][0-9]|3[0-2]))?$ ]] || die "TRUSTED_PROXY_CIDRS: '$c' is not an IPv4 address or CIDR"
+  [ "${c#*/}" = 0 ] && die "TRUSTED_PROXY_CIDRS contains $c: every caller could choose its own address"
+  TRUSTED_PROXIES="$TRUSTED_PROXIES $c"
+done
+ok "caller address for gateway IP rules: X-Forwarded-For kept from $TRUSTED_PROXIES, else the connection address"
 if [ -n "$LB_SOURCE_CIDRS" ]; then ok "API gateway port $GATEWAY_HTTPS_NODEPORT$([ "$GW_HTTP_HOSTIP" = 0.0.0.0 ] && echo "/$GATEWAY_HTTP_NODEPORT") open to: $LB_SOURCE_CIDRS (firewall chain $FW_CHAIN)"
 else
   [ "$ENABLE_GW_PATH" = yes ] || die "ENABLE_GW_PATH=no and LB_SOURCE_CIDRS empty: API consumers would have no way to reach the gateway"

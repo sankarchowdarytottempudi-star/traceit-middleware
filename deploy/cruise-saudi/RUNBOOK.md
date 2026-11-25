@@ -111,7 +111,9 @@ put the same value into `APIM_ADMIN_PASSWORD` in `secrets.env`, re-run `install.
 `GATEWAY_STAGE` (`production`/`uat`) and `GATEWAY_CLIENT_IP_HEADER` (default `X-Forwarded-For`) in
 `weave.conf`. Per-API IP allow/deny lists must see the real caller, so **the existing load balancer
 in front of the gateway (port 30243, `LB_SOURCE_CIDRS`) must set or append `X-Forwarded-For`** with the client
-address; calls through `https://weave.aroya.com/gw/...` get it from this server's proxy. Every
+address; calls through `https://weave.aroya.com/gw/...` get it from this server's proxy. When a load
+balancer forwards to port 443, put its address(es) in `TRUSTED_PROXY_CIDRS` (its `X-Forwarded-For` is
+then kept; see NETWORK.md, "Caller address"), otherwise every call appears to come from it. Every
 change made from the console is written to `/opt/weave/data/access/gateway-audit.jsonl`; the
 policy library is `/opt/weave/data/gateway/policy-library.json` (persistent, in the backups).
 

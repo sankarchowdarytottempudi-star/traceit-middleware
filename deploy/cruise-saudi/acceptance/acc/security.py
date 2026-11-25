@@ -96,17 +96,43 @@ def run(cfg: Config, h: Http, r: Run, ses):
         return (FAIL if public else PASS), ev
     r.check("S4", G, "Host listens publicly only on 22/80/443 (plus agreed ports)", listeners)
 
+    def _plain_get(ip: str, port: int, host: str):
+        import http.client
+        from .core import Resp
+        try:
+            c = http.client.HTTPConnection(ip, port, timeout=10)
+            c.putrequest("GET", "/", skip_host=True, skip_accept_encoding=True)
+            c.putheader("Host", host)
+            c.putheader("User-Agent", "cs-acceptance/1.0")
+            c.endheaders()
+            resp = c.getresponse()
+            body = resp.read(65536)
+            hd = {k.lower(): v for k, v in resp.getheaders()}
+            c.close()
+            return Resp(resp.status, hd, body, f"http://{host}/")
+        except Exception as e:
+            return Resp(0, {}, b"", f"http://{host}/", error=f"{type(e).__name__}: {short(str(e), 120)}")
+
     def tls_only():
         if not https:
             return SKIP, f"target {cfg.base_url} is a plain-http loopback test instance"
         u = urllib.parse.urlsplit(cfg.base_url)
+        host = u.hostname or ""
         if cfg.isolated:
-            return SKIP, "isolated test exposes only the TLS port 127.0.0.1:9443 (no port 80 to test)"
-        x = h.get(f"http://{u.netloc}/", timeout=10)
+            # the isolated install's plain-HTTP port (installer: HTTP_PORT=9080 on 127.0.0.1), asked
+            # with the public name as Host, like a browser typing http://<name>/
+            addr = cfg.secret("ACC_ISOLATED_HTTP_ADDR", "127.0.0.1:9080")
+            ip, port = addr.rsplit(":", 1)
+            x = _plain_get(ip, int(port), host)
+            where = f"http://{host} (via {addr})"
+        else:
+            x = h.get(f"http://{u.netloc}/", timeout=10)
+            where = f"http://{u.netloc}"
         if x.status == 0:
-            return PASS, f"http://{u.netloc} refused ({x.error})"
+            return PASS, f"{where} refused ({x.error})"
         loc = x.header("location")
-        return (PASS if x.status in (301, 302, 307, 308) and loc.startswith("https://") else FAIL), f"http -> {x.status} {loc[:60]}"
+        to_https = loc.startswith("https://") and (urllib.parse.urlsplit(loc).hostname or "") == host
+        return (PASS if x.status in (301, 302, 307, 308) and to_https else FAIL), f"{where} -> {x.status} {loc[:80]}"
     r.check("S5", G, "Plain HTTP is refused or redirected to HTTPS", tls_only)
 
     def tls_proto():

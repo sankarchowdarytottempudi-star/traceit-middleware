@@ -155,7 +155,9 @@ turns `{customerName, items[{sku, qty, unitPrice}]}` into
 | M3 | Documents | Auto | The document phase is done. TECHNICAL.md, MAPPING.md and FUNCTIONAL.md exist. |
 | M4 | The mapping is right | Auto | MAPPING.md names the listener `/api/orders` (POST), the fields `customerName`, `customer`, `qty`, `quantity`, `unitPrice`, `amount`, `total`, and the backend call `/orders` |
 | M5 | Generate | Auto | The scaffold phase is done: a WSO2 service was generated |
-| M6 | Build and tests | Auto | The test phase is done: build, unit tests and coverage gate |
+| M6 | Build and tests | Auto | Build, unit tests, parity and the closed-room trial run are done |
+| M6c | Coverage gate | Auto | Unit tests cover at least 80% of the lines. The figure is shown. |
+| M6r | Manual steps taken by the harness | Manual | The report lists each step the harness approved without a human review: the mapping review, Implementation, and the backend address set to the stand-in. Steps the tool refuses stay refused. A person reviews them in M12. |
 | M7 | Deploy to the target cluster | Auto | The deploy phase is done. With `ACC_TARGET_KUBECONFIG`, the service's pod runs on the remote target cluster. |
 | M8 | Published on API Manager, secured | Auto | The API is PUBLISHED with OAuth2 and/or API-key security |
 | M9 | Called through the gateway with a key | Auto | With a token the answer is 200 with `total` 21.0 and the stand-in's order id. The backend got `customer: "TEST GUEST"` and `total: 21`. Without a key the answer is 401. |

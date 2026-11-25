@@ -55,6 +55,13 @@ def _guard(cfg: Config, h: Http, F: str, hd) -> str:
     return ""
 
 
+def _tests_ok(p: Dict[str, Any]) -> bool:
+    """Build, unit tests, end-to-end trial and parity done: then Deployment may be started (the tool
+    itself does not hold Deployment on the coverage gate). Coverage is its own check, M6c."""
+    steps = [x for x in p.get("steps", []) if x.get("key") != "coverage"]
+    return bool(steps) and all(x.get("status") == "done" for x in steps)
+
+
 def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
     """Returns the ids of the migrations it made (their documents go into the branding scan)."""
     F = cfg.factory_url.rstrip("/")
@@ -184,28 +191,49 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
         # documents named it, run it again for generate -> test -> deploy (as a user would).
         # The two manual steps are taken as a reviewer would: the mapping review (M4 checks the
         # mapping itself) and Implementation, which the tool refuses while anything is unfinished.
-        notes = []
-        for _ in range(4):
-            if not m.get("apiName") or phase(m, "deploy").get("status") == "done":
-                break
-            moved = False
+        # Then the automatic steps run one by one (Run automatically would start again from the
+        # documents and reset the manual steps).
+        notes: List[str] = []
+
+        def run_phase(ph):
+            x = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/{ph}", headers=hd, data={}, timeout=60)
+            other = ((x.json() or {}).get("otherMigration") or {}).get("name", "")
+            if x.status == 409 and str(other).startswith("cs-acc-"):
+                x = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/{ph}", headers=hd, data={"confirmReplace": True}, timeout=60)
+            notes.append(f"run {ph} -> {x.status}" + ("" if x.status in (200, 201, 202) else f" {short((x.json() or {}).get('error') or x.text, 140)}"))
+            if x.status not in (200, 201, 202):
+                return get_m()
+            end_ = time.time() + limit
+            time.sleep(8)
+            mm = get_m()
+            while time.time() < end_:
+                mm = get_m()
+                if phase(mm, ph).get("status") not in ("pending", "running", None) and not mm.get("busy") and not mm.get("queued"):
+                    break
+                time.sleep(10)
+            return mm
+
+        if m.get("apiName"):
+            if phase(m, "scaffold").get("status") != "done":
+                m = run_phase("scaffold")
+            if phase(m, "scaffold").get("status") == "done" and st:
+                oi = h.get(F + f"/api/factory/migrations/{state['id']}/open-items", headers=hd, timeout=60).json() or {}
+                items = oi.get("items") if isinstance(oi, dict) else oi
+                for it in items or []:
+                    if isinstance(it, dict) and it.get("kind") == "backend":
+                        rs = h.request("POST", F + f"/api/factory/migrations/{state['id']}/resolve", headers=hd, timeout=120,
+                                       data={"id": it["id"], "action": "address", "url": st.url})
+                        notes.append(f"backend {short(it.get('title') or it.get('id'), 40)} -> address {st.url}: {rs.status}")
             for pk in ("mapping", "implement"):
-                if phase(m, pk).get("status") in ("action_required", "pending") and (pk == "mapping" or phase(m, "scaffold").get("status") == "done"):
-                    a = h.request("POST", F + f"/api/factory/migrations/{state['id']}/advance", headers=hd, data={"phase": pk}, timeout=120)
-                    notes.append(f"mark {pk} done -> {a.status}" + ("" if a.status == 200 else f" ({short((a.json() or {}).get('error') or a.text, 160)})"))
-                    moved = moved or a.status == 200
-            go2 = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/autorun", headers=hd, data={}, timeout=60)
-            other = ((go2.json() or {}).get("otherMigration") or {}).get("name", "")
-            if go2.status == 409 and str(other).startswith("cs-acc-"):
-                # the API name is held by an older acceptance migration: replace it, as the screen offers
-                go2 = h.request("POST", F + f"/api/factory/migrations/{state['id']}/run/autorun", headers=hd, data={"confirmReplace": True}, timeout=60)
-            if go2.status not in (200, 201, 202):
-                notes.append(f"run automatically -> {go2.status} {short((go2.json() or {}).get('error') or go2.text, 160)}")
-            before = json.dumps([p.get("status") for p in m.get("phases", [])])
-            m = wait_idle(limit)
-            if json.dumps([p.get("status") for p in m.get("phases", [])]) == before and not moved:
-                notes.append(f"run automatically -> {go2.status}, no further progress")
-                break
+                a = h.request("POST", F + f"/api/factory/migrations/{state['id']}/advance", headers=hd, data={"phase": pk}, timeout=120)
+                notes.append(f"mark {pk} done -> {a.status}" + ("" if a.status == 200 else f" ({short((a.json() or {}).get('error') or a.text, 160)})"))
+            m = get_m()
+            if phase(m, "implement").get("status") == "done":
+                m = run_phase("test")
+                # the tool lets Deployment start while only the coverage gate is open (it says so);
+                # the harness only asks for it, and reports coverage on its own line (M6c)
+                if _tests_ok(phase(m, "test")):
+                    m = run_phase("deploy")
         state["notes"] = notes
         state["m"] = m
         d = h.get(F + f"/api/factory/migrations/{state['id']}/docs", headers=hd, timeout=30).json() or {}
@@ -236,7 +264,30 @@ def run(cfg: Config, h: Http, r: Run, ses) -> List[str]:
             return (PASS if p.get("status") == "done" else FAIL), f"{label} phase {p.get('status')}: {steps}{extra}"
         return f
     r.check("M5", G, titles["M5"], phase_check("scaffold", "scaffold"))
-    r.check("M6", G, titles["M6"], phase_check("test", "test"))
+    def m6():
+        need()
+        m = state.get("m") or get_m()
+        steps = {x.get("key"): x for x in phase(m, "test").get("steps", [])}
+        core = {k: v for k, v in steps.items() if k != "coverage"}
+        ev = "; ".join(f"{k}={v.get('status')} ({short(v.get('detail', ''), 90)})" for k, v in core.items())
+        return (PASS if core and all(v.get("status") == "done" for v in core.values()) else FAIL), ev
+    r.check("M6", G, "Build, unit tests, parity and trial run pass", m6)
+
+    def m6c():
+        need()
+        m = state.get("m") or get_m()
+        cov = next((x for x in phase(m, "test").get("steps", []) if x.get("key") == "coverage"), {})
+        import re as _re
+        num = _re.search(r"([\d.]+)%", cov.get("detail", "") or "")
+        pct = float(num.group(1)) if num else None
+        if pct is None:
+            return FAIL, f"no coverage figure: coverage step {cov.get('status')} {short(cov.get('detail', ''), 160)}"
+        return (PASS if pct >= 80 else FAIL), f"line coverage {pct}% (gate 80%): {short(cov.get('detail', ''), 200)}"
+    r.check("M6c", G, "Coverage gate: unit tests cover at least 80% of the lines", m6c)
+
+    r.add("M6r", G, "Manual steps taken by the harness", MANUAL,
+          "approved by the harness (no human review): " + ("; ".join(state.get("notes", [])) or "none")
+          + ". Steps the tool refused were left refused; a person must review the mapping and the implementation (checklist M12).")
 
     def m7():
         need()

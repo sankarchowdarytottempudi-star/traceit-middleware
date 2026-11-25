@@ -59,20 +59,29 @@ spec:
               set -euo pipefail
               DATA=/data; H=/home/wso2carbon/wso2am-4.5.0; KT=/opt/java/openjdk/bin/keytool
               mkdir -p "$DATA/database" "$DATA/solr" "$DATA/security"
+              # per-node embedded databases (local registry, message broker store, metrics): seeded once
+              # from the image, which ships them with their tables (API Manager does not create them).
+              # APIM_DB and SHARED_DB live in PostgreSQL.
+              if [ ! -f "$DATA/database/.weave-localdb" ]; then
+                for db in WSO2CARBON_DB WSO2MB_DB WSO2METRICS_DB; do cp -f "$H/repository/database/$db.mv.db" "$DATA/database/"; done
+                rm -f "$DATA"/database/*.trace.db
+                touch "$DATA/database/.weave-localdb"
+                echo "prepare: local registry database seeded from the image"
+              fi
               if [ ! -f "$DATA/security/.weave-keystore" ]; then
                 echo "prepare: generating this installation's key pair (replaces the public default key)"
                 rm -rf "$DATA/security.new"; mkdir -p "$DATA/security.new"
                 cp -a "$H/repository/resources/security/." "$DATA/security.new/"
                 cd "$DATA/security.new"
-                $KT -delete -alias wso2carbon -keystore wso2carbon.jks -storepass wso2carbon
+                # a NEW keystore with only this installation's key pair (the image's file holds the
+                # publicly known default key); key password = store password
+                rm -f wso2carbon.jks
                 $KT -genkeypair -alias wso2carbon -keyalg RSA -keysize 2048 -validity 3650 -storetype JKS \
                   -dname "CN=localhost, OU=Weave, O=Cruise Saudi" -ext "SAN=dns:localhost,dns:$APIM_DOMAIN,ip:127.0.0.1" \
-                  -keystore wso2carbon.jks -storepass wso2carbon -keypass wso2carbon
-                $KT -exportcert -rfc -alias wso2carbon -keystore wso2carbon.jks -storepass wso2carbon -file /tmp/weave.pem
+                  -keystore wso2carbon.jks -storepass "$KS_PASS" -keypass "$KS_PASS"
+                $KT -exportcert -rfc -alias wso2carbon -keystore wso2carbon.jks -storepass "$KS_PASS" -file /tmp/weave.pem
                 $KT -delete -alias wso2carbon -keystore client-truststore.jks -storepass wso2carbon || true
                 $KT -importcert -noprompt -alias wso2carbon -file /tmp/weave.pem -keystore client-truststore.jks -storepass wso2carbon
-                $KT -keypasswd -alias wso2carbon -keypass wso2carbon -new "$KS_PASS" -keystore wso2carbon.jks -storepass wso2carbon
-                $KT -storepasswd -new "$KS_PASS" -keystore wso2carbon.jks -storepass wso2carbon
                 touch .weave-keystore
                 cd /; rm -rf "$DATA/security"; mv "$DATA/security.new" "$DATA/security"
               fi

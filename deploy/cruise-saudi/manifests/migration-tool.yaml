@@ -32,6 +32,7 @@ spec:
             - { name: MT_SSH_KEY, value: "/secrets/id_ed25519" }
             - { name: MT_PLATFORM_DIR, value: "@@PLATFORM_DIR@@" }
             - { name: MT_DATA_DIR, value: "/data" }
+            - { name: MT_VERSIONS_HOME, value: "@@DATA@@/versions" }        # also pinned on the host by the SSH forced command
             - { name: SSL_CERT_FILE, value: "/etc/weave/ca/ca-bundle.pem" }   # OS bundle + internal CA + API Manager
             - name: MT_ADMIN_TOKEN
               valueFrom: { secretKeyRef: { name: mt-admin, key: token } }

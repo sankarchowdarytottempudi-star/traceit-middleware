@@ -23,9 +23,15 @@ weave_start(){
              [ -d "$ETC/target" ] && args+=(-v "$ETC/target:/etc/weave/target:ro");;
     *) die "unknown component $comp";;
   esac
+  # unchanged image + settings + mounts and still running: leave it alone (re-runs restart nothing)
+  local cfg; cfg=$( { printf '%s\n' "$image" "${limits[@]+"${limits[@]}"}" "${args[@]}" "${cmd[@]+"${cmd[@]}"}"; cat "$ETC/$comp.env"; } | sha256sum | cut -c1-16)
+  WEAVE_CHANGED=1
+  if [ "$(docker inspect -f '{{.State.Running}} {{index .Config.Labels "weave/config"}}' "$PREFIX$comp" 2>/dev/null)" = "true $cfg" ]; then
+    WEAVE_CHANGED=0; return 0
+  fi
   docker rm -f "$PREFIX$comp" >/dev/null 2>&1 || true
   run docker run -d --name "$PREFIX$comp" --network host --restart unless-stopped "${limits[@]+"${limits[@]}"}" \
-    --label app.kubernetes.io/part-of=cruise-saudi-weave --label weave/profile="${PREFIX%-}" \
+    --label app.kubernetes.io/part-of=cruise-saudi-weave --label weave/profile="${PREFIX%-}" --label weave/config="$cfg" \
     --log-opt max-size=50m --log-opt max-file=5 "${args[@]}" "$image" "${cmd[@]+"${cmd[@]}"}"
 }
 

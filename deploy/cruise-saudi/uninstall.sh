@@ -50,7 +50,7 @@ else warn "Kubernetes not reachable; skipped"; fi
 
 step "SSH key, schedule"
 if [ -f "$ETC/mt-ssh/id_ed25519.pub" ] && [ -f /root/.ssh/authorized_keys ]; then
-  key=$(cut -d' ' -f2 "$ETC/mt-ssh/id_ed25519.pub")
+  key=$(cut -d' ' -f2 "$ETC/mt-ssh/id_ed25519.pub")   # matches the line with or without its command= options
   grep -vF "$key" /root/.ssh/authorized_keys >/root/.ssh/authorized_keys.weave-tmp || true
   chmod 600 /root/.ssh/authorized_keys.weave-tmp; mv /root/.ssh/authorized_keys.weave-tmp /root/.ssh/authorized_keys
   ok "migration tool key removed from /root/.ssh/authorized_keys"

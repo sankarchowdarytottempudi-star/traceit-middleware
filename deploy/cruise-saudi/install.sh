@@ -66,6 +66,9 @@ if [ -n "$missing" ] && [ "$USE_OS_REPO" = 0 ]; then
 fi
 for c in $REC_CMDS; do command -v "$c" >/dev/null || warn "recommended command '$c' missing (git: repository import in the migration tool; crontab: backup schedule)"; done
 [ -n "$missing" ] || ok "OS prerequisites present: $REQ_CMDS"
+case "$GATEWAY_STAGE" in production|uat) ;; *) die "GATEWAY_STAGE must be production or uat";; esac
+[[ "$GATEWAY_CLIENT_IP_HEADER" =~ ^[A-Za-z0-9-]{0,60}$ ]] || die "GATEWAY_CLIENT_IP_HEADER must be a header name"
+
 
 CPUS=$(nproc); MEM_GB=$(awk '/MemTotal/ {print int($2/1048576)}' /proc/meminfo)
 AVAIL_GB=$(awk '/MemAvailable/ {print int($2/1048576)}' /proc/meminfo)
@@ -100,6 +103,7 @@ done
 if command -v kubectl >/dev/null && kubectl get ns >/dev/null 2>&1; then
   used=$(kubectl get svc -A -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{range .spec.ports[*]}{.nodePort}{" "}{end}{"\n"}{end}' 2>/dev/null | grep -vE "^($NS_APIM|$NS_WEAVE) " || true)
   for p in "$APIM_MGMT_NODEPORT" "$GATEWAY_HTTPS_NODEPORT" "$GATEWAY_HTTP_NODEPORT" "$MT_NODEPORT"; do
+    { [ "$p" -ge 30000 ] && [ "$p" -le 32767 ]; } || die "NodePort $p is outside the Kubernetes NodePort range 30000-32767"
     echo "$used" | grep -qw "$p" && die "NodePort $p is already used by another namespace: $(echo "$used" | grep -w "$p" | cut -d' ' -f1)"
   done
   ok "NodePorts $APIM_MGMT_NODEPORT/$GATEWAY_HTTPS_NODEPORT/$GATEWAY_HTTP_NODEPORT/$MT_NODEPORT free"
@@ -392,8 +396,38 @@ kubectl -n "$NS_APIM" create secret generic apim-db --from-literal=superuser-pas
 kubectl -n "$NS_WEAVE" create secret generic mt-admin --from-literal=token="$MT_ADMIN_TOKEN" --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
 mkdir -p "$ETC/mt-ssh"; chmod 700 "$ETC/mt-ssh"
 [ -f "$ETC/mt-ssh/id_ed25519" ] || run ssh-keygen -q -t ed25519 -N "" -f "$ETC/mt-ssh/id_ed25519" -C "weave-migration-tool:${PREFIX%-}"
+# The migration tool runs its helpers (versions.py, hostgit.py, bal/docker/kubectl ...) on this host
+# over SSH. Its key gets a FORCED COMMAND that pins their environment: the version history lives in
+# $DATA/versions (MT_VERSIONS_HOME; never the default /root/.weave-versions of another installation
+# on the same host). The isolated test additionally blocks every git transport except local files and
+# the GitHub API, so nothing in a test can push anywhere.
+mkdir -p "$DATA/versions"; chmod 700 "$DATA/versions"
+SFTP_SERVER=/usr/lib/openssh/sftp-server; [ -x "$SFTP_SERVER" ] || SFTP_SERVER=/usr/libexec/openssh/sftp-server
+{ echo '#!/bin/bash'
+  echo "# forced command of the migration tool's SSH key (written by install.sh)"
+  echo "export MT_VERSIONS_HOME=$DATA/versions"
+  if [ "$ISOLATED" = 1 ]; then
+    echo "export GIT_ALLOW_PROTOCOL=file MT_GITHUB_API=http://127.0.0.1:9 MT_GITHUB_REPO="
+  fi
+  echo 'case "${SSH_ORIGINAL_COMMAND:-}" in'
+  echo "  ''|sftp|internal-sftp|*sftp-server*) exec $SFTP_SERVER;;   # scp (SFTP protocol)"
+  echo 'esac'
+  echo 'exec /bin/bash -c "$SSH_ORIGINAL_COMMAND"'
+} >"$BIN/mt-ssh-env"; chmod 755 "$BIN/mt-ssh-env"
+if [ "$ISOLATED" = 1 ]; then   # a test must never find a configured remote in its version store
+  for r in "$DATA"/versions/workspaces/*/repo; do
+    [ -d "$r/.git" ] || [ -f "$r/HEAD" ] || continue
+    [ -z "$(git -C "$r" remote 2>/dev/null)" ] || die "test version store $r has a git remote configured; remove it (uninstall.sh --isolated-test --purge) before testing"
+  done
+fi
 mkdir -p /root/.ssh; chmod 700 /root/.ssh; touch /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys
-grep -qF "$(cut -d' ' -f2 "$ETC/mt-ssh/id_ed25519.pub")" /root/.ssh/authorized_keys || cat "$ETC/mt-ssh/id_ed25519.pub" >>/root/.ssh/authorized_keys
+MT_PUB="$(cut -d' ' -f1,2 "$ETC/mt-ssh/id_ed25519.pub")"
+MT_LINE="command=\"$BIN/mt-ssh-env\",no-port-forwarding,no-agent-forwarding,no-X11-forwarding $MT_PUB weave-migration-tool:${PREFIX%-}"
+if ! grep -qxF "$MT_LINE" /root/.ssh/authorized_keys; then
+  grep -vF "$(echo "$MT_PUB" | cut -d' ' -f2)" /root/.ssh/authorized_keys >/root/.ssh/authorized_keys.weave-tmp || true
+  echo "$MT_LINE" >>/root/.ssh/authorized_keys.weave-tmp
+  chmod 600 /root/.ssh/authorized_keys.weave-tmp; mv /root/.ssh/authorized_keys.weave-tmp /root/.ssh/authorized_keys
+fi
 kubectl -n "$NS_WEAVE" create secret generic mt-ssh --from-file=id_ed25519="$ETC/mt-ssh/id_ed25519" --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
 render "$CS_DIR/manifests/weave-rbac.yaml" "$STATE/weave-rbac.yaml"; kubectl apply -f "$STATE/weave-rbac.yaml" >>"$LOG_FILE"
 for _ in $(seq 1 30); do tok=$(kubectl -n "$NS_WEAVE" get secret weave-reader-token -o jsonpath='{.data.token}' 2>/dev/null); [ -n "$tok" ] && break; sleep 1; done
@@ -481,6 +515,16 @@ kubectl apply -f "$STATE/migration-tool.yaml" >>"$LOG_FILE" || die "applying mig
 kubectl -n "$NS_WEAVE" rollout status deploy/migration-tool --timeout=240s >>"$LOG_FILE" 2>&1 || die "migration tool did not become ready (kubectl -n $NS_WEAVE logs deploy/migration-tool)"
 c=$(wait_http "http://127.0.0.1:$MT_NODEPORT/api/health" 200 20) || die "migration tool /api/health answered $c"
 ok "migration tool ready on NodePort $MT_NODEPORT (drives this host as $MT_SSH_TARGET, workspace $PLATFORM_DIR)"
+# what the migration tool's helpers see when they run on this host (through the forced command)
+MTPOD=$(kubectl -n "$NS_WEAVE" get pod -l app.kubernetes.io/name=migration-tool -o jsonpath='{.items[0].metadata.name}')
+seen=$(kubectl -n "$NS_WEAVE" exec "$MTPOD" -- ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i /secrets/id_ed25519 "$MT_SSH_TARGET" \
+  'echo "$MT_VERSIONS_HOME|${GIT_ALLOW_PROTOCOL:-any}"' 2>>"$LOG_FILE" | tail -1)
+[ "${seen%%|*}" = "$DATA/versions" ] || die "migration tool SSH session sees MT_VERSIONS_HOME='${seen%%|*}' (expected $DATA/versions)"
+echo probe >"$STATE/mt-scp-probe"
+kubectl -n "$NS_WEAVE" exec "$MTPOD" -- sh -c "echo probe > /tmp/p && scp -q -o BatchMode=yes -o StrictHostKeyChecking=accept-new -i /secrets/id_ed25519 /tmp/p $MT_SSH_TARGET:$STATE/mt-scp-probe.copy" >>"$LOG_FILE" 2>&1 \
+  && cmp -s "$STATE/mt-scp-probe" "$STATE/mt-scp-probe.copy" || die "migration tool cannot copy files to this host over SSH (scp)"
+rm -f "$STATE/mt-scp-probe" "$STATE/mt-scp-probe.copy"
+ok "migration tool SSH to the host works (commands + scp); version store $DATA/versions, git transports: ${seen#*|}"
 
 # =================================================================================== weave
 step "Weave containers (gateway console, factory, flow runtime)"
@@ -581,6 +625,9 @@ EOF
   echo "MIGRATION_TOOL_URL=http://127.0.0.1:$MT_NODEPORT"
   echo "GATEWAY_NAMESPACE=$NS_APIM"; echo "GATEWAY_POD_PREFIX=wso2am"
   echo "APIM_LOG_DIR=/var/log/weave/apim"; echo "SERVICES_DIR=/estate/services"
+  # gateway rules: audit of every console write next to the users file; policy-library.json stays in DATA_DIR
+  echo "GATEWAY_AUDIT_FILE=/data/access/gateway-audit.jsonl"; echo "GATEWAY_STAGE=$GATEWAY_STAGE"
+  echo "GATEWAY_CLIENT_IP_HEADER=$GATEWAY_CLIENT_IP_HEADER"
   common_env; k8s_env; sso_env "$WEAVE_URL"; } >"$ETC/gateway.env"
 { echo "# generated by install.sh - edit weave.conf and re-run install.sh"
   echo "HOST=127.0.0.1"; echo "PORT=$PORT_FACTORY"; echo "PUBLIC_BASE_URL=$WEAVE_URL/factory"
@@ -600,7 +647,7 @@ chmod 600 "$ETC"/gateway.env "$ETC"/factory.env "$ETC"/runtime.env
 for comp in runtime gateway factory; do
   img_var="IMG_${comp^^}"; weave_start "$comp" "${!img_var}" || die "could not start $PREFIX$comp"
   weave_healthy "$comp" || die "$PREFIX$comp not healthy (docker logs $PREFIX$comp)"
-  ok "$PREFIX$comp healthy on 127.0.0.1:$(weave_port "$comp") (${!img_var})"
+  ok "$PREFIX$comp healthy on 127.0.0.1:$(weave_port "$comp") (${!img_var})$([ "$WEAVE_CHANGED" = 0 ] && echo ', unchanged - not restarted')"
 done
 step "Local code model (optional, self-hosted; no cloud AI)"
 gguf=$(ls "$BUNDLE"/model/*.gguf 2>/dev/null | head -1 || true)
@@ -659,7 +706,11 @@ $QUOTA
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-run systemctl enable "$CADDY_UNIT"; run systemctl restart "$CADDY_UNIT"
+run systemctl enable "$CADDY_UNIT"
+CADDY_HASH=$(cat "$ETC/Caddyfile" "/etc/systemd/system/$CADDY_UNIT.service" "$ETC"/tls/weave.* "$ETC"/tls/apim.* "$ETC/apim-ca.pem" | sha256sum | cut -c1-16)
+if systemctl is-active -q "$CADDY_UNIT" && [ "$(cat "$STATE/caddy.hash" 2>/dev/null)" = "$CADDY_HASH" ]; then
+  log "$CADDY_UNIT unchanged - not restarted"
+else run systemctl restart "$CADDY_UNIT"; echo "$CADDY_HASH" >"$STATE/caddy.hash"; fi
 for _ in $(seq 1 20); do ss -Hltn "sport = :$HTTPS_PORT" | grep -q . && break; sleep 1; done
 systemctl is-active -q "$CADDY_UNIT" || die "$CADDY_UNIT did not start (journalctl -u $CADDY_UNIT)"
 ok "$CADDY_UNIT active: $WEAVE_URL -> console/factory, $APIM_URL -> API Manager"

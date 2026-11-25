@@ -51,7 +51,7 @@ done
 
 step "Files"
 TS=$(date -u +%Y%m%dT%H%M%SZ); ASIDE="$DATA_ROOT/data.before-restore-$TS"; mkdir -p "$ASIDE"
-for d in apim gateway factory runtime access migration-tool; do [ -e "$DATA/$d" ] && mv "$DATA/$d" "$ASIDE/"; done
+for d in apim gateway factory runtime access migration-tool versions; do [ -e "$DATA/$d" ] && mv "$DATA/$d" "$ASIDE/"; done
 tar -C "$DATA" -xzf "$SRC/apim-volume.tgz"; tar -C "$DATA" -xzf "$SRC/weave-data.tgz"; tar -C "$DATA" -xzf "$SRC/migration-tool.tgz"
 [ -d "$PLATFORM_DIR" ] && mv "$PLATFORM_DIR" "$ASIDE/platform"
 tar -C "$DATA_ROOT" -xzf "$SRC/platform.tgz"

@@ -73,8 +73,8 @@ schedule → smoke checks (every URL, API Manager health, gateway, sign-in redir
 
 ```bash
 cd traceit-middleware            # branch with the Cruise Saudi edition
-flock /root/accept/heavy-build.lock systemd-run --scope -q -p CPUQuota=200% nice -n 19 \
-  bash deploy/cruise-saudi/build-bundle.sh --version 1.0.0 --out /root/gen-work/cs-installer
+/root/accept/heavy.sh bash deploy/cruise-saudi/build-bundle.sh --version 1.0.0 --out /root/gen-work/cs-installer \
+  --src <checkout with cruise-saudi + users and access>
 ```
 
 It builds `weave-gateway`, `weave-factory` (both `VITE_WEAVE_EDITION=cruise-saudi`, relative links
@@ -93,8 +93,7 @@ Output: `weave-cruise-saudi-<version>.tar.gz` + `.sha256`.
 See RUNBOOK.md, section "Isolated test". In short:
 
 ```bash
-flock /root/accept/heavy-build.lock systemd-run --scope -q -p CPUQuota=200% nice -n 19 \
-  ./install.sh --isolated-test --bundle <extracted bundle>
+/root/accept/heavy.sh ./install.sh --isolated-test --bundle <extracted bundle>
 ./backup.sh --isolated-test
 ./uninstall.sh --isolated-test --purge
 ```

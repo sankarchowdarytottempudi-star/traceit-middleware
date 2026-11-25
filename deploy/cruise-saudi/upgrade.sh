@@ -90,4 +90,4 @@ if ! "$BUNDLE/install.sh" "${args[@]}"; then
   echo "$OLD_VERSION" >"$STATE/weave-version"
   rollback
 fi
-echo "Upgrade to $BUNDLE_VERSION complete (previous images kept for: upgrade.sh --bundle <old bundle>)."
+echo "Upgrade to $BUNDLE_VERSION complete (to go back on purpose: run upgrade.sh from the previous bundle)."

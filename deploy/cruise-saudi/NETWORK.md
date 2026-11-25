@@ -32,7 +32,7 @@ by the server, the Weave services and the migration tool).
 |---|---|---|
 | 443/tcp | users' network | Weave consoles (`weave.aroya.com`), API Manager portals (`apim.aroya.com`) |
 | 80/tcp | users' network (optional) | redirect to HTTPS only |
-| 30243/tcp (`GATEWAY_HTTPS_NODEPORT`) | internal load balancer | API gateway (HTTPS) for API consumers |
+| 30243/tcp (`GATEWAY_HTTPS_NODEPORT`) | internal load balancer | API gateway (HTTPS) for API consumers. The LB must set/append `X-Forwarded-For` (per-API IP allow/deny rules read it) |
 | 30280/tcp (`GATEWAY_HTTP_NODEPORT`) | internal load balancer (only if plain HTTP is wanted) | API gateway (HTTP) |
 | 22/tcp | administrators | SSH |
 

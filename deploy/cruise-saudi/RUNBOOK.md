@@ -103,6 +103,14 @@ put the same value into `APIM_ADMIN_PASSWORD` in `secrets.env`, re-run `install.
 **Offline code generation** – the Ballerina package cache from the bundle is unpacked into
 `/root/.ballerina/repositories`; migrated services build with `bal build --offline`.
 
+**Gateway rules** (Gateway console → API rules: rate limits, IP allow/deny, policy library):
+`GATEWAY_STAGE` (`production`/`uat`) and `GATEWAY_CLIENT_IP_HEADER` (default `X-Forwarded-For`) in
+`weave.conf`. Per-API IP allow/deny lists must see the real caller, so **the existing load balancer
+in front of the gateway (NodePort 30243) must set or append `X-Forwarded-For`** with the client
+address; calls through `https://weave.aroya.com/gw/...` get it from this server's proxy. Every
+change made from the console is written to `/opt/weave/data/access/gateway-audit.jsonl`; the
+policy library is `/opt/weave/data/gateway/policy-library.json` (persistent, in the backups).
+
 ## 4. Where things are
 
 | What | Where |
@@ -113,9 +121,9 @@ put the same value into `APIM_ADMIN_PASSWORD` in `secrets.env`, re-run `install.
 | PostgreSQL data | `/opt/weave/data/postgres` |
 | API Manager volume (keystores!, index) | `/opt/weave/data/apim` |
 | Weave data (sessions, flows, runtime key) | `/opt/weave/data/{gateway,factory,runtime}` |
-| Weave users, roles, audit log | `/opt/weave/data/access/{users.json,audit.jsonl}` |
+| Weave users, roles, audit logs | `/opt/weave/data/access/{users.json,audit.jsonl,gateway-audit.jsonl}`; policy library `/opt/weave/data/gateway/policy-library.json` |
 | First-admin password / OIDC secret files (container-readable) | `/opt/weave/etc/access/` |
-| Migration tool data | `/opt/weave/data/migration-tool` |
+| Migration tool data | `/opt/weave/data/migration-tool`; version store (`MT_VERSIONS_HOME`) `/opt/weave/data/versions` |
 | Code generator workspace | `/opt/weave/platform` (migrated services under `services/`) |
 | Backups | `BACKUP_TARGET` (default `/opt/weave/backups`) |
 | Install / backup log | `/var/log/weave-install.log`, `/var/log/weave-backup.log`, `/opt/weave/logs/backup.log` |
@@ -196,20 +204,24 @@ Service control: `systemctl restart weave-caddy`; `docker restart weave-gateway 
 | namespaces | `apim`, `weave`, `wso2` | `cs-apim`, `cs-weave` |
 | PersistentVolumes | `weave-apim-*` | `cstest-apim-*` |
 | containers / ports | `weave-*` on 8787/8788/8790 | `cstest-*` on 18787/18788/18790, 1 CPU / 1 GB each |
-| NodePorts | 30443/30243/30280/30900 | 32443/32243/32280/32900 |
+| NodePorts | 30443/30243/30280/30900 | 32443/32243/32280/32690 |
 | API Manager | weave.conf sizes | 2 CPU / 6 Gi, 3g heap, 12 min startup budget; not started below 10 GB free memory (exit 3) |
 | host software | installs Docker/k3s/helm/Ballerina if missing | verifies only, never installs or changes host software |
 
 The test reuses the host's Docker, k3s, helm and Ballerina, uses its own Caddy binary copy, adds one
 SSH key (comment `weave-migration-tool:cstest`) to `/root/.ssh/authorized_keys` and removes it on uninstall.
+That key has a forced command (`/opt/weave-cstest/bin/mt-ssh-env`) which pins what the migration tool's
+host-side helpers see: `MT_VERSIONS_HOME=/opt/weave-cstest/data/versions` (never the host's real
+`/root/.weave-versions`), `GIT_ALLOW_PROTOCOL=file` and an unreachable `MT_GITHUB_API`, so nothing a
+test does can push to GitHub. The installer verifies this from inside the migration tool pod and refuses
+to continue if the test version store has a git remote configured.
 
 ```bash
 B=/root/gen-work/cs-installer/weave-cruise-saudi-<version>      # extracted bundle
 cd /root/wt-cs/installer/deploy/cruise-saudi                     # or the bundle itself
 free -g                                                          # need >= 10 GB available
 while [ "$(cut -d. -f1 /proc/loadavg)" -ge 8 ]; do sleep 30; done
-flock /root/accept/heavy-build.lock systemd-run --scope -q -p CPUQuota=200% nice -n 19 \
-  ./install.sh --isolated-test --bundle "$B"
+/root/accept/heavy.sh ./install.sh --isolated-test --bundle "$B"     # shared build slots on the VM
 # browse (from the host): curl --cacert /opt/weave-cstest/etc/tls/test-ca.crt \
 #   --resolve weave.aroya.test:9443:127.0.0.1 https://weave.aroya.test:9443/
 ./install.sh --isolated-test --bundle "$B"     # re-run: idempotent, nothing restarts

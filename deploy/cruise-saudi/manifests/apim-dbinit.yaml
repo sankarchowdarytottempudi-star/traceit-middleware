@@ -27,6 +27,7 @@ spec:
           image: @@PG_IMAGE@@
           imagePullPolicy: IfNotPresent
           env:
+            - { name: PGOPTIONS, value: "-c client_min_messages=warning" }
             - name: PGPASSWORD
               valueFrom: { secretKeyRef: { name: apim-db, key: apim-password } }
           command: ["/bin/sh", "-c"]

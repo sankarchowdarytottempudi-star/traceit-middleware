@@ -54,7 +54,10 @@ class Sessions:
         if key not in self.cache:
             self.cache[key] = self._login(app, role)
         c = self.cache[key]
-        return None if c is None else {"Cookie": c}
+        if c is None:
+            return None
+        u = urllib.parse.urlsplit(self.cfg.factory_url if app == "factory" else self.cfg.gateway_url)
+        return {"Cookie": c, "Origin": f"{u.scheme}://{u.netloc}"}  # same-origin, like the browser
 
     def _login(self, app: str, role: str) -> Optional[str]:
         user, pw = self.creds(role)

@@ -1,0 +1,6 @@
+http:
+  port: "8081"
+backend:
+  host: "standin.cs-acc.local"
+  port: "8099"
+  basePath: "/orders"

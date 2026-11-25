@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+  <configuration-properties doc:name="Configuration properties" file="config.yaml" />
+
+  <http:listener-config name="ordersListenerConfig" doc:name="HTTP Listener config">
+    <http:listener-connection host="0.0.0.0" port="${http.port}" />
+  </http:listener-config>
+
+  <http:request-config name="backendRequestConfig" doc:name="Stand-in backend">
+    <http:request-connection host="${backend.host}" port="${backend.port}" />
+  </http:request-config>
+
+  <flow name="create-order-flow" doc:name="create-order-flow">
+    <http:listener doc:name="POST /api/orders" config-ref="ordersListenerConfig" path="/api/orders" allowedMethods="POST" />
+    <logger level="INFO" doc:name="Log request" message="create order for #[payload.customerName]" />
+    <ee:transform doc:name="Order to backend request">
+      <ee:message>
+        <ee:set-payload resource="dwl/order-to-backend.dwl" />
+      </ee:message>
+      <ee:variables>
+        <ee:set-variable variableName="orderTotal"><![CDATA[%dw 2.0
+output application/java
+---
+sum(((payload.items default []) map ((item) -> (item.qty as Number) * (item.unitPrice as Number))) default [0])]]></ee:set-variable>
+      </ee:variables>
+    </ee:transform>
+    <http:request method="POST" doc:name="POST backend /orders" config-ref="backendRequestConfig" path="${backend.basePath}">
+      <http:headers><![CDATA[#[{"Content-Type": "application/json"}]]]></http:headers>
+    </http:request>
+    <ee:transform doc:name="Backend answer to response">
+      <ee:message>
+        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  orderId: payload.id,
+  status: payload.status default "CREATED",
+  total: vars.orderTotal
+}]]></ee:set-payload>
+      </ee:message>
+    </ee:transform>
+    <error-handler>
+      <on-error-propagate type="HTTP:CONNECTIVITY, HTTP:TIMEOUT" doc:name="Backend unreachable">
+        <ee:transform doc:name="502 answer">
+          <ee:message>
+            <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "BACKEND_UNAVAILABLE", message: "The order service is not reachable." }]]></ee:set-payload>
+          </ee:message>
+          <ee:variables>
+            <ee:set-variable variableName="httpStatus">502</ee:set-variable>
+          </ee:variables>
+        </ee:transform>
+      </on-error-propagate>
+    </error-handler>
+  </flow>
+</mule>

@@ -1,0 +1,98 @@
+# =====================================================================================
+#  Cruise Saudi Weave - installation settings
+#
+#  The ONLY file an operator edits. Copy it, fill it in, then run:
+#      cp weave.conf.example weave.conf && vi weave.conf
+#      sudo ./install.sh --config weave.conf
+#  install.sh keeps a copy at <DATA_ROOT>/etc/weave.conf; upgrade/backup/restore read that copy.
+#  To change a setting later: edit <DATA_ROOT>/etc/weave.conf and run install.sh again
+#  (it is safe to re-run; nothing is reset).
+#
+#  Shell syntax: NAME=value, no spaces around "=", quote values that contain spaces.
+#  NO SECRETS HERE. Database passwords, session secrets, internal keys and the API Manager
+#  administrator password are generated at install into <DATA_ROOT>/etc/secrets.env
+#  (root only, mode 600).
+# =====================================================================================
+
+# ---- Names: INTERNAL DNS A records pointing to this server's PRIVATE IP ---------------
+# (the server has no public IP and no internet; see NETWORK.md)
+WEAVE_DOMAIN=weave.aroya.com          # Weave Gateway console at /, Weave Factory at /factory
+APIM_DOMAIN=apim.aroya.com            # API Manager portals (Publisher, DevPortal, Admin, Carbon)
+
+# ---- TLS certificate (provided by Cruise Saudi; no ACME / Let's Encrypt) ---------------
+# PEM files. The certificate file holds the server certificate first, then the intermediate
+# chain. It must cover BOTH names above (SAN list or a wildcard *.aroya.com).
+# The key must be unencrypted (no passphrase). Files are copied to <DATA_ROOT>/etc/tls.
+TLS_CERT_FILE=/root/certs/aroya.com.fullchain.pem
+TLS_KEY_FILE=/root/certs/aroya.com.key
+# Internal CA (PEM, intermediate(s) + root) that issued the certificate. Used to: verify the
+# certificate at pre-flight, complete the served chain when the certificate file holds only the
+# server certificate, and make the Weave services, the migration tool and this host trust internal
+# HTTPS endpoints (registry, deployment cluster, IdP) signed by it. Empty for a public CA.
+TLS_CA_FILE=/root/certs/aroya-internal-ca-chain.pem
+# Optional: separate certificate for APIM_DOMAIN (leave empty to use the one above)
+APIM_TLS_CERT_FILE=
+APIM_TLS_KEY_FILE=
+
+# ---- Contact ----------------------------------------------------------------------------
+ADMIN_EMAIL=integration-admin@aroya.com   # shown in the RUNBOOK output / API Manager notifications
+
+# ---- Where everything lives -------------------------------------------------------------
+DATA_ROOT=/opt/weave                  # config, data, logs, backups (default /opt/weave)
+
+# ---- Sizes (16 vCPU / 64 GB server) -----------------------------------------------------
+APIM_CPU_LIMIT=4                      # API Manager pod CPU limit (cores)
+APIM_MEMORY_LIMIT=8Gi                 # API Manager pod memory limit
+APIM_JVM_HEAP=4g                      # API Manager JVM heap (-Xmx); keep about half the limit
+APIM_STARTUP_MINUTES=5                # how long API Manager may take to boot before it is restarted
+PG_CPU_LIMIT=2
+PG_MEMORY_LIMIT=2Gi
+APIM_DATA_SIZE=20Gi                   # API Manager volume (search index, keystores, local registry)
+PG_DATA_SIZE=50Gi                     # PostgreSQL volume (all API Manager data)
+
+# ---- Ports ------------------------------------------------------------------------------
+# API gateway, exposed on every interface for the existing load balancer:
+GATEWAY_HTTPS_NODEPORT=30243
+GATEWAY_HTTP_NODEPORT=30280
+# Also publish the gateway under https://WEAVE_DOMAIN/gw/<context>/<version>/... (yes|no)
+ENABLE_GW_PATH=yes
+# Address API consumers use (shown in the consoles). Empty = https://WEAVE_DOMAIN/gw when
+# ENABLE_GW_PATH=yes, else https://WEAVE_DOMAIN:GATEWAY_HTTPS_NODEPORT. Put the load balancer URL here.
+GATEWAY_PUBLIC_URL=
+# Internal NodePorts (only change if they clash with something)
+APIM_MGMT_NODEPORT=30443
+MT_NODEPORT=30900
+
+# ---- Deployment target for migrated APIs (optional; can be set later in the Factory) ----
+# Migrated APIs run on a DIFFERENT Kubernetes cluster. Leave empty until it exists.
+DEPLOY_TARGET_KUBECONFIG=             # path to a kubeconfig file on this server
+DEPLOY_TARGET_CONTEXT=                # context in that kubeconfig (empty = current-context)
+DEPLOY_TARGET_NAMESPACE=wso2          # namespace the APIs are deployed into
+DEPLOY_TARGET_REGISTRY=               # e.g. registry.aroya.com/integration (images are pushed here)
+DEPLOY_TARGET_REGISTRY_USER=
+DEPLOY_TARGET_REGISTRY_PASSWORD_FILE= # file holding the registry password (not the password itself)
+
+# ---- Sign-in ----------------------------------------------------------------------------
+# apim = sign in with API Manager users (default; first user: APIM_ADMIN_USER, password in secrets.env)
+# oidc = corporate SSO (placeholder: values are written to the Weave env files; see RUNBOOK "SSO")
+AUTH_PROVIDER=apim
+APIM_ADMIN_USER=admin
+OIDC_ISSUER=                          # e.g. https://login.microsoftonline.com/<tenant>/v2.0
+OIDC_CLIENT_ID=
+OIDC_CLIENT_SECRET_FILE=              # file holding the client secret (not the secret itself)
+OIDC_SCOPES="openid profile email"
+OIDC_ADMIN_GROUP=
+
+# ---- Backups ----------------------------------------------------------------------------
+# A local directory or a mounted share (NFS/CIFS). Must exist or be creatable.
+BACKUP_TARGET=/opt/weave/backups
+BACKUP_RETENTION_DAYS=14
+BACKUP_SCHEDULE="30 1 * * *"          # cron line for the nightly backup (empty = no schedule)
+
+# ---- Offline ------------------------------------------------------------------------------
+# The installer is fully offline: everything comes from the bundle; it never downloads and never
+# calls apt/dnf (unless install.sh --use-os-repo is given, which uses the server's own INTERNAL
+# repository). Outbound connections the running system may need are listed in NETWORK.md.
+# If outbound HTTPS (e.g. Microsoft Entra sign-in) must go through a corporate proxy:
+HTTPS_PROXY=
+NO_PROXY=localhost,127.0.0.1,10.42.0.0/16,10.43.0.0/16,.svc,.cluster.local

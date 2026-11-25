@@ -1,0 +1,144 @@
+# WSO2 API Manager 4.5.0 all-in-one (control plane + gateway) for Cruise Saudi Weave.
+# Rendered by install.sh into Secret @@NS_APIM@@/apim-conf (it holds passwords). Do not edit the
+# rendered copy: change weave.conf and re-run install.sh.
+[server]
+hostname = "@@APIM_DOMAIN@@"
+base_path = "${carbon.protocol}://${carbon.host}:${carbon.management.port}"
+server_role = "default"
+
+[super_admin]
+username = "@@APIM_ADMIN_USER@@"
+password = "@@APIM_ADMIN_PASSWORD@@"
+create_admin_account = true
+
+[user_store]
+type = "database_unique_id"
+
+# ---- PostgreSQL (Service apim-postgres in the same namespace) ----
+[database.apim_db]
+type = "postgre"
+url = "jdbc:postgresql://apim-postgres:5432/apim_db"
+username = "apimadmin"
+password = "@@APIM_DB_PASSWORD@@"
+driver = "org.postgresql.Driver"
+validationQuery = "SELECT 1"
+pool_options.maxActive = 100
+pool_options.maxWait = 60000
+pool_options.testOnBorrow = true
+
+[database.shared_db]
+type = "postgre"
+url = "jdbc:postgresql://apim-postgres:5432/shared_db"
+username = "apimadmin"
+password = "@@APIM_DB_PASSWORD@@"
+driver = "org.postgresql.Driver"
+validationQuery = "SELECT 1"
+pool_options.maxActive = 50
+pool_options.maxWait = 60000
+pool_options.testOnBorrow = true
+
+# local registry of this node (per-node by design) stays embedded, on the persistent volume
+[database.local]
+url = "jdbc:h2:./repository/database/WSO2CARBON_DB;DB_CLOSE_ON_EXIT=FALSE"
+
+# ---- keystores: generated per installation by the init container (never the public default key) ----
+[keystore.tls]
+file_name = "wso2carbon.jks"
+type = "JKS"
+password = "@@APIM_KEYSTORE_PASSWORD@@"
+alias = "wso2carbon"
+key_password = "@@APIM_KEYSTORE_PASSWORD@@"
+
+[keystore.primary]
+file_name = "wso2carbon.jks"
+type = "JKS"
+password = "@@APIM_KEYSTORE_PASSWORD@@"
+alias = "wso2carbon"
+key_password = "@@APIM_KEYSTORE_PASSWORD@@"
+
+[keystore.internal]
+file_name = "wso2carbon.jks"
+type = "JKS"
+password = "@@APIM_KEYSTORE_PASSWORD@@"
+alias = "wso2carbon"
+key_password = "@@APIM_KEYSTORE_PASSWORD@@"
+
+[truststore]
+file_name = "client-truststore.jks"
+type = "JKS"
+password = "wso2carbon"
+
+[apim]
+gateway_type = "Regular"
+
+[[apim.gateway.environment]]
+name = "Default"
+type = "hybrid"
+gateway_type = "Regular"
+provider = "wso2"
+display_in_api_console = true
+description = "Cruise Saudi API gateway (production and sandbox traffic)."
+show_as_token_endpoint_url = true
+service_url = "https://localhost:${mgt.transport.https.port}/services/"
+username = "${admin.username}"
+password = "${admin.password}"
+ws_endpoint = "ws://localhost:9099"
+wss_endpoint = "wss://localhost:8099"
+http_endpoint = "http://localhost:${http.nio.port}"
+https_endpoint = "@@GATEWAY_PUBLIC_URL@@"
+websub_event_receiver_http_endpoint = "http://localhost:9021"
+websub_event_receiver_https_endpoint = "https://localhost:8021"
+
+[apim.sync_runtime_artifacts.gateway]
+gateway_labels = ["Default"]
+
+[apim.analytics]
+enable = true
+type = "elk"
+auth_token = ""
+
+[apim.ai]
+enable = false
+
+[apim.key_manager]
+enable_lightweight_apikey_generation = true
+
+[apim.cors]
+allow_origins = "*"
+allow_methods = ["GET","PUT","POST","DELETE","PATCH","OPTIONS"]
+allow_headers = ["authorization","Access-Control-Allow-Origin","Content-Type","SOAPAction","apikey","Internal-Key"]
+allow_credentials = false
+
+[[event_handler]]
+name = "userPostSelfRegistration"
+subscriptions = ["POST_ADD_USER"]
+
+[service_provider]
+sp_name_regex = "^[\\sa-zA-Z0-9._-]*$"
+
+[[event_listener]]
+id = "token_revocation"
+type = "org.wso2.carbon.identity.core.handler.AbstractIdentityHandler"
+name = "org.wso2.is.notification.ApimOauthEventInterceptor"
+order = 1
+[event_listener.properties]
+notification_endpoint = "https://localhost:${mgt.transport.https.port}/internal/data/v1/notify"
+username = "${admin.username}"
+password = "${admin.password}"
+'header.X-WSO2-KEY-MANAGER' = "default"
+
+[oauth.grant_type.token_exchange]
+enable = true
+allow_refresh_tokens = true
+iat_validity_period = "1h"
+
+# the portals are reached through the reverse proxy: https://@@APIM_DOMAIN@@@@HTTPS_SUFFIX@@
+[transport.https.properties]
+proxyPort = @@HTTPS_PORT@@
+
+[http_access_log]
+maxDays = 14
+
+# symmetric key for secrets API Manager stores encrypted (generated per installation)
+[encryption]
+key = "@@APIM_ENCRYPTION_KEY@@"

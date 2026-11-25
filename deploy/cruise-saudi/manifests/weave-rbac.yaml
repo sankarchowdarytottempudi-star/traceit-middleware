@@ -1,0 +1,56 @@
+# Read-mostly Kubernetes identity of the Weave consoles (token in @@ETC@@/k8s):
+#   - services namespace @@NS_SERVICES@@: read pods/logs/services/deployments/events; scale
+#     deployments and keep their autoscalers while stopped (Factory on/off switch)
+#   - API Manager namespace @@NS_APIM@@: read pods, logs and events (gateway health and logs)
+# Nothing cluster wide.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: weave-reader
+  namespace: @@NS_WEAVE@@
+  labels: { app.kubernetes.io/part-of: cruise-saudi-weave }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: weave-reader-token
+  namespace: @@NS_WEAVE@@
+  annotations: { kubernetes.io/service-account.name: weave-reader }
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: weave-reader, namespace: @@NS_SERVICES@@, labels: { app.kubernetes.io/part-of: cruise-saudi-weave } }
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "endpoints", "events", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale", "replicasets"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: weave-reader, namespace: @@NS_SERVICES@@, labels: { app.kubernetes.io/part-of: cruise-saudi-weave } }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: weave-reader }
+subjects: [ { kind: ServiceAccount, name: weave-reader, namespace: @@NS_WEAVE@@ } ]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: weave-reader, namespace: @@NS_APIM@@, labels: { app.kubernetes.io/part-of: cruise-saudi-weave } }
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: weave-reader, namespace: @@NS_APIM@@, labels: { app.kubernetes.io/part-of: cruise-saudi-weave } }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: weave-reader }
+subjects: [ { kind: ServiceAccount, name: weave-reader, namespace: @@NS_WEAVE@@ } ]

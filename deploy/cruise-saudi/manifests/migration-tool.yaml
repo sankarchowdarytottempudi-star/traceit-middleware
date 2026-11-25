@@ -1,0 +1,71 @@
+# Migration tool control plane (Python stdlib). Drives the code generator and the build toolchain
+# (bal, docker, kubectl, helm) on this host over SSH with a dedicated key (Secret mt-ssh).
+# Data: @@DATA@@/migration-tool on the host. Code generator workspace: @@PLATFORM_DIR@@.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: migration-tool
+  namespace: @@NS_WEAVE@@
+  labels: { app.kubernetes.io/name: migration-tool, app.kubernetes.io/part-of: cruise-saudi-weave }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app.kubernetes.io/name: migration-tool } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: migration-tool }
+      annotations:
+        weave/image: "@@IMG_MT@@"
+    spec:
+      enableServiceLinks: false
+      # root inside the pod so it can read the root-owned 0400 key and write the hostPath data dir;
+      # the pod already holds host SSH access, so the trust boundary is the admin token.
+      securityContext: { runAsUser: 0 }
+      containers:
+        - name: app
+          image: @@IMG_MT@@
+          imagePullPolicy: IfNotPresent
+          ports: [ { name: http, containerPort: 8080 } ]
+          env:
+            - { name: MT_RUNNER, value: "ssh" }
+            - { name: MT_SSH_TARGET, value: "@@MT_SSH_TARGET@@" }
+            - { name: MT_SSH_KEY, value: "/secrets/id_ed25519" }
+            - { name: MT_PLATFORM_DIR, value: "@@PLATFORM_DIR@@" }
+            - { name: MT_DATA_DIR, value: "/data" }
+            - { name: SSL_CERT_FILE, value: "/etc/weave/ca/ca-bundle.pem" }   # OS bundle + internal CA + API Manager
+            - name: MT_ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: mt-admin, key: token } }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: ssh, mountPath: /secrets, readOnly: true }
+            - { name: ca, mountPath: /etc/weave/ca, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: "1", memory: 512Mi }
+      volumes:
+        - name: data
+          hostPath: { path: @@DATA@@/migration-tool, type: DirectoryOrCreate }
+        - name: ssh
+          secret: { secretName: mt-ssh, defaultMode: 0400 }
+        - name: ca
+          configMap: { name: weave-ca-trust }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: migration-tool
+  namespace: @@NS_WEAVE@@
+spec:
+  type: NodePort
+  selector: { app.kubernetes.io/name: migration-tool }
+  ports:
+    - { name: http, port: 80, targetPort: http, nodePort: @@MT_NODEPORT@@ }

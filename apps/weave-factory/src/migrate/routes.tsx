@@ -1,6 +1,7 @@
 // Migrate (migrations lifecycle, deployed-API estate, workspaces, playground, knowledge).
 // Owned by the migrate work stream.
-import { Route } from "react-router-dom";
+import { Navigate, Route } from "react-router-dom";
+import { OFFERS_REQUIREMENTS } from "../lib/edition.ts";
 import { Boxes, Layers, FlaskConical, BookOpen, Network, Activity } from "lucide-react";
 import type { NavGroup } from "../nav.ts";
 import "./migrate.css";
@@ -38,7 +39,7 @@ export function migrateRoutes() {
       <Route path="migrations/new" element={<MigrationNew key="upload" />} />
       <Route path="migrations/paste" element={<MigrationNew key="paste" mode="paste" />} />
       <Route path="migrations/from-git" element={<MigrationFromGit />} />
-      <Route path="migrations/from-requirements" element={<MigrationFromRequirements />} />
+      <Route path="migrations/from-requirements" element={OFFERS_REQUIREMENTS ? <MigrationFromRequirements /> : <Navigate to="/migrations/new" replace />} />
       <Route path="migrations/:id" element={<MigrationDetail />} />
       <Route path="workspaces" element={<Workspaces />} />
       <Route path="workspaces/:id/servers" element={<ServersPage />} />

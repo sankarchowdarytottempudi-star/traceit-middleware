@@ -4,6 +4,7 @@ import { Link, type LinkProps } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ClipboardPaste, FileText, GitBranch, Info, Loader2, Search, UploadCloud, X, XCircle } from "lucide-react";
 import { MODULES } from "../brand.tsx";
 import { txt } from "../lib/text.ts";
+import { MULE_TO_WSO2_ONLY, OFFERS_REQUIREMENTS } from "../lib/edition.ts";
 import { LAYER_LABEL, PARTIAL_SOURCE_WORD, healthLabel, healthTone, layerKey, partialOf, type Tone } from "../lib/migrate.ts";
 
 const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
@@ -191,7 +192,7 @@ export function SourceWays({ way }: { way: "upload" | "git" | "paste" | "require
     <nav className="mf-mg-ways" aria-label="Where the source comes from">
       <Link className="mf-mg-way" to="/migrations/new" aria-current={way === "upload" ? "page" : undefined}>
         <UploadCloud size={20} color="var(--accentText)" aria-hidden="true" />
-        <span><strong>Upload a file</strong><small>One project as a .zip or .jar, one source file, or a written specification.</small></span>
+        <span><strong>Upload a file</strong><small>{MULE_TO_WSO2_ONLY ? "One Mule 4 project as a .zip or .jar, or one Mule flow XML or DataWeave file." : "One project as a .zip or .jar, one source file, or a written specification."}</small></span>
       </Link>
       <Link className="mf-mg-way" to="/migrations/from-git" aria-current={way === "git" ? "page" : undefined}>
         <GitBranch size={20} color="var(--accentText)" aria-hidden="true" />
@@ -199,12 +200,12 @@ export function SourceWays({ way }: { way: "upload" | "git" | "paste" | "require
       </Link>
       <Link className="mf-mg-way" to="/migrations/paste" aria-current={way === "paste" ? "page" : undefined}>
         <ClipboardPaste size={20} color="var(--accentText)" aria-hidden="true" />
-        <span><strong>Paste code</strong><small>A flow, a DataWeave script, a service or a process, pasted as text. Read as a partial source.</small></span>
+        <span><strong>Paste code</strong><small>{MULE_TO_WSO2_ONLY ? "A Mule flow or a DataWeave script, pasted as text. Read as a partial source." : "A flow, a DataWeave script, a service or a process, pasted as text. Read as a partial source."}</small></span>
       </Link>
-      <Link className="mf-mg-way" to="/migrations/from-requirements" aria-current={way === "requirements" ? "page" : undefined} data-testid="way-requirements">
+      {OFFERS_REQUIREMENTS && <Link className="mf-mg-way" to="/migrations/from-requirements" aria-current={way === "requirements" ? "page" : undefined} data-testid="way-requirements">
         <FileText size={20} color="var(--accentText)" aria-hidden="true" />
         <span><strong>From requirements</strong><small>A requirement document (.docx, .xlsx, .md, .txt, .pdf). A service is drafted from it for you to review. No source code.</small></span>
-      </Link>
+      </Link>}
     </nav>
   );
 }

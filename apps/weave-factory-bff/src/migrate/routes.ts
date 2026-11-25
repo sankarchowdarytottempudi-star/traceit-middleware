@@ -8,6 +8,7 @@ import { Readable } from "node:stream";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
 import { INTEGRATION_FILE_EXTENSIONS, PASTE_LIMITS, PASTE_TECHNOLOGIES, SINGLE_FILE_EXTENSIONS, decodeText, isSingleFile, pastedOf, wrapToZip } from "./paste.js";
 import { DECISIONS_MAX, DOCUMENT_MAX, TARGETS, answersOf, docEditOf, docNameOk, migrationOptionsOf, targetAccountOf, renameOf } from "./decisions.js";
+import { MSG, editionOf, editionOptions, muleOnly, pasteOk, singleFileOk, uploadOk, ONLY_SOURCE } from "../edition.js";
 import { REQUIREMENT_DOC_MB, REQUIREMENT_EXTENSIONS, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, headerSafe, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 /** Largest corrected analysis workbook accepted (bytes). */
@@ -18,6 +19,9 @@ export const REQUIREMENTS_MAX = 10 * 1024 * 1024;
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
   const limitMb = cfg.MT_UPLOAD_LIMIT_MB ?? 500;
+  // WEAVE_EDITION=cruise-saudi: Mule 4 to WSO2 only (edition.ts); unset: everything
+  const edition = editionOf({ WEAVE_EDITION: cfg.WEAVE_EDITION });
+  const refuse = (reply: any, error: string) => { reply.code(400); return { ok: false, error }; };
 
   async function need(req: FastifyRequest): Promise<void> {
     const sid = sidOf(req);
@@ -31,10 +35,10 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
 
   app.get("/api/factory/migrate/options", async (req) => {
     await need(req);
-    return { technologies: SOURCE_TECHNOLOGIES, targets: TARGET_TECHNOLOGIES, extensions: UPLOAD_EXTENSIONS, maxUploadMb: limitMb,
+    return editionOptions(edition, { technologies: SOURCE_TECHNOLOGIES, targets: TARGET_TECHNOLOGIES, extensions: UPLOAD_EXTENSIONS, maxUploadMb: limitMb,
       singleFileExtensions: SINGLE_FILE_EXTENSIONS, integrationFileExtensions: INTEGRATION_FILE_EXTENSIONS, singleFileMb: PASTE_LIMITS.singleFileMb,
-      requirements: { extensions: REQUIREMENT_EXTENSIONS, maxMb: Math.min(limitMb, REQUIREMENT_DOC_MB) },
-      paste: { technologies: PASTE_TECHNOLOGIES, maxSnippets: PASTE_LIMITS.maxSnippets, maxSnippetKb: PASTE_LIMITS.maxSnippetBytes / 1024, maxTotalKb: PASTE_LIMITS.maxTotalBytes / 1024 } };
+      requirements: { extensions: REQUIREMENT_EXTENSIONS, maxMb: Math.min(limitMb, REQUIREMENT_DOC_MB) } as { extensions: string[]; maxMb: number } | undefined,
+      paste: { technologies: PASTE_TECHNOLOGIES, maxSnippets: PASTE_LIMITS.maxSnippets, maxSnippetKb: PASTE_LIMITS.maxSnippetBytes / 1024, maxTotalKb: PASTE_LIMITS.maxTotalBytes / 1024 } });
   });
 
   // Read a whole (small) request body, refusing more than `max` bytes.
@@ -60,6 +64,8 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
   // manifest, zipped and uploaded through the tool. The factory marks the result "partial source".
   app.post("/api/factory/migrations/paste", { bodyLimit: PASTE_LIMITS.maxTotalBytes * 2 + 64 * 1024 }, async (req, reply) => {
     await need(req);
+    const ed = pasteOk(edition, req.body);
+    if (!ed.ok) return refuse(reply, ed.error);
     const v = pastedOf(req.body, TARGET_TECHNOLOGIES.map((t) => t.id));
     if (!v.ok) { reply.code(400); return { error: v.error }; }
     const { name, workspace, target, technology, snippets } = v.value;
@@ -74,6 +80,8 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     scope.post("/api/factory/migrations", { bodyLimit: (limitMb + 1) * 1024 * 1024 }, async (req, reply) => {
       await need(req);
       const len = req.headers["content-length"] ? Number(req.headers["content-length"]) : undefined;
+      const ed = uploadOk(edition, req.query as Record<string, string>);
+      if (!ed.ok) { req.raw.resume(); return refuse(reply, ed.error); }
       const v = validateUpload(req.query as Record<string, string>, len, limitMb);
       if (!v.ok) {
         req.raw.resume();
@@ -87,8 +95,11 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
         try { buf = await readAll(req.raw, PASTE_LIMITS.singleFileMb * 1024 * 1024); } catch { reply.code(413); return { error: `One source file can be at most ${PASTE_LIMITS.singleFileMb} MB.` }; }
         if (!buf.length) { reply.code(400); return { error: "The file is empty" }; }
         const q = req.query as Record<string, string>;
-        const tech = PASTE_TECHNOLOGIES.some((t) => t.id === q.sourceType) ? q.sourceType : "auto";
-        return uploadWrapped(reply, v.headers, wrapToZip([{ name: v.headers["X-Filename"], text: decodeText(buf) }], tech, v.headers["X-Name"], "single-file"));
+        const text = decodeText(buf);
+        const one = singleFileOk(edition, v.headers["X-Filename"], text);
+        if (!one.ok) return refuse(reply, one.error);
+        const tech = muleOnly(edition) ? ONLY_SOURCE : PASTE_TECHNOLOGIES.some((t) => t.id === q.sourceType) ? q.sourceType : "auto";
+        return uploadWrapped(reply, v.headers, wrapToZip([{ name: v.headers["X-Filename"], text }], tech, v.headers["X-Name"], "single-file"));
       }
       try {
         const r = await mtUpload(mt, "/api/migrations", v.headers, req.raw, len);
@@ -215,15 +226,18 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
   };
   app.get("/api/factory/requirements/template.xlsx", async (req, reply) => {
     await need(req);
+    if (muleOnly(edition)) return refuse(reply, MSG.requirements);
     return workbook(reply, "/api/requirements/template.xlsx", "requirements-template.xlsx");
   });
   app.get("/api/factory/migrations/:id/requirements.xlsx", async (req, reply) => {
     await need(req);
+    if (muleOnly(edition)) return refuse(reply, MSG.requirements);
     const { id } = req.params as { id: string };
     return workbook(reply, `/api/migrations/${encodeURIComponent(id)}/requirements.xlsx`, `${id}-requirements-review.xlsx`);
   });
   app.get("/api/factory/migrations/:id/requirements-template.xlsx", async (req, reply) => {
     await need(req);
+    if (muleOnly(edition)) return refuse(reply, MSG.requirements);
     const { id } = req.params as { id: string };
     return workbook(reply, `/api/migrations/${encodeURIComponent(id)}/requirements-template.xlsx`, "requirements-template.xlsx");
   });
@@ -231,6 +245,7 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     scope.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));
     scope.post("/api/factory/migrations/:id/requirements", { bodyLimit: REQUIREMENTS_MAX + 64 * 1024 }, async (req, reply) => {
       await need(req);
+      if (muleOnly(edition)) { req.raw.resume(); return refuse(reply, MSG.requirements); }
       const len = req.headers["content-length"] ? Number(req.headers["content-length"]) : undefined;
       if (len !== undefined && len > REQUIREMENTS_MAX) { req.raw.resume(); reply.code(413); return { ok: false, error: "The workbook is larger than 10 MB." }; }
       let buf: Buffer;
@@ -350,10 +365,12 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
   // The import into Boomi / Workato with the saved account, and the switch to do it after each build.
   app.post("/api/factory/migrations/:id/import", async (req, reply) => {
     await need(req);
+    if (muleOnly(edition)) return refuse(reply, MSG.platforms);
     try { return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${midOf(req)}/import`, {}, await byWho(req))); } catch { return toolDown(reply, "Nothing was imported."); }
   });
   app.post("/api/factory/migrations/:id/options", async (req, reply) => {
     await need(req);
+    if (muleOnly(edition)) return refuse(reply, MSG.platforms);
     const v = migrationOptionsOf(req.body);
     if (!v.ok) { reply.code(400); return { ok: false, error: v.error }; }
     try { return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${midOf(req)}/options`, v.options, await byWho(req))); } catch { return toolDown(reply, "Nothing was changed."); }
@@ -371,10 +388,12 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const targetOf = (req: FastifyRequest): string | null => { const t = (req.params as { target?: string }).target ?? ""; return (TARGETS as readonly string[]).includes(t) ? t : null; };
   app.get("/api/factory/target-accounts", async (req, reply) => {
     await need(req);
+    if (muleOnly(edition)) return refuse(reply, MSG.platforms);
     try { return pass(reply, await mtRequest(mt, "GET", "/api/target-accounts")); } catch { return toolDown(reply, "Try again in a moment."); }
   });
   app.put("/api/factory/target-accounts/:target", { bodyLimit: 64 * 1024 }, async (req, reply) => {
     await need(req);
+    if (muleOnly(edition)) return refuse(reply, MSG.platforms);
     const t = targetOf(req);
     if (!t) { reply.code(404); return { error: "Unknown target platform" }; }
     const v = targetAccountOf(t, req.body);
@@ -383,12 +402,14 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
   });
   app.delete("/api/factory/target-accounts/:target", async (req, reply) => {
     await need(req);
+    if (muleOnly(edition)) return refuse(reply, MSG.platforms);
     const t = targetOf(req);
     if (!t) { reply.code(404); return { error: "Unknown target platform" }; }
     try { return pass(reply, await mtRequest(mt, "DELETE", `/api/target-accounts/${t}`, undefined, await byWho(req))); } catch { return toolDown(reply, "Nothing was removed."); }
   });
   app.post("/api/factory/target-accounts/:target/test", async (req, reply) => {
     await need(req);
+    if (muleOnly(edition)) return refuse(reply, MSG.platforms);
     const t = targetOf(req);
     if (!t) { reply.code(404); return { error: "Unknown target platform" }; }
     try { return pass(reply, await mtRequest(mt, "POST", `/api/target-accounts/${t}/test`, {})); } catch { return toolDown(reply, "The connection was not tested."); }
@@ -458,6 +479,13 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     const id = repoId(req), v = repoImportOf(req.body);
     if (!id) { reply.code(404); return { error: "No such repository" }; }
     if (!v.ok) { reply.code(400); return { error: v.error }; }
+    if (muleOnly(edition)) {
+      // only Mule 4 projects of the repository (the tool says what each project is)
+      const repo = (await list("/api/repos", "repos")).find((r) => r && r.id === id);
+      const tech = new Map<string, string>(((repo?.projects ?? []) as { path?: string; technology?: string }[]).map((p) => [String(p.path ?? ""), String(p.technology ?? "")]));
+      const other = v.pick.paths.filter((p) => tech.has(p) && tech.get(p) !== ONLY_SOURCE);
+      if (other.length) return refuse(reply, `${MSG.source} Not Mule 4: ${other.slice(0, 5).join(", ")}${other.length > 5 ? ", ..." : ""}.`);
+    }
     return pass(reply, await mtRequest(mt, "POST", `/api/repos/${id}/import`, v.pick));
   });
   app.delete("/api/factory/repos/:id", async (req, reply) => {

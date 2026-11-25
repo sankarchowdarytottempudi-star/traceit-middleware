@@ -9,6 +9,7 @@ import { api, type ApiError, type ImportResult, type Migration } from "../api.ts
 import { num, txt } from "../lib/text.ts";
 import { dateTime, isWso2Target, targetLabel, targetOf } from "../lib/migrate.ts";
 import { Btn, Notice, Panel, Pill, errText } from "./ui.tsx";
+import { OFFERS_TARGET_PLATFORMS } from "../lib/edition.ts";
 
 /** Platforms whose generator writes one file to import; others show it only when the tool found one. */
 const PACKAGED = new Set(["workato", "webmethods", "boomi"]);
@@ -38,7 +39,7 @@ async function saveFrom(url: string, fallback: string) {
 
 /** Platforms the finished project can be imported into straight from here (with a saved account). */
 export const IMPORTABLE = new Set(["boomi", "workato"]);
-export const canImport = (m: Migration): boolean => IMPORTABLE.has(targetOf(m)) && !!m.serviceDir;
+export const canImport = (m: Migration): boolean => OFFERS_TARGET_PLATFORMS && IMPORTABLE.has(targetOf(m)) && !!m.serviceDir;
 
 /** The last import in one line, and the tone it is shown in. */
 export function importStatus(r: ImportResult | null | undefined, label: string): { text: string; tone: "ok" | "warn" | "bad" } | null {
@@ -126,7 +127,8 @@ function ImportSection({ m }: { m: Migration }) {
 export function Delivery({ m }: { m: Migration }) {
   const [getting, setGetting] = useState(false);
   const [err, setErr] = useState("");
-  if (isWso2Target(m) || !m.serviceDir) return null;
+  // the Mule-only edition makes WSO2 services only: there is never a project for another platform
+  if (!OFFERS_TARGET_PLATFORMS || isWso2Target(m) || !m.serviceDir) return null;
   const lbl = targetLabel(m);
   const step = (ph: string, st: string) => (m.phases || []).find((p) => p.key === ph)?.steps?.find((s: { key: string }) => s.key === st) as { status?: string; detail?: string } | undefined;
   const ready = step("test", "ready"), image = step("deploy", "image");

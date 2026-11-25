@@ -29,6 +29,9 @@ const schema = z.object({
   GATEWAY_PUBLIC_URL: z.string().optional(),  // e.g. https://host:8243 ; shown next to a published API
   ESTATE_NODE_HOST: z.string().min(1).default("127.0.0.1"), // how the flow runtime reaches a service's node port
   MT_UPLOAD_LIMIT_MB: z.coerce.number().int().positive().default(500),
+  // "cruise-saudi": MuleSoft (Mule 4) to WSO2 only; other sources and targets are refused (src/edition.ts).
+  // Unset: every source technology and every target.
+  WEAVE_EDITION: z.string().optional(),
   // The migration tool can only address these APIs (matched as part of the API name) when it compares
   // answers or measures response times; for any other API it silently picks another service of the
   // same layer. Mirrors its built-in table; comparing and optimising are refused for anything else.

@@ -4,6 +4,7 @@ import type { Config } from "./config.js";
 import { mtRequest, type MtClient } from "./mt.js";
 import { createInferrer, type InferInput } from "./inference.js";
 import { addressable, collisionOf, type MigrationLite } from "./migrate/options.js";
+import { MSG, editionOf, muleOnly } from "./edition.js";
 
 export function registerRoutes(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
@@ -88,6 +89,11 @@ export function registerRoutes(app: FastifyInstance, cfg: Config) {
     const { id, phase } = req.params as { id: string; phase: string };
     if (!PHASES.has(phase)) { reply.code(404); return { error: "unknown step" }; }
     await need(req);
+    // a service from requirements ("generate") or from a written specification ("spec") is not made in the Mule-only edition
+    if (muleOnly(editionOf({ WEAVE_EDITION: cfg.WEAVE_EDITION })) && (phase === "generate" || phase === "spec")) {
+      reply.code(400);
+      return { ok: false, error: phase === "generate" ? MSG.requirements : MSG.spec };
+    }
     const stop = await guard(id, phase, req.body);
     if (stop) { reply.code(stop.status); return stop.json; }
     // "Run automatically" on a migration whose API name is not known yet only produces the documents:

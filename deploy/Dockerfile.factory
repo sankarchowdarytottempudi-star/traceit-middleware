@@ -17,6 +17,10 @@ RUN pnpm --filter weave-factory-bff deploy --prod /prod-bff
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# the server enforces the same edition as the screens (cruise-saudi: MuleSoft (Mule 4) to WSO2 only);
+# WEAVE_EDITION can still be set when the container is started
+ARG VITE_WEAVE_EDITION="traceit"
+ENV WEAVE_EDITION=$VITE_WEAVE_EDITION
 COPY --from=build /prod-bff/node_modules ./apps/weave-factory-bff/node_modules
 COPY --from=build /app/apps/weave-factory-bff/dist ./apps/weave-factory-bff/dist
 COPY --from=build /app/apps/weave-factory/dist ./apps/weave-factory/dist

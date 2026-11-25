@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GitBranch, KeyRound, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { api, type Repo, type RepoImportResult } from "../api.ts";
+import { MULE_TO_WSO2_ONLY } from "../lib/edition.ts";
 import { num, txt } from "../lib/text.ts";
 import { importPlan, notMigratedYet, projectState, repoFormProblems, repoState } from "../lib/migrate.ts";
 import { Btn, Confirm, Empty, Failed, Field, Head, LinkBtn, Loading, Notice, Panel, Pill, SourceWays, errText, useTitle } from "./ui.tsx";
@@ -188,7 +189,7 @@ export function MigrationFromGit() {
               actions={projects.length > 1 ? <><Btn small onClick={() => setPicked(projects.map((p) => p.path))}>Tick all</Btn><Btn small onClick={() => setPicked([])}>Untick all</Btn></> : undefined}>
               {chosen.state === "reading" ? <Notice>The repository <strong>{txt(chosen.name)}</strong> is being read. Its projects appear here when that has finished.</Notice>
                 : chosen.state === "failed" ? <Notice tone="warn">The repository <strong>{txt(chosen.name)}</strong> could not be read, so there is nothing to choose from yet. The reason is shown on its card above.</Notice>
-                : projects.length === 0 ? <Empty title="No project was found in this repository" hint="A project is recognised by its mule-artifact.json, or by a pom.xml next to src/main/mule. Projects written in something else can be uploaded as a file." action={<LinkBtn to="/migrations/new">Upload a file instead</LinkBtn>} />
+                : projects.length === 0 ? <Empty title="No project was found in this repository" hint={"A project is recognised by its mule-artifact.json, or by a pom.xml next to src/main/mule. " + (MULE_TO_WSO2_ONLY ? "Only Mule 4 projects are migrated by this edition." : "Projects written in something else can be uploaded as a file.")} action={<LinkBtn to="/migrations/new">Upload a file instead</LinkBtn>} />
                 : (
                   <>
                     <div className="mf-mg-tablewrap" data-testid="project-list">

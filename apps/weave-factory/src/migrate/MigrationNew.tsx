@@ -9,6 +9,7 @@ import { txt } from "../lib/text.ts";
 import { fileSize, pasteNameHint, textBytes, validateNewMigration, validatePaste, type PasteSnippet } from "../lib/migrate.ts";
 import { Bar, Btn, Failed, Field, Head, LinkBtn, Loading, Notice, Panel, Pill, SourceWays, errText, useTitle } from "./ui.tsx";
 import { NewPartFields, type PartSpec } from "./Part.tsx";
+import { DEFAULT_SOURCE, MULE_TO_WSO2_ONLY, ONLY_SOURCE_LABEL, ONLY_TARGET, ONLY_TARGET_LABEL, offeredSources, offeredTargets } from "../lib/edition.ts";
 
 // How complete the generator's writer for a target is (the migration factory's registry; older
 // servers send only depth).
@@ -35,10 +36,10 @@ export function MigrationNew({ mode = "upload" }: { mode?: "upload" | "paste" })
   const asked = (sp.get("workspace") ?? "").trim();
   const [wsChoice, setWsChoice] = useState<string>("");
   const [wsNew, setWsNew] = useState(asked);
-  const [technology, setTechnology] = useState("auto");
+  const [technology, setTechnology] = useState(DEFAULT_SOURCE);
   const [snippets, setSnippets] = useState<PasteSnippet[]>([{ name: "", text: "" }]);
   const [creating, setCreating] = useState(false);
-  const [target, setTarget] = useState("wso2");
+  const [target, setTarget] = useState(ONLY_TARGET);
   const [file, setFile] = useState<File | null>(null);
   const [part, setPart] = useState<PartSpec | null>(null);
   const [startNow, setStartNow] = useState(true);
@@ -52,8 +53,12 @@ export function MigrationNew({ mode = "upload" }: { mode?: "upload" | "paste" })
   const askedNew = !!asked && !existing.includes(asked);
   const choice = wsChoice || (asked ? (askedNew ? NEW : asked) : existing.length ? existing[0] : NEW);
   const workspace = choice === NEW ? wsNew.trim() : choice;
-  const tech = opts.data?.technologies.find((t) => t.id === technology);
-  const tgt = opts.data?.targets.find((t) => t.id === target);
+  // the edition decides what is offered (Mule 4 to WSO2 only in the Cruise Saudi edition)
+  const sources = useMemo(() => offeredSources(opts.data?.technologies ?? []), [opts.data]);
+  const targets = useMemo(() => offeredTargets(opts.data?.targets ?? []), [opts.data]);
+  const pasteSources = useMemo(() => offeredSources(opts.data?.paste?.technologies ?? []), [opts.data]);
+  const tech = sources.find((t) => t.id === technology);
+  const tgt = targets.find((t) => t.id === target);
   const pasteOpts = opts.data?.paste;
   const isSpec = !pasting && tech?.sourceType === "spec";
   // in paste mode the file check does not apply: the pasted pieces are checked instead
@@ -107,7 +112,9 @@ export function MigrationNew({ mode = "upload" }: { mode?: "upload" | "paste" })
   return (
     <>
       <Head area="Migrations" areaTo="/migrations" back={{ to: "/migrations", label: "All migrations" }} title="New migration"
-        subtitle={pasting ? "Paste the code of a flow, a script, a service or a process. It is read on this server and documented as a partial source: the documents say what the pasted code cannot show." : "Upload the source of an existing API or integration. It is read on this server, documented, and turned into a service you can test and deploy step by step."} />
+        subtitle={MULE_TO_WSO2_ONLY
+          ? (pasting ? "Paste Mule 4 flow XML or DataWeave. It is read on this server and documented as a partial source: the documents say what the pasted code cannot show." : "Upload a MuleSoft (Mule 4) project. It is read on this server, documented, and turned into a WSO2 (Ballerina) service you can test and deploy step by step.")
+          : (pasting ? "Paste the code of a flow, a script, a service or a process. It is read on this server and documented as a partial source: the documents say what the pasted code cannot show." : "Upload the source of an existing API or integration. It is read on this server, documented, and turned into a service you can test and deploy step by step.")} />
       <SourceWays way={pasting ? "paste" : "upload"} />
       {pasting && opts.data && !pasteOpts ? <Notice tone="warn">This server does not accept pasted code yet. Upload the code as a file instead.</Notice> : null}
       {opts.isLoading ? <Loading rows={3} h={120} /> : opts.isError || !opts.data ? <Failed what="The migration options are not available right now." error={opts.error} onRetry={() => opts.refetch()} /> : (
@@ -134,7 +141,7 @@ export function MigrationNew({ mode = "upload" }: { mode?: "upload" | "paste" })
           <Panel title={<StepTitle n={2}>{pasting ? "What is the pasted code written in?" : "What is the source written in?"}</StepTitle>}>
             {pasting ? (
               <div className="mf-mg-choices" role="radiogroup" aria-label="Technology of the pasted code">
-                {(pasteOpts?.technologies ?? []).map((t) => (
+                {pasteSources.map((t) => (
                   <button key={t.id} type="button" role="radio" aria-checked={technology === t.id} className="mf-btn mf-mg-choice" disabled={uploading} onClick={() => { setTechnology(t.id); setError(""); }}>
                     <strong>{txt(t.label)}</strong>{t.id === "auto" ? <small>Recognised from the code (Mule XML, DataWeave, flow.xml, Boomi XML, Java, ...)</small> : null}
                   </button>
@@ -142,7 +149,7 @@ export function MigrationNew({ mode = "upload" }: { mode?: "upload" | "paste" })
               </div>
             ) : (
             <div className="mf-mg-choices" role="radiogroup" aria-label="Source technology">
-              {opts.data.technologies.map((t) => (
+              {sources.map((t) => (
                 <button key={t.id} type="button" role="radio" aria-checked={technology === t.id} className="mf-btn mf-mg-choice" disabled={uploading} onClick={() => { setTechnology(t.id); setError(""); }}>
                   <strong>{txt(t.label)}</strong><small>{txt(t.upload)}</small>
                 </button>
@@ -154,14 +161,21 @@ export function MigrationNew({ mode = "upload" }: { mode?: "upload" | "paste" })
           </Panel>
 
           <Panel title={<StepTitle n={3}>What should it become?</StepTitle>}>
+            {MULE_TO_WSO2_ONLY ? (
+              <div className="mf-mg-row" style={{ gap: 8 }} data-testid="fixed-target">
+                <strong>{tgt ? txt(tgt.label) : ONLY_TARGET_LABEL}</strong>
+                <span className="mf-mg-small mf-mg-muted">Every {ONLY_SOURCE_LABEL} source becomes a WSO2 service: documents, service, tests and deployment.</span>
+              </div>
+            ) : (
             <div className="mf-mg-choices" role="radiogroup" aria-label="Target">
-              {opts.data.targets.map((t) => (
+              {targets.map((t) => (
                 <button key={t.id} type="button" role="radio" aria-checked={target === t.id} className="mf-btn mf-mg-choice" disabled={uploading} onClick={() => setTarget(t.id)}>
                   <span className="mf-mg-row" style={{ gap: 8, justifyContent: "space-between" }}><strong>{txt(t.label)}</strong><Pill tone={maturityOf(t) === "complete" ? "ok" : undefined}>{MATURITY_WORD[maturityOf(t)]}</Pill></span>
                   <small>{txt(t.hint)}</small>
                 </button>
               ))}
             </div>
+            )}
             {tgt && maturityOf(tgt) === "skeleton" && <Notice tone="warn">For this target the tool writes the documents and a project skeleton. Testing and deployment from this screen are only available for the complete target.</Notice>}
             {tgt && maturityOf(tgt) === "complete-unverified" && <Notice tone="warn">For this target the tool writes a complete project to download. It is format-checked but has not been imported into that product here; import and test it on your own systems.</Notice>}
             {tgt && maturityOf(tgt) === "partial" && <Notice tone="warn">For this target the tool writes a project to download; some steps stay marked placeholders (listed in its parity report). Testing and deployment from this screen are only available for the complete target.</Notice>}
@@ -191,7 +205,7 @@ export function MigrationNew({ mode = "upload" }: { mode?: "upload" | "paste" })
               <span className="mf-mg-small mf-mg-muted">{snippets.length} piece{snippets.length === 1 ? "" : "s"} · {fileSize(pastedBytes)}{pasteOpts ? ` of ${Math.round(pasteOpts.maxTotalKb / 1024)} MB` : ""}</span>
             </div>
             {tried && pasteErrors.all && <span className="mf-mg-err" role="alert">{pasteErrors.all}</span>}
-            <span className="mf-mg-hint">Each piece becomes a file of a minimal project of its technology (for example src/main/mule/ for Mule, a package with flow.xml and node.ndf for webMethods), with a PASTED.txt note listing the pieces. The code stays on this server.</span>
+            <span className="mf-mg-hint">{MULE_TO_WSO2_ONLY ? "Each piece becomes a file of a minimal Mule project (flows in src/main/mule/, DataWeave in src/main/resources/dwl/)" : "Each piece becomes a file of a minimal project of its technology (for example src/main/mule/ for Mule, a package with flow.xml and node.ndf for webMethods)"}, with a PASTED.txt note listing the pieces. The code stays on this server.</span>
             <label className="mf-mg-check" style={{ whiteSpace: "normal" }}><input type="checkbox" checked={startNow} disabled={uploading} onChange={(e) => setStartNow(e.target.checked)} />Read the code and write the documents as soon as the migration is created</label>
           </Panel>
           ) : (
@@ -214,7 +228,7 @@ export function MigrationNew({ mode = "upload" }: { mode?: "upload" | "paste" })
             )}
             {show("file") && <span className="mf-mg-err" role="alert">{show("file")}</span>}
             {single && <Notice tone="warn">One source file is wrapped into a minimal project on the server and read as a <strong>partial source</strong>: the documents list what the file cannot show (connections, schedules, called services, ...).</Notice>}
-            <span className="mf-mg-hint">To upload a folder, compress it into a .zip first. One source file{opts.data.singleFileExtensions?.length ? ` (${opts.data.singleFileExtensions.join(" ")}, up to ${opts.data.singleFileMb ?? 10} MB)` : ""} is accepted as it is. Integration files (TIBCO .bwp, BizTalk .btm, SSIS .dtsx, XSLT .xsl, SAP CPI .iflw, Logic App or Step Functions .json) are read whole. A .zip may hold several APIs of different technologies: each one becomes its own migration. The file stays on this server: it is read here and is not sent anywhere else.</span>
+            {MULE_TO_WSO2_ONLY ? <span className="mf-mg-hint">To upload a Mule project folder, compress it into a .zip first, or upload the deployable .jar. One Mule flow XML or DataWeave file is accepted as it is. The file stays on this server: it is read here and is not sent anywhere else.</span> : <span className="mf-mg-hint">To upload a folder, compress it into a .zip first. One source file{opts.data.singleFileExtensions?.length ? ` (${opts.data.singleFileExtensions.join(" ")}, up to ${opts.data.singleFileMb ?? 10} MB)` : ""} is accepted as it is. Integration files (TIBCO .bwp, BizTalk .btm, SSIS .dtsx, XSLT .xsl, SAP CPI .iflw, Logic App or Step Functions .json) are read whole. A .zip may hold several APIs of different technologies: each one becomes its own migration. The file stays on this server: it is read here and is not sent anywhere else.</span>}
             {!isSpec && <label className="mf-mg-check" style={{ whiteSpace: "normal" }}><input type="checkbox" checked={startNow} disabled={uploading} onChange={(e) => setStartNow(e.target.checked)} />Read the source and write the documents as soon as the upload finishes</label>}
           </Panel>
           )}

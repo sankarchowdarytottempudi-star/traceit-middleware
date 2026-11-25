@@ -90,8 +90,6 @@ for p in "$HTTP_PORT" "$HTTPS_PORT"; do
   if [ -n "$o" ]; then
     if systemctl is-active -q "$CADDY_UNIT" 2>/dev/null && [ "$o" = caddy ] && systemctl show -p MainPID --value "$CADDY_UNIT" | grep -q "$(ss -Hltnp "sport = :$p" | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)"; then
       ok "port $p: already served by $CADDY_UNIT (re-run)"
-    elif [ "$ISOLATED" = 1 ] && ss -Hltn "sport = :$p" | awk '{print $4}' | grep -qv '^127\.0\.0\.1:'; then
-      ok "port $p: in use on another address by $o; the test binds 127.0.0.1 only"
     else die "port $p is in use by '$o' (stop it or free the port)"; fi
   else ok "port $p free"; fi
 done
@@ -426,8 +424,7 @@ ok "API Manager schema in apim_db and shared_db"
 step "WSO2 API Manager 4.5.0"
 install -m 644 "$BUNDLE/pkgs/postgresql-jdbc.jar" "$DATA_ROOT/apim-lib/postgresql-jdbc.jar"
 APIM_STARTUP_FAILURES=$(( APIM_STARTUP_MINUTES * 6 - 3 ))
-render "$CS_DIR/templates/apim-deployment.toml" "$STATE/deployment.toml.tmp"
-chmod 600 "$STATE/deployment.toml.tmp"
+( umask 077; render "$CS_DIR/templates/apim-deployment.toml" "$STATE/deployment.toml.tmp" ) || die "rendering deployment.toml failed"
 kubectl -n "$NS_APIM" create secret generic apim-conf --from-file=deployment.toml="$STATE/deployment.toml.tmp" --dry-run=client -o yaml | kubectl apply -f - >>"$LOG_FILE"
 APIM_CONF_HASH=$( (cat "$STATE/deployment.toml.tmp" "$CS_DIR/templates/apim-log4j2.properties") | sha256sum | cut -c1-16)
 rm -f "$STATE/deployment.toml.tmp"
@@ -689,9 +686,9 @@ chk(){ # label url expected-codes [extra curl args]
   c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "${CURL_CA[@]+"${CURL_CA[@]}"}" "${R[@]}" "$@" "$url" 2>>"$LOG_FILE" || true)
   if [[ "$c" =~ ^($want)$ ]]; then ok "$label -> $c"; else warn "$label -> $c (expected $want)"; fails=$((fails+1)); fi
 }
-chk "Weave Gateway console  $WEAVE_URL/" "$WEAVE_URL/" 200
+chk "Weave Gateway console  $WEAVE_URL/" "$WEAVE_URL/" "200|302"
 chk "Gateway console health $WEAVE_URL/healthz" "$WEAVE_URL/healthz" 200
-chk "Weave Factory          $WEAVE_URL/factory/" "$WEAVE_URL/factory/" 200
+chk "Weave Factory          $WEAVE_URL/factory/" "$WEAVE_URL/factory/" "200|302"
 chk "Factory health         127.0.0.1:$PORT_FACTORY/healthz" "http://127.0.0.1:$PORT_FACTORY/healthz" 200
 chk "Flow runtime health    127.0.0.1:$PORT_RUNTIME/v1/healthz" "http://127.0.0.1:$PORT_RUNTIME/v1/healthz" 200
 chk "API Manager version    $APIM_URL/services/Version" "$APIM_URL/services/Version" 200

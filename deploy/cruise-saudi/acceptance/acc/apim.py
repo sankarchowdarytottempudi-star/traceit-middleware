@@ -31,10 +31,19 @@ def credentials(cfg: Config) -> Tuple[str, str]:
         return u, p
     ns = cfg.secret("ACC_APIM_NAMESPACE")
     if ns and have("kubectl"):
-        out = subprocess.run(["kubectl", "-n", ns, "get", "cm", "-o", "json"], capture_output=True, text=True).stdout
+        items = []
+        for kind in ("cm", "secret"):
+            out = subprocess.run(["kubectl", "-n", ns, "get", kind, "-o", "json"], capture_output=True, text=True).stdout
+            try:
+                items += json.loads(out).get("items", [])
+            except ValueError:
+                pass
         try:
-            for cm in json.loads(out).get("items", []):
+            import base64 as _b64
+            for cm in items:
                 toml = (cm.get("data") or {}).get("deployment.toml")
+                if toml and cm.get("kind") == "Secret":
+                    toml = _b64.b64decode(toml).decode("utf-8", "replace")
                 if toml and "[super_admin]" in toml:
                     sec = toml.split("[super_admin]", 1)[1].split("\n[", 1)[0]
                     mu = re.search(r'^\s*username\s*=\s*"(.*)"', sec, re.M)

@@ -27,6 +27,8 @@ def parse(argv):
     p.add_argument("--containers", help="name prefix of the install's containers")
     p.add_argument("--install-dir", help="directory with install.sh / backup.sh / restore.sh / upgrade.sh / rollback.sh")
     p.add_argument("--secrets", help="env file with ACC_* credentials (never printed)")
+    p.add_argument("--data-root", help="the install's data root (default /opt/weave, isolated /opt/weave-cstest): "
+                   "its etc/weave.conf and etc/secrets.env give the admin and API Manager accounts when --secrets does not")
     p.add_argument("--secrets-glob", action="append", default=[], help="secrets files whose permissions are checked (repeatable)")
     p.add_argument("--only", help="comma list of groups: " + ",".join(g for g, _ in GROUPS))
     p.add_argument("--out", help="report directory (default ./acceptance-report-<stamp>)")
@@ -34,9 +36,29 @@ def parse(argv):
     return p.parse_args(argv)
 
 
+def install_accounts(root: str) -> dict:
+    """Accounts the installer generated (read in-process, never printed): the first console admin
+    (all three roles) and the API Manager admin."""
+    conf = load_env_file(os.path.join(root, "etc", "weave.conf"))
+    sec = load_env_file(os.path.join(root, "etc", "secrets.env"))
+    out = {}
+    dom = conf.get("WEAVE_DOMAIN", "")
+    if sec.get("WEAVE_BOOTSTRAP_PASSWORD"):
+        out["ACC_ADMIN_USER"] = conf.get("WEAVE_ADMIN_EMAIL") or conf.get("ADMIN_EMAIL") or (f"admin@{dom}" if dom else "")
+        out["ACC_ADMIN_PASSWORD"] = sec["WEAVE_BOOTSTRAP_PASSWORD"]
+    if sec.get("APIM_ADMIN_PASSWORD"):
+        out["ACC_APIM_USER"] = conf.get("APIM_ADMIN_USER") or "admin"
+        out["ACC_APIM_PASSWORD"] = sec["APIM_ADMIN_PASSWORD"]
+    return {k: v for k, v in out.items() if v}
+
+
 def config(a) -> Config:
-    env = load_env_file(a.secrets) if a.secrets else {}
     iso = a.isolated_test
+    root = a.data_root or ("/opt/weave-cstest" if iso else "/opt/weave")
+    env = install_accounts(root) if os.path.isdir(os.path.join(root, "etc")) else {}
+    if env:
+        print(f"accounts taken from the install at {root} (admin console account, API Manager admin)")
+    env.update(load_env_file(a.secrets) if a.secrets else {})
     base = (a.base_url or ("https://weave.aroya.test" if iso else "")).rstrip("/")
     if not base:
         sys.exit("usage: run-acceptance.sh <base-url> [--isolated-test] [options]  (see --help)")
@@ -56,13 +78,15 @@ def config(a) -> Config:
         factory_url=(a.factory_url or base + "/factory").rstrip("/"),
         gateway_url="" if gw == "none" else gw.rstrip("/"),
         apim_url=apim.rstrip("/"),
-        apim_gw_url=(a.apim_gateway_url or env.get("ACC_APIM_GATEWAY_URL") or os.environ.get("ACC_APIM_GATEWAY_URL") or apim).rstrip("/"),
+        apim_gw_url=(a.apim_gateway_url or env.get("ACC_APIM_GATEWAY_URL") or os.environ.get("ACC_APIM_GATEWAY_URL") or (base + "/gw" if iso else apim)).rstrip("/"),
         isolated=iso, read_only=a.read_only, dev_auth=a.dev_auth,
         insecure_tls=a.insecure or iso, resolve=resolve,
         namespaces=[n for n in (a.namespaces or ("cs-apim,cs-weave" if iso else "")).split(",") if n],
         container_prefix=a.containers or ("cstest-" if iso else ""),
-        install_dir=a.install_dir or (os.path.dirname(HERE) if iso else ""),
-        secrets_paths=a.secrets_glob,
+        install_dir=a.install_dir or (os.path.join(root, "installer") if os.path.isdir(os.path.join(root, "installer")) else (os.path.dirname(HERE) if iso else "")),
+        secrets_paths=a.secrets_glob or ([os.path.join(root, "etc", "secrets.env"), os.path.join(root, "etc", "tls", "*.key"),
+                                          os.path.join(root, "etc", "k8s", "token"), os.path.join(root, "etc", "mt-ssh", "id_*")]
+                                         if os.path.isdir(os.path.join(root, "etc")) else []),
         only=[g for g in (a.only or "").split(",") if g],
         harness_dir=HERE, env=env,
     )

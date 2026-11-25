@@ -59,7 +59,7 @@ def run(cfg: Config, h: Http, r: Run):
         os.makedirs(out_dir, exist_ok=True)
         prefix = shlex.split(cfg.secret("ACC_HEAVY_PREFIX", ""))
         t0 = time.time()
-        rc, out = sh(prefix + ["bash"] + cmd + iso + ["--out", out_dir], 3600)
+        rc, out = sh(prefix + ["bash"] + cmd + iso + [cfg.secret("ACC_BACKUP_TARGET_FLAG", "--target"), out_dir], 5400)
         files = [p for p in glob.glob(os.path.join(out_dir, "**", "*"), recursive=True) if os.path.isfile(p)]
         if rc != 0 or not files:
             return FAIL, f"backup exit {rc}, {len(files)} files: {short(out, 200)}"
@@ -75,9 +75,16 @@ def run(cfg: Config, h: Http, r: Run):
             except Exception:
                 names.append(os.path.basename(p))
         blob = " ".join(names).lower()
-        parts = {"factory data": any(k in blob for k in ("factory", "weave")), "api manager": any(k in blob for k in ("apim", "wso2", "am_db", "carbon")),
-                 "settings": any(k in blob for k in ("env", "config", "settings", "secrets"))}
-        loose = [p for p in files if os.stat(p).st_mode & 0o077]
+        parts = {"factory data": any(k in blob for k in ("weave-data", "factory")), "api manager": any(k in blob for k in ("apim_db", "apim-volume", "am_db")),
+                 "migration tool": "migration-tool" in blob, "settings": any(k in blob for k in ("etc.tgz", "secrets", "weave.conf"))}
+        def shut(p):  # readable by root only: the file itself, or a 700 directory above it inside out_dir
+            d = os.path.dirname(p)
+            while d.startswith(out_dir) and len(d) > len(out_dir):
+                if not os.stat(d).st_mode & 0o077:
+                    return True
+                d = os.path.dirname(d)
+            return not os.stat(p).st_mode & 0o077
+        loose = [p for p in files if not shut(p)]
         size = sum(os.path.getsize(p) for p in files)
         ev = f"{len(files)} files, {size // 1024} KiB in {time.time() - t0:.0f}s; parts {parts}; readable by others: {len(loose)}"
         return (PASS if all(parts.values()) and not loose else FAIL), ev

@@ -127,6 +127,24 @@ def run(cfg: Config, h: Http, r: Run, ses: Sessions):
         return FAIL, f"wrong password -> {x.status} cookies={len(x.set_cookies)}"
     r.check("A5", G, "A wrong password is refused", wrong_pw)
 
+    # A6/A7 need a Migration-only and a Gateway-only account. Without them in the secrets file the
+    # harness makes two temporary local accounts (cs-acc-<stamp>-mig/-gw) and removes them after A9.
+    temp_users = []
+    if not cfg.read_only and not cfg.dev_auth:
+        adm = ses.headers("factory", "admin")
+        for role, tag in (("migration", "mig"), ("gateway", "gw")):
+            if ses.creds(role)[0] or adm is None:
+                continue
+            email, pw = f"cs-acc-{cfg.stamp}-{tag}@example.com", f"Cs-Acc-{cfg.stamp}-{tag}-pw-long"
+            mk = h.request("POST", F + users_path, headers=adm, timeout=15,
+                           data={"provider": "local", "email": email, "name": f"Acceptance {role} only", "roles": [role], "password": pw})
+            if mk.status in (200, 201):
+                uid = ((mk.json() or {}).get("user") or {}).get("id")
+                temp_users.append((uid, email))
+                cfg.env[f"ACC_{role.upper()}_USER"], cfg.env[f"ACC_{role.upper()}_PASSWORD"] = email, pw
+        if temp_users:
+            r.notes.append(f"temporary role accounts for A6/A7: {', '.join(e for _, e in temp_users)} (removed after A9)")
+
     def migration_no_gateway():
         hd = ses.headers("gateway", "migration")
         if hd is None:
@@ -209,6 +227,15 @@ def run(cfg: Config, h: Http, r: Run, ses: Sessions):
             return (PASS if who else FAIL), f"audit answers with {len(items)} lines; fields {keys[:8]}; every line names a user: {who}"
         return WAITING, "audit answers but has no lines yet"
     r.check("A9", G, "Audit lines record who did what", audit)
+
+    if temp_users:
+        adm = ses.headers("factory", "admin") or {}
+        for uid, email in temp_users:
+            if uid:
+                h.request("DELETE", F + users_path + "/" + urllib.parse.quote(str(uid)), headers=adm, timeout=15)
+        left = [e for _, e in temp_users if e in h.get(F + users_path, headers=adm, timeout=15).text]
+        if left:
+            r.notes.append(f"temporary accounts NOT removed: {left}")
 
     r.add("A10", G, "Entra: a real Cruise Saudi account signs in; Entra groups map to admin/migration/gateway", MANUAL,
           "needs the customer's tenant: sign in with one account per role and confirm the menus (see checklist 3.1)")

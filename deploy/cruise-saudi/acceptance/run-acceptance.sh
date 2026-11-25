@@ -13,12 +13,14 @@
 # Prints PASS/FAIL/WAITING/SKIP/MANUAL per item with evidence; writes report.json and report.html.
 # Exit code = number of FAIL items (0 = everything that ran passed).
 #
-# On the shared test VM the heavy parts (browser crawl, image scan, backup) run under the shared lock
-# /root/accept/heavy-build.lock with a CPU quota; set ACC_HEAVY_WRAPPED=1 if you already hold the lock.
+# On the shared test VM the heavy parts (browser crawl, image scan, backup) run through
+# /root/accept/heavy.sh (shared build slots with a CPU quota), else under /root/accept/heavy-build.lock; set ACC_HEAVY_WRAPPED=1 if you already hold the lock.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -z "${ACC_HEAVY_PREFIX+x}" ]; then
-  if [ "${ACC_HEAVY_WRAPPED:-0}" != "1" ] && [ -e /root/accept/heavy-build.lock ] && command -v systemd-run >/dev/null; then
+  if [ "${ACC_HEAVY_WRAPPED:-0}" != "1" ] && [ -x /root/accept/heavy.sh ]; then
+    export ACC_HEAVY_PREFIX="/root/accept/heavy.sh"   # shared build slots of the test host
+  elif [ "${ACC_HEAVY_WRAPPED:-0}" != "1" ] && [ -e /root/accept/heavy-build.lock ] && command -v systemd-run >/dev/null; then
     export ACC_HEAVY_PREFIX="flock /root/accept/heavy-build.lock systemd-run --scope -q -p CPUQuota=150% nice -n 19"
   else
     export ACC_HEAVY_PREFIX=""

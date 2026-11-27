@@ -35,7 +35,8 @@ export function mtUpload(c: MtClient, path: string, headers: Record<string, stri
   Promise<{ status: number; json: unknown }> {
   const u = new URL(c.base + path);
   const lib = u.protocol === "https:" ? https : http;
-  const h: Record<string, string> = { ...headers, "X-Admin-Token": c.token, Accept: "application/json", "Content-Type": "application/octet-stream" };
+  // a caller may say what the file is (an Excel workbook); otherwise it is plain bytes
+  const h: Record<string, string> = { ...headers, "X-Admin-Token": c.token, Accept: "application/json", "Content-Type": headers["Content-Type"] || "application/octet-stream" };
   if (length !== undefined) h["Content-Length"] = String(length);
   return new Promise((resolve, reject) => {
     const req = lib.request({ method: "POST", hostname: u.hostname, port: u.port, path: u.pathname + u.search, headers: h }, (res) => {

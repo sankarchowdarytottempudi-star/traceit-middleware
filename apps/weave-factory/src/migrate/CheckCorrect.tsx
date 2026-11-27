@@ -1,14 +1,15 @@
 // "Check and correct what the agent produced": on the Progress tab, the ways to change the agent's work
 // in one place: edit the mapping (or any document), correct the analysis with the workbook (download,
-// change, upload), and answer the decisions the agent could not take alone. Each opens the
+// change, upload), give test data (requests and the answers expected), and answer the decisions the
+// agent could not take alone. Each opens the
 // Documents and corrections tab at the right place.
-import { FileSpreadsheet, ListChecks, Pencil, FileText } from "lucide-react";
+import { FileSpreadsheet, FlaskConical, ListChecks, Pencil, FileText } from "lucide-react";
 import type { Migration } from "../api.ts";
 import { num, txt } from "../lib/text.ts";
 import { correctable } from "./Corrections.tsx";
 import { Btn, Panel } from "./ui.tsx";
 
-export type CorrectWhere = "mapping" | "workbook" | "decisions" | "documents";
+export type CorrectWhere = "mapping" | "workbook" | "testdata" | "decisions" | "documents";
 
 /** Shown once the documents exist (the document phase is done) for a migration a person can correct. */
 export function canCheck(m: Migration): boolean {
@@ -33,6 +34,10 @@ export function CheckCorrect({ m, open }: { m: Migration; open: (where: CorrectW
         <div className="mf-mg-row" style={{ alignItems: "flex-start" }}>
           <Btn icon={<FileSpreadsheet size={14} aria-hidden="true" />} onClick={() => open("workbook")} style={BTN} data-testid="cc-workbook">Correct with the workbook (.xlsx): download or upload</Btn>
           <span className="mf-mg-hint mf-mg-grow" style={{ flexBasis: 220, paddingTop: 9 }}>Download the analysis as Excel, fix the rows (fields, operations, backends, flows), upload it again. The documents and the project are regenerated.</span>
+        </div>
+        <div className="mf-mg-row" style={{ alignItems: "flex-start" }}>
+          <Btn icon={<FlaskConical size={14} aria-hidden="true" />} onClick={() => open("testdata")} style={BTN} data-testid="cc-testdata">Give test data (requests and the answers you expect)</Btn>
+          <span className="mf-mg-hint mf-mg-grow" style={{ flexBasis: 220, paddingTop: 9 }}>Examples of each operation become tests, and can suggest answers for the steps still on the TODO list. Nothing is used until you accept it.</span>
         </div>
         {decisions > 0 && (
           <div className="mf-mg-row" style={{ alignItems: "flex-start" }}>

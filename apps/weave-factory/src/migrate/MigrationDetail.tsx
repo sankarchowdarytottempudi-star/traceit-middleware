@@ -19,6 +19,7 @@ import { Requirements } from "./Requirements.tsx";
 import { Decisions } from "./Decisions.tsx";
 import { DocEditor, editable, editedLabel } from "./DocEditor.tsx";
 import { NameInUse, RenameDialog, renamable } from "./Rename.tsx";
+import { TestData } from "./TestData.tsx";
 import { CheckCorrect, type CorrectWhere } from "./CheckCorrect.tsx";
 
 type Tab = "progress" | "documents" | "checks" | "feedback";
@@ -317,11 +318,11 @@ export function MigrationDetail() {
   const tab = (TABS.includes(sp.get("tab") as Tab) ? sp.get("tab") : "progress") as Tab;
   const setTab = (t: Tab, extra?: Record<string, string>) => { const n = new URLSearchParams(); if (t !== "progress") n.set("tab", t); for (const [k, v] of Object.entries(extra ?? {})) n.set(k, v); setSp(n, { replace: true }); };
   // from "Check and correct" on the Progress tab: the Documents and corrections tab at the right place
-  const openCorrect = (where: CorrectWhere) => setTab("documents", where === "mapping" ? { edit: "MAPPING.md" } : where === "workbook" ? { focus: "corrections" } : where === "decisions" ? { focus: "decisions" } : {});
+  const openCorrect = (where: CorrectWhere) => setTab("documents", where === "mapping" ? { edit: "MAPPING.md" } : where === "workbook" ? { focus: "corrections" } : where === "testdata" ? { focus: "testdata" } : where === "decisions" ? { focus: "decisions" } : {});
   const focus = sp.get("focus");
   useEffect(() => {
     if (tab !== "documents" || !focus) return;
-    const t = setTimeout(() => document.querySelector(`[data-testid="${focus === "decisions" ? "decisions" : "corrections"}"]`)?.scrollIntoView?.({ block: "start", behavior: "smooth" }), 250);
+    const t = setTimeout(() => document.querySelector(`[data-testid="${focus === "decisions" ? "decisions" : focus === "testdata" ? "test-data" : "corrections"}"]`)?.scrollIntoView?.({ block: "start", behavior: "smooth" }), 250);
     return () => clearTimeout(t);
   }, [tab, focus]);
   const mq = useQuery({ queryKey: ["migration", id], queryFn: () => api.migration(id), enabled: !!id, refetchInterval: (q) => (q.state.data?.busy ? 2500 : 15000) });
@@ -442,7 +443,7 @@ export function MigrationDetail() {
           </div>
         </div>
       )}
-      {tab === "documents" && <div className="mf-mg-stack"><Decisions m={m} /><Documents m={m} initialEdit={sp.get("edit")} /><Corrections m={m} /></div>}
+      {tab === "documents" && <div className="mf-mg-stack"><Decisions m={m} /><TestData m={m} /><Documents m={m} initialEdit={sp.get("edit")} /><Corrections m={m} /></div>}
       {tab === "checks" && <Checks m={m} onChanged={refresh} />}
       {tab === "feedback" && <Feedback m={m} />}
 

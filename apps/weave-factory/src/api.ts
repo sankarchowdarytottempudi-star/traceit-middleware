@@ -132,6 +132,28 @@ export interface AgentDecision {
 export interface DecisionsView { api?: string; decisions: AgentDecision[]; counts?: { open: number; answered: number } }
 export interface DecisionAnswerInput { id: string; answer: DecisionAnswer; scope: DecisionScope; note?: string }
 export interface DecisionRowError { id?: string; problem?: string }
+/** "Test data": what the tool worked out about one field from the examples. */
+export interface ExampleShape { t: "object" | "array" | "string" | "integer" | "number" | "boolean" | "date" | "datetime" | "null" | "any" | string;
+  props?: Record<string, ExampleShape>; items?: ExampleShape; nullable?: boolean; always?: string[] }
+export interface ExampleRequest { method?: string; path?: string; pathParams?: Record<string, unknown>; query?: Record<string, unknown>; headers?: Record<string, unknown>; body?: unknown }
+export interface TestExample { id: string; kind: "operation" | "step"; operation?: string; step?: string; name?: string; note?: string;
+  request?: ExampleRequest; response?: { status?: number; body?: unknown }; input?: unknown; output?: unknown; removed?: string[]; by?: string; at?: string }
+export interface ExampleOperation { operation: string; method?: string; path?: string; pathParams?: string[]; examples?: number }
+export interface TodoStep { id: string; where?: string; construct?: string; summary?: string; kind?: string; status?: string }
+export interface OperationFields { request?: { pathParams?: Record<string, ExampleShape>; query?: Record<string, ExampleShape>; headers?: Record<string, ExampleShape>; body?: ExampleShape | null };
+  responses?: Record<string, ExampleShape>; examples?: number }
+export interface ExamplesView { api?: string; target?: string; operations: ExampleOperation[]; todoSteps?: TodoStep[]; examples: TestExample[];
+  contract?: Record<string, OperationFields>; counts?: { examples?: number; operations?: number; steps?: number } }
+/** One example sent to the tool; `delete` removes the saved one with that id. */
+export interface ExampleInput { kind: "operation" | "step"; id?: string; delete?: true; operation?: string; step?: string; name?: string; note?: string;
+  request?: ExampleRequest; response?: { status: number; body?: unknown }; input?: unknown; output?: unknown }
+export interface ExampleChange { id?: string; action?: "added" | "changed" | "removed" | string; kind?: string; operation?: string; step?: string; summary?: string }
+export interface ExampleRowError { id?: string; sheet?: string; row?: number | string | null; problem?: string }
+export interface ExamplesResult { ok: boolean; applied?: number; changes?: ExampleChange[]; removed?: string[]; rerun?: boolean; message?: string }
+export interface SuggestionRule { field: string; rule: string; from?: string[]; plain?: string }
+export interface Suggestion { id: string; where?: string; construct?: string; summary?: string; status: "suggested" | "nothing" | string; basis?: string[];
+  rules?: SuggestionRule[]; unresolved?: { field: string; why?: string }[]; why?: string; answer?: { type: "code"; language: string; text: string }; note?: string }
+export interface SuggestionsView { api?: string; target?: string; suggestions: Suggestion[] }
 /** A document a person replaced with their own version (kept when the migration is rebuilt). */
 export interface DocEdit { doc: string; by?: string; at?: string; note?: string; size?: number }
 /** A target platform account of this workspace. The token never comes back; ids come back masked. */
@@ -394,6 +416,41 @@ export async function correctionsWorkbook(id: string): Promise<{ blob: Blob; fil
   return { blob: await r.blob(), filename };
 }
 
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+/** The test data workbook of one API (one row per example); a plain-words error when there is none. */
+export async function examplesWorkbook(id: string): Promise<{ blob: Blob; filename: string }> {
+  const r = await fetch(at(`/api/factory/migrations/${encodeURIComponent(id)}/examples.xlsx`), { credentials: "include" });
+  if (!r.ok) {
+    let detail = "";
+    try { const p = await r.json(); detail = p.error ?? ""; } catch { /* ignore */ }
+    throw Object.assign(new Error(detail || (r.status === 401 ? "Sign in again to download the workbook." : `The workbook is not available right now (${r.status}).`)), { status: r.status });
+  }
+  const filename = (/filename="([^"]+)"/.exec(r.headers.get("content-disposition") || "") || [])[1] || `${id}-examples.xlsx`;
+  return { blob: await r.blob(), filename };
+}
+
+/** The filled test data workbook. Rows that need fixing come back on the error's body as `errors`; then nothing changed. */
+export function uploadExamplesWorkbook(id: string, file: File, onProgress?: (fraction: number) => void): { promise: Promise<ExamplesResult>; abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<ExamplesResult>((resolve, reject) => {
+    xhr.open("POST", at(`/api/factory/migrations/${encodeURIComponent(id)}/examples`));
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Content-Type", XLSX_TYPE);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
+    xhr.onerror = () => reject(new Error("The upload was interrupted. Check your connection and try again."));
+    xhr.onabort = () => reject(Object.assign(new Error("Upload cancelled"), { aborted: true }));
+    xhr.onload = () => {
+      let body: any = null;
+      try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300 && body && body.ok) { resolve(body as ExamplesResult); return; }
+      const msg = (body && (body.error || body.detail)) || (xhr.status === 413 ? "The workbook is larger than 10 MB." : `The workbook was not accepted (${xhr.status})`);
+      reject(Object.assign(new Error(String(msg)), { status: xhr.status, body }));
+    };
+    xhr.send(file);
+  });
+  return { promise, abort: () => xhr.abort() };
+}
+
 const F = "/api/factory";
 /** The latest corpus run of the migration tool (every upload through the whole pipeline, in a sandbox). */
 export interface ToolHealthStop { stage: string; class: string; what: string; count?: number; item?: string; backend?: string; value?: number | null }
@@ -436,6 +493,10 @@ export const api = {
   // the agent's open decisions; documents a person edits; the target platform accounts and the import there
   decisions: (id: string) => j<DecisionsView>(`${F}/migrations/${enc(id)}/decisions`),
   answerDecisions: (id: string, answers: DecisionAnswerInput[]) => j<{ ok: boolean; applied?: number }>(`${F}/migrations/${enc(id)}/decisions`, post({ answers })),
+  // test data: examples of each operation and TODO step; suggestions are accepted through answerDecisions
+  examples: (id: string) => j<ExamplesView>(`${F}/migrations/${enc(id)}/examples`),
+  saveExamples: (id: string, examples: ExampleInput[]) => j<ExamplesResult>(`${F}/migrations/${enc(id)}/examples`, post({ examples })),
+  exampleSuggestions: (id: string) => j<SuggestionsView>(`${F}/migrations/${enc(id)}/examples/suggestions`),
   docSource: (id: string, name: string) => text(`${F}/migrations/${enc(id)}/documents/${enc(name)}/source`),
   saveDocSource: (id: string, name: string, body: { text: string; note?: string }) => j<{ ok?: boolean }>(`${F}/migrations/${enc(id)}/documents/${enc(name)}/source`, { method: "PUT", body: JSON.stringify(body) }),
   revertDoc: (id: string, name: string) => j<{ ok?: boolean }>(`${F}/migrations/${enc(id)}/documents/${enc(name)}/source`, { method: "DELETE" }),

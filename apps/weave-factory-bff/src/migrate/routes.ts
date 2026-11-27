@@ -8,12 +8,14 @@ import { Readable } from "node:stream";
 import { mtRaw, mtRequest, mtUpload, type MtClient } from "../mt.js";
 import { INTEGRATION_FILE_EXTENSIONS, PASTE_LIMITS, PASTE_TECHNOLOGIES, SINGLE_FILE_EXTENSIONS, decodeText, isSingleFile, pastedOf, wrapToZip } from "./paste.js";
 import { DECISIONS_MAX, DOCUMENT_MAX, TARGETS, answersOf, docEditOf, docNameOk, migrationOptionsOf, targetAccountOf, renameOf } from "./decisions.js";
+import { EXAMPLES_MAX, EXAMPLES_XLSX_MAX, examplesOf } from "./examples.js";
 import { REQUIREMENT_DOC_MB, REQUIREMENT_EXTENSIONS, SOURCE_TECHNOLOGIES, TARGET_TECHNOLOGIES, UPLOAD_EXTENSIONS, decisionOf, headerSafe, mergeWorkspaces, runtimePropertiesOf, sourceUploadOf, repoImportOf, repoOf, repoRefreshOf, validateUpload, withoutSecrets } from "./options.js";
 
 /** Largest corrected analysis workbook accepted (bytes). */
 export const CORRECTIONS_MAX = 10 * 1024 * 1024;
 /** Largest reviewed requirements workbook accepted (bytes). */
 export const REQUIREMENTS_MAX = 10 * 1024 * 1024;
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 export function registerMigrate(app: FastifyInstance, cfg: Config) {
   const mt: MtClient = { base: cfg.MT_BASE_URL, token: cfg.MT_ADMIN_TOKEN };
@@ -312,6 +314,51 @@ export function registerMigrate(app: FastifyInstance, cfg: Config) {
     const v = answersOf(req.body);
     if (!v.ok) { reply.code(400); return { ok: false, error: v.error }; }
     try { return pass(reply, await mtRequest(mt, "POST", `/api/migrations/${midOf(req)}/decisions`, { answers: v.answers }, await byWho(req))); } catch { return toolDown(reply, "The answers were not saved."); }
+  });
+
+  // ---- "Test data": examples of each operation (request and the answer expected) and of TODO steps.
+  // The tool keeps them, turns them into tests and suggests answers for TODO steps; a suggestion is only
+  // used once a person accepts it (through the decisions route above). Nothing is deployed or enabled.
+  app.get("/api/factory/migrations/:id/examples", async (req, reply) => {
+    await need(req);
+    try { return pass(reply, await mtRequest(mt, "GET", `/api/migrations/${midOf(req)}/examples`)); } catch { return toolDown(reply, "Try again in a moment."); }
+  });
+  app.get("/api/factory/migrations/:id/examples/suggestions", async (req, reply) => {
+    await need(req);
+    try { return pass(reply, await mtRequest(mt, "GET", `/api/migrations/${midOf(req)}/examples/suggestions`)); } catch { return toolDown(reply, "Try again in a moment."); }
+  });
+  app.get("/api/factory/migrations/:id/examples.xlsx", async (req, reply) => {
+    await need(req);
+    const { id } = req.params as { id: string };
+    try { return await workbook(reply, `/api/migrations/${midOf(req)}/examples.xlsx`, `${id}-examples.xlsx`); } catch { return toolDown(reply, "Try again in a moment."); }
+  });
+  app.register(async (scope) => {
+    // the filled workbook comes as the file itself; a list of examples comes as JSON
+    const raw = (_req: unknown, payload: unknown, done: (e: Error | null, b?: unknown) => void) => done(null, payload);
+    scope.addContentTypeParser("application/octet-stream", raw);
+    scope.addContentTypeParser(XLSX_TYPE, raw);
+    scope.post("/api/factory/migrations/:id/examples", { bodyLimit: EXAMPLES_XLSX_MAX + 64 * 1024 }, async (req, reply) => {
+      await need(req);
+      const type = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+      const len = req.headers["content-length"] ? Number(req.headers["content-length"]) : undefined;
+      const path = `/api/migrations/${midOf(req)}/examples`;
+      if (type === "application/octet-stream" || type === XLSX_TYPE) {
+        if (len !== undefined && len > EXAMPLES_XLSX_MAX) { req.raw.resume(); reply.code(413); return { ok: false, error: "The workbook is larger than 10 MB." }; }
+        let buf: Buffer;
+        try { buf = await readAll(req.raw, EXAMPLES_XLSX_MAX); } catch { reply.code(413); return { ok: false, error: "The workbook is larger than 10 MB." }; }
+        if (!buf.length) { reply.code(400); return { ok: false, error: "No workbook was sent. Choose the filled .xlsx file and upload it." }; }
+        if (buf.length < 4 || buf.readUInt32LE(0) !== 0x04034b50) { reply.code(400); return { ok: false, error: "This is not an Excel workbook (.xlsx). Upload the test data workbook you downloaded, saved as .xlsx." }; }
+        try {
+          return pass(reply, await mtUpload(mt, path, { ...(await byWho(req)), "Content-Type": XLSX_TYPE }, Readable.from([buf]), buf.length));
+        } catch { return toolDown(reply, "The workbook was not saved."); }
+      }
+      if ((len !== undefined && len > EXAMPLES_MAX) || Buffer.byteLength(JSON.stringify(req.body ?? null)) > EXAMPLES_MAX) {
+        reply.code(413); return { ok: false, error: "The examples are larger than 2 MB. Send fewer at a time, or use the workbook." };
+      }
+      const v = examplesOf(req.body);
+      if (!v.ok) { reply.code(400); return { ok: false, error: v.error }; }
+      try { return pass(reply, await mtRequest(mt, "POST", path, { examples: v.examples }, await byWho(req))); } catch { return toolDown(reply, "The examples were not saved."); }
+    });
   });
 
   app.get("/api/factory/migrations/:id/documents/edits", async (req, reply) => {

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { TestData, examplesFromFile, operationExample, removedWords, requestTemplate, stepExample, typeWords, fieldRows } from "../src/migrate/TestData.tsx";
+import { TestData, showTestData, examplesFromFile, operationExample, removedWords, requestTemplate, stepExample, typeWords, fieldRows } from "../src/migrate/TestData.tsx";
 import { CheckCorrect } from "../src/migrate/CheckCorrect.tsx";
 import type { ExamplesView, Migration, SuggestionsView } from "../src/api.ts";
 
@@ -237,5 +237,18 @@ describe("check and correct", () => {
     expect(link.textContent).toBe("Give test data (requests and the answers you expect)");
     fireEvent.click(link);
     expect(open).toHaveBeenCalledWith("testdata");
+  });
+});
+
+describe("test data is offered for a service built from a requirements document", () => {
+  const done = [{ key: "document", status: "done" }] as Migration["phases"];
+  it("shows once the documents are written, whatever the source", () => {
+    expect(showTestData(mig({ phases: done }))).toBe(true);
+    expect(showTestData(mig({ phases: done, sourceType: "requirements" } as Partial<Migration>))).toBe(true);
+  });
+  it("stays hidden before the documents exist and for a checked-only package", () => {
+    expect(showTestData(mig({ phases: [] }))).toBe(false);
+    expect(showTestData(mig({ phases: done, apiName: null }))).toBe(false);
+    expect(showTestData(mig({ phases: done, checkOnly: true }))).toBe(false);
   });
 });

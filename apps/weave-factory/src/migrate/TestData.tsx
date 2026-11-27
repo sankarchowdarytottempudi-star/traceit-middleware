@@ -13,7 +13,6 @@ import {
 } from "../api.ts";
 import { txt } from "../lib/text.ts";
 import { dateTime } from "../lib/migrate.ts";
-import { canCheck } from "./CheckCorrect.tsx";
 import { LANGUAGES } from "./Decisions.tsx";
 import { Bar, Btn, Field, Loading, Notice, Panel, Pill, errText } from "./ui.tsx";
 
@@ -289,9 +288,15 @@ function ExampleLine({ e, busy, removing, onRemove }: { e: TestExample; busy: bo
 
 type Mode = "operation" | "step";
 
+/** Test data is offered once the documents are written, for every kind of source — a service built from a
+ *  requirements document needs examples most, since the document rarely spells out the request and answer. */
+export function showTestData(m: Migration): boolean {
+  return !!m.apiName && !m.checkOnly && txt((m.phases ?? []).find((p) => p.key === "document")?.status) === "done";
+}
+
 export function TestData({ m }: { m: Migration }) {
   const qc = useQueryClient();
-  const show = canCheck(m);
+  const show = showTestData(m);
   const q = useQuery({ queryKey: ["migration-examples", m.id], queryFn: () => api.examples(m.id), retry: false, enabled: show });
   const sq = useQuery({ queryKey: ["migration-example-suggestions", m.id], queryFn: () => api.exampleSuggestions(m.id), retry: false, enabled: show && q.isSuccess });
   const [mode, setMode] = useState<Mode>("operation");

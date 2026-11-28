@@ -55,4 +55,17 @@ MI unit testing framework (Synapse unit tests: test suites with mock services pe
 Quartz cron has seconds · `<send>` vs `<call>` (blocking vs non-blocking) changes flow · JSON ↔ XML conversion in payloadFactory (`media-type`) · content-type/`messageType` properties · connector versions differ by MI version — pin them · API Manager vs MI responsibilities (throttling/security belong in APIM).
 
 ## 12. Lessons
-(empty — add from the first WSO2 fixture)
+1. `<throwError>` does not exist before MI 4.4 ("Unknown mediator") → the loop runs wso2/wso2mi:4.4.0, the version the
+   writer targets.
+2. A bare `<throwError>` in an API resource without a fault sequence makes MI answer 202 with no body → an HTTP
+   rejection with a status is payloadFactory + HTTP_SC + respond (wso2_model.py).
+3. An upsert whose fields are only the key produced `UPDATE t SET  WHERE k = ?` (Oracle: ORA-03050) → TODO naming the
+   missing columns, never invalid SQL.
+4. The requirement builder writes conditions as `isEmpty(payload.x)` / `isEmpty(payload)` → translated like "x is
+   missing or empty" / "no row" (they were TODOs).
+5. Loop bodies may carry mapping rows (`{"target", "source"}`) as fields → item properties use the source name (the
+   writer crashed with "unhashable type: dict").
+6. The kafkaTransport connector needs kafka-clients, avro and the Confluent serializer jars in `<MI_HOME>/lib`, plus
+   the connector zip in synapse-libs and an import artefact; without them every sequence that publishes fails.
+7. No `.car` and no MI unit-test suites are generated yet → the loop deploys the artefacts as Synapse configurations
+   and the verdict stays "Not ready" until tests exist.

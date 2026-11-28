@@ -24,6 +24,19 @@ The factory turns **any source** (business documents, or an existing middleware 
 | `apps/react-native.md` | Target is a React Native mobile app |
 | `apps/web-mobile-migration.md` | Any web ↔ mobile migration (web → mobile, mobile → web) |
 
+## Learning-memory and docs commands (06 §7, §9, §10)
+
+| Command / API | What it does |
+|---|---|
+| `python3 -m factory.patterns` | List the pattern library (`factory/patterns/<target>/*.json`); only proven patterns are admitted |
+| `factory.writers.base.pattern_for(target, problem)` | The proven pattern a writer reuses before generating a new shape (None = generate as before) |
+| `factory.corrections_log.record_fix(error_text, step, fix_rule, target=, unit=, project=)` | Log one fixed build/run error (data/private/corrections.jsonl, git-ignored) |
+| `python3 -m factory requirements read <reviewed.xlsx>` / `apply` | Also log every reviewer cell change (before/after) to the correction log |
+| `python3 -m factory docs search "<query>" [--target t] [-k 5] [--json]` | Local BM25 search over docs/agent, patterns and platform docs: doc ids + snippets |
+| `python3 -m factory docs refresh` / `docs stats` | Index what is under data/platform-docs/<target>/ (nothing is downloaded) / index size |
+| `factory.docsindex.cite(query, target)` | The doc id to cite in a step comment (Workato procedure comment: `FACTORY_DOC_CITES=1`) |
+| `python3 -m factory finetune build [--include-private]` | Fine-tuning pairs under data/private/finetune/ + count report; prints "not enough data: N of 50" below the threshold (no training) |
+
 ## How agents use it
 
 1. Read `01-CORE.md`, `02-SOURCES.md`, `03-CODING.md`, `04-UNDERSTANDING-REQUESTS.md` and `05-RESPONSE-QUALITY.md`.

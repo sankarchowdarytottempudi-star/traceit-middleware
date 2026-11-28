@@ -47,4 +47,6 @@ Builds with warnings as errors · nullable enabled, no new warnings · OpenAPI =
 `DateTime` vs `DateTimeOffset` and time zones · decimal for money · Oracle `RefCursor` outputs · HttpClient lifetime (always via factory) · culture-sensitive parsing (use invariant culture).
 
 ## 12. Lessons
-(empty — add from the first .NET fixture)
+1. GreenLeaf (synthetic) runs Ready through the loop: `dotnet publish` from the Dockerfile in sdk:8.0, 11 xUnit
+   tests (TRX), aspnet:8.0 runtime with options bound from `Section__Key` variables, Confluent.Kafka consumer group
+   Stable, smoke call answered by the unit (404 from a real Oracle query).

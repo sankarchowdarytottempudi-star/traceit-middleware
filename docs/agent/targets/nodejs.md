@@ -49,4 +49,7 @@ Unit tests per mapper/rule; route tests with `supertest`/Fastify `inject` per Op
 Event-loop blocking in CPU-heavy maps (use worker threads) · `oracledb` thin vs thick mode (thin needs no Instant Client; some features need thick) · Kafka consumer commit semantics · time zones in cron (set explicitly) · number precision for money (use decimal libs/strings).
 
 ## 12. Lessons
-(empty — add from the first Node.js fixture)
+1. GreenLeaf (synthetic) runs Ready through the loop: build (Dockerfile build stage in node:22-alpine), 12 generated
+   tests, start with Oracle + redpanda stand-ins, consumer group Stable, `GET /orders/{orderId}/status` answers the
+   unit's own 404 from a real query. Fastify answers unknown routes with 404 too → smoke answers are compared with the
+   unknown-route answer (factory/loop/sandbox.py route_missing).

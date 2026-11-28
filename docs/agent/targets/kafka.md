@@ -53,3 +53,7 @@ Partition count is hard to reduce later · compaction needs keys · consumer reb
 
 ## 12. Lessons
 - A legacy serial, in-order trigger (maxConcurrentThreads=1) must map to keyed ordering or a single partition — and the choice must be stated.
+- The loop applies the package on redpanda (auto-create off): topics with their configs, schemas with their
+  compatibility, one record produced per producer unit and one consumed with each consumer unit's group id. Partitions
+  / replicas the spec leaves open are created 1/1 in the sandbox only (the open question stays). The package has no
+  tests of its own, so its verdict stays "Not ready" until the paired code target's tests run.

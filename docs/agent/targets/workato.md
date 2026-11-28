@@ -49,3 +49,12 @@ Recipe-function family names exact (`execute`, `return_result`, `call_recipe`) �
 
 ## 12. Lessons
 See core §15 items 3–8; Workato-specific: `call` rejected by import; procedure-wrapper shape agreed (pragma, first split, DATE bind).
+Verified on a real Workato trial by import + start check (2026-11-28):
+- Recipe functions: `execute`, `return_result`, `call_recipe` (`call` is rejected). `return_result.result` and `call_recipe.parameters` must not be blank.
+- SFTP: `dir` input `directory`, output list `entries`; `streamable_download` input `filename`, output `contents`; `rename` inputs `from` / `to`.
+- FileStorage `store_file`: inputs `file_name`, `file_path`, `content`. Email `send_mail`: `to`, `subject`, `body` (not `message`).
+- JDBC `run_custom_sql` has no static output: declare `extended_output_schema` (`rows`, array of the selected columns); then `rows` / `rows.first.COL` are valid.
+- Project properties: formula mode `=account_property('k')` is rejected ("expression is unsafe", also with `.presence`, `.to_i`, `==`); use text interpolation `#{account_property('k')}`, and compare a text-mode copy in IF conditions.
+- Connection names are unique per workspace: re-import into the same folder (updates in place); a second folder with the same connection names is refused.
+- A field-name probe (one recipe referencing each candidate datapill, then start check) settles unknown names without a sample export.
+- A "success" start can be hollow: check the recipe still has its real steps (a writer that replaces a blank-input action by a TODO starts cleanly).
